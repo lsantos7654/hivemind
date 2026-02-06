@@ -82,12 +82,21 @@ class HivemindApp(App):
                 )
             )
 
+        # Sort: enabled first, then alphabetically by name
+        self.experts.sort(key=lambda e: (
+            0 if e.status == ExpertStatus.ENABLED else 1,  # Enabled first
+            e.name.lower()  # Then alphabetically
+        ))
+
     def refresh_experts(self) -> None:
         """Reload expert data and update the screen."""
         self.load_experts()
         try:
             main_screen = self.screen
             if isinstance(main_screen, MainScreen):
+                # Update the main screen's expert list
+                main_screen.experts = self.experts
+                # Update the table
                 table = main_screen.query_one("#expert-table")
                 table.update_experts(self.experts)
         except (NoMatches, AttributeError):

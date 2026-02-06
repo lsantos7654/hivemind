@@ -226,8 +226,6 @@ def _clone_repo(name: str, repos: dict, *, silent: bool = False) -> bool:
                 "--progress" if not silent else "--quiet",
                 "--branch",
                 ref_name,
-                "--depth",
-                "1",
                 remote,
                 str(repo_dir),
             ],
@@ -237,7 +235,7 @@ def _clone_repo(name: str, repos: dict, *, silent: bool = False) -> bool:
         )
     else:
         subprocess.run(
-            ["git", "clone", "--progress" if not silent else "--quiet", "--depth", "1", remote, str(repo_dir)],
+            ["git", "clone", "--progress" if not silent else "--quiet", remote, str(repo_dir)],
             check=True,
             stdout=subprocess.DEVNULL if silent else None,
             stderr=subprocess.DEVNULL if silent else None,
@@ -942,6 +940,515 @@ async def update_expert_async_internal(
         return {
             "success": False,
             "error": "Update cancelled by user",
+            "cancelled": True,
+        }
+
+    finally:
+        if tmpdir:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+def get_git_versions(name: str, expert_dir: Path) -> list:
+    """Retrieve all available versions from git repo (tags + recent commits).
+
+    Args:
+        name: Expert name
+        expert_dir: Path to expert directory (~/.claude/experts/<name>)
+
+    Returns:
+        List of VersionInfo objects sorted by: active first → tags → commits (by date)
+    """
+    from hivemind_cli.tui.models import VersionInfo
+
+    repo_dir = REPOS_DIR / name
+    if not repo_dir.exists():
+        return []
+
+    try:
+        # Check if repo is shallow and unshallow it to get full history
+        shallow_file = repo_dir / ".git" / "shallow"
+        if shallow_file.exists():
+            # Repo is shallow - fetch full history
+            subprocess.run(
+                ["git", "fetch", "--unshallow"],
+                cwd=str(repo_dir),
+                capture_output=True,
+                text=True,
+            )
+
+        # Get current HEAD commit
+        current_head = _get_head_commit(expert_dir)
+
+        # Get analyzed commits from expert_dir subdirectories
+        analyzed_commits = set()
+        if expert_dir.exists():
+            for d in expert_dir.iterdir():
+                if d.is_dir() and not d.is_symlink() and d.name != "__pycache__":
+                    analyzed_commits.add(d.name)
+
+        versions = []
+        commit_to_info = {}  # Track commits to avoid duplicates
+
+        # Query git tags
+        result = subprocess.run(
+            ["git", "tag", "-l", "--format=%(refname:short)|%(creatordate:short)|%(objectname)"],
+            cwd=str(repo_dir),
+            capture_output=True,
+            text=True,
+        )
+
+        if result.returncode == 0 and result.stdout.strip():
+            for line in result.stdout.strip().split('\n'):
+                if not line:
+                    continue
+                parts = line.split('|')
+                if len(parts) >= 3:
+                    tag_name, date, tag_commit = parts[0], parts[1], parts[2]
+
+                    # Resolve tag to commit hash
+                    resolve_result = subprocess.run(
+                        ["git", "rev-parse", tag_name],
+                        cwd=str(repo_dir),
+                        capture_output=True,
+                        text=True,
+                    )
+                    if resolve_result.returncode == 0:
+                        commit = resolve_result.stdout.strip()
+
+                        version_info = VersionInfo(
+                            commit=commit,
+                            type="tag",
+                            name=tag_name,
+                            date=date,
+                            analyzed=commit in analyzed_commits,
+                            is_active=(commit == current_head),
+                        )
+                        versions.append(version_info)
+                        commit_to_info[commit] = version_info
+
+        # Query recent commits (exclude ones already added as tags)
+        result = subprocess.run(
+            ["git", "log", "--all", "--format=%H|%cs|%s", "-n", "50"],
+            cwd=str(repo_dir),
+            capture_output=True,
+            text=True,
+        )
+
+        if result.returncode == 0 and result.stdout.strip():
+            for line in result.stdout.strip().split('\n'):
+                if not line:
+                    continue
+                parts = line.split('|', 2)
+                if len(parts) >= 3:
+                    commit, date, message = parts[0], parts[1], parts[2]
+
+                    # Skip if already added as a tag
+                    if commit not in commit_to_info:
+                        version_info = VersionInfo(
+                            commit=commit,
+                            type="commit",
+                            name=message[:80],  # Truncate long messages
+                            date=date,
+                            analyzed=commit in analyzed_commits,
+                            is_active=(commit == current_head),
+                        )
+                        versions.append(version_info)
+                        commit_to_info[commit] = version_info
+
+        # Sort: active first → analyzed → available (by date descending)
+        def sort_key(v):
+            if v.is_active:
+                return (2, v.date)  # Highest priority with reverse=True
+            elif v.analyzed:
+                return (1, v.date)
+            else:
+                return (0, v.date)  # Lowest priority with reverse=True
+
+        versions.sort(key=sort_key, reverse=True)
+        return versions
+
+    except Exception as e:
+        print(f"Error getting git versions: {e}")
+        return []
+
+
+def commit_exists_in_repo(name: str, commit: str) -> bool:
+    """Validate that a commit hash exists in the git repo.
+
+    Args:
+        name: Expert name
+        commit: Commit hash to validate
+
+    Returns:
+        True if commit exists, False otherwise
+    """
+    repo_dir = REPOS_DIR / name
+    if not repo_dir.exists():
+        return False
+
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--verify", commit],
+            cwd=str(repo_dir),
+            capture_output=True,
+        )
+        return result.returncode == 0
+    except Exception:
+        return False
+
+
+async def switch_version_async(
+    name: str,
+    target_commit: str,
+    on_progress: ProgressCallback | None = None,
+    on_subprocess_start: Callable[[int], None] | None = None,
+    cancellation_token: "CancellationToken | None" = None,
+) -> dict:
+    """Switch expert to a different version (async with cancellation support).
+
+    Args:
+        name: Expert name
+        target_commit: Target commit hash to switch to
+        on_progress: Progress callback function
+        on_subprocess_start: Called with subprocess PID when analysis starts
+        cancellation_token: Token to check for cancellation requests
+
+    Returns:
+        dict with keys: success (bool), old_commit (str), new_commit (str),
+                        error (str | None), cancelled (bool | None)
+    """
+    from hivemind_cli.tui.operations import CancellationToken
+
+    def _check_cancellation(phase: str):
+        """Check if operation was cancelled (except during risky phases)."""
+        if not cancellation_token or not cancellation_token.is_cancelled():
+            return
+
+        # Allow risky phases to complete
+        risky_phases = {UpdatePhase.COMMITTING, UpdatePhase.UPDATING_HEAD}
+        if phase not in risky_phases:
+            raise asyncio.CancelledError(f"Cancelled before {phase}")
+
+    repos = _load_repos()
+
+    if name not in repos:
+        return {"success": False, "error": f"{name} not in repos.json"}
+
+    expert_dir = EXPERTS_DIR / name
+    repo_dir = REPOS_DIR / name
+
+    if not repo_dir.exists():
+        return {"success": False, "error": "Repository not cloned"}
+
+    tmpdir = None
+    staged_path = None
+    stderr_path = None
+    stdout_path = None
+    stderr_file = None
+    stdout_file = None
+    old_commit = None
+
+    try:
+        # Get current HEAD
+        old_commit = _get_head_commit(expert_dir)
+
+        # Check if already active
+        if old_commit == target_commit:
+            return {
+                "success": True,
+                "already_active": True,
+                "old_commit": old_commit,
+                "new_commit": target_commit,
+            }
+
+        # Check if target commit exists
+        if not commit_exists_in_repo(name, target_commit):
+            return {"success": False, "error": f"Commit {target_commit[:12]} not found in repository"}
+
+        target_dir = expert_dir / target_commit
+
+        # If NOT analyzed, need to checkout and analyze
+        if not target_dir.exists() or not (target_dir / "agent.md").exists():
+            _check_cancellation(UpdatePhase.CHECKING)
+            if on_progress:
+                on_progress(
+                    ProgressInfo(
+                        name,
+                        UpdatePhase.CHECKING,
+                        f"Checking out {target_commit[:12]}...",
+                        old_commit=old_commit,
+                        new_commit=target_commit,
+                    )
+                )
+
+            # Checkout target commit
+            try:
+                subprocess.run(
+                    ["git", "checkout", "--quiet", target_commit],
+                    cwd=str(repo_dir),
+                    check=True,
+                )
+            except subprocess.CalledProcessError as e:
+                return {"success": False, "error": f"Failed to checkout commit: {e}"}
+
+            # Create temp directory for analysis
+            _check_cancellation(UpdatePhase.STAGING)
+            if on_progress:
+                on_progress(
+                    ProgressInfo(
+                        name,
+                        UpdatePhase.STAGING,
+                        f"Staging analysis for {target_commit[:12]}...",
+                        old_commit=old_commit,
+                        new_commit=target_commit,
+                    )
+                )
+
+            tmpdir = tempfile.mkdtemp(prefix=f"hivemind-version-{name}-")
+            staged_path = Path(tmpdir) / "expert"
+            staged_path.mkdir()
+            tmp_commit_dir = staged_path / target_commit
+            tmp_commit_dir.mkdir()
+
+            # Run analysis subprocess (similar to update_expert_async_internal)
+            _check_cancellation(UpdatePhase.ANALYZING)
+            if on_progress:
+                on_progress(
+                    ProgressInfo(
+                        name,
+                        UpdatePhase.ANALYZING,
+                        f"Analyzing {target_commit[:12]} (this may take 2-5 minutes)...",
+                        progress_percent=0,
+                        old_commit=old_commit,
+                        new_commit=target_commit,
+                    )
+                )
+
+            # Prepare prompt for create (not update)
+            from hivemind_cli.templates import create_expert_prompt
+
+            prompt = create_expert_prompt(name, target_commit, repo_dir, tmp_commit_dir)
+
+            # Create temp files for stderr and stdout (binary mode for subprocess)
+            stderr_file = tempfile.NamedTemporaryFile(
+                mode='wb',
+                prefix=f"hivemind-{name}-stderr-",
+                suffix=".log",
+                delete=False,
+            )
+            stdout_file = tempfile.NamedTemporaryFile(
+                mode='wb',
+                prefix=f"hivemind-{name}-stdout-",
+                suffix=".log",
+                delete=False,
+            )
+            stderr_path = Path(stderr_file.name)
+            stdout_path = Path(stdout_file.name)
+
+            cmd = [
+                "claude",
+                "-p",
+                "--verbose",
+                "--allowedTools",
+                "Read,Grep,Glob,Bash,Write",
+                "--model",
+                "sonnet",
+                "--add-dir",
+                str(repo_dir),
+                "--add-dir",
+                str(staged_path),
+                "--dangerously-skip-permissions",
+            ]
+
+            # Start async subprocess
+            proc = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdin=asyncio.subprocess.PIPE,
+                stdout=stderr_file.fileno(),
+                stderr=stdout_file.fileno(),
+                cwd=str(staged_path),
+            )
+
+            # Send prompt to stdin
+            if proc.stdin:
+                proc.stdin.write(prompt.encode())
+                await proc.stdin.drain()
+                proc.stdin.close()
+                await proc.stdin.wait_closed()
+
+            # Close file handles now that subprocess has them
+            stderr_file.close()
+            stdout_file.close()
+
+            # Notify TUI of subprocess PID
+            if on_subprocess_start:
+                on_subprocess_start(proc.pid)
+
+            # Poll until complete with cancellation checks
+            while proc.returncode is None:
+                await asyncio.sleep(1)  # Non-blocking
+
+                # Check for cancellation
+                if cancellation_token and cancellation_token.is_cancelled():
+                    # Terminate subprocess gracefully
+                    try:
+                        proc.terminate()  # Send SIGTERM
+                        await asyncio.wait_for(proc.wait(), timeout=5.0)
+                    except asyncio.TimeoutError:
+                        proc.kill()  # Force kill if didn't terminate
+                        await proc.wait()
+                    raise asyncio.CancelledError("Version switch cancelled by user")
+
+                # Update progress
+                if on_progress:
+                    on_progress(
+                        ProgressInfo(
+                            name,
+                            UpdatePhase.ANALYZING,
+                            f"Analyzing {target_commit[:12]}...",
+                            old_commit=old_commit,
+                            new_commit=target_commit,
+                        )
+                    )
+
+            # Check exit code
+            if proc.returncode != 0:
+                # Analysis failed - read error from stderr and stdout files
+                error_msg = f"AI analysis failed (exit code {proc.returncode})"
+                try:
+                    stderr_content = stderr_path.read_text()
+                    stdout_content = stdout_path.read_text()
+
+                    if stderr_content.strip():
+                        error_msg += f"\nStderr: {stderr_content[-500:]}"
+                    if stdout_content.strip():
+                        error_msg += f"\nStdout: {stdout_content[-500:]}"
+
+                    if not stderr_content.strip() and not stdout_content.strip():
+                        error_msg += f"\nNo output captured."
+
+                except Exception as e:
+                    error_msg += f"\nCould not read output: {e}"
+                finally:
+                    # Clean up log files
+                    try:
+                        stderr_path.unlink()
+                        stdout_path.unlink()
+                    except Exception:
+                        pass
+
+                # Revert checkout
+                if old_commit:
+                    subprocess.run(
+                        ["git", "checkout", "--quiet", old_commit],
+                        cwd=str(repo_dir),
+                        capture_output=True,
+                    )
+                return {
+                    "success": False,
+                    "error": error_msg,
+                    "old_commit": old_commit,
+                    "new_commit": target_commit,
+                }
+
+            # Clean up log files on success
+            try:
+                stderr_path.unlink()
+                stdout_path.unlink()
+            except Exception:
+                pass
+
+            # Move staged files to final location
+            if on_progress:
+                on_progress(
+                    ProgressInfo(
+                        name,
+                        UpdatePhase.COMMITTING,
+                        "Committing changes...",
+                        old_commit=old_commit,
+                        new_commit=target_commit,
+                    )
+                )
+
+            final_commit_dir = expert_dir / target_commit
+            final_commit_dir.mkdir(parents=True, exist_ok=True)
+
+            for f in tmp_commit_dir.iterdir():
+                if f.is_file():
+                    shutil.move(str(f), str(final_commit_dir / f.name))
+
+        # Checkout target commit in repo to keep repo and symlink in sync
+        try:
+            subprocess.run(
+                ["git", "checkout", "--quiet", target_commit],
+                cwd=str(repo_dir),
+                check=True,
+            )
+        except subprocess.CalledProcessError as e:
+            return {"success": False, "error": f"Failed to checkout commit in repo: {e}"}
+
+        # Update HEAD symlink (risky - let it complete)
+        if on_progress:
+            on_progress(
+                ProgressInfo(
+                    name,
+                    UpdatePhase.UPDATING_HEAD,
+                    "Updating HEAD symlink...",
+                    old_commit=old_commit,
+                    new_commit=target_commit,
+                )
+            )
+
+        head_link = expert_dir / "HEAD"
+        if head_link.is_symlink():
+            head_link.unlink()
+        head_link.symlink_to(target_commit)
+
+        # Update agent symlink
+        _link_agent(name)
+
+        # Update repos.json
+        repos[name]["commit"] = target_commit
+        _save_repos(repos)
+
+        return {
+            "success": True,
+            "old_commit": old_commit,
+            "new_commit": target_commit,
+        }
+
+    except asyncio.CancelledError:
+        # Clean up temp directory
+        if staged_path and staged_path.exists():
+            shutil.rmtree(staged_path, ignore_errors=True)
+
+        # Clean up log files
+        if stderr_path and stderr_path.exists():
+            try:
+                stderr_path.unlink()
+            except Exception:
+                pass
+        if stdout_path and stdout_path.exists():
+            try:
+                stdout_path.unlink()
+            except Exception:
+                pass
+
+        # Revert git checkout if needed
+        if old_commit:
+            try:
+                subprocess.run(
+                    ["git", "checkout", "--quiet", old_commit],
+                    cwd=str(repo_dir),
+                    capture_output=True,
+                )
+            except Exception:
+                pass
+
+        # Return cancelled result
+        return {
+            "success": False,
+            "error": "Version switch cancelled by user",
             "cancelled": True,
         }
 

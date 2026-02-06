@@ -5,7 +5,7 @@ from __future__ import annotations
 from textual.app import ComposeResult
 from textual.containers import Container
 from textual.screen import Screen
-from textual.widgets import Header, Static
+from textual.widgets import Header, Static, DataTable
 from textual.binding import Binding
 
 from hivemind_cli.tui.models import ExpertRow, OperationStatus
@@ -23,15 +23,14 @@ class MainScreen(Screen):
     _last_g_press: float = 0.0
 
     BINDINGS = [
-        Binding("q", "quit", "Quit"),
         Binding("slash", "focus_search", "Search"),
+        Binding("enter", "show_details", "Details"),
         Binding("space", "toggle_select", "Select"),
         Binding("e", "enable", "Enable"),
         Binding("d", "disable", "Disable"),
         Binding("u", "update", "Update"),
-        Binding("shift+u", "update_all", "Update All"),
+        Binding("U", "update_all", "Update Enabled"),
         Binding("x", "cancel_update", "Cancel", show=False),
-        Binding("r", "refresh", "Refresh"),
         Binding("escape", "clear_search", "Clear"),
         Binding("j", "cursor_down", "Down", show=False),
         Binding("k", "cursor_up", "Up", show=False),
@@ -55,7 +54,7 @@ class MainScreen(Screen):
             SearchBar(classes="search-container"),
             ExpertTable(self.experts, id="expert-table"),
             Static(
-                "↑↓/jk: Navigate  Space: Select  e: Enable  d: Disable  u: Update  x: Cancel  Shift+U: Update All  /: Search  q: Quit",
+                "↑↓/jk: Navigate  Enter: Details  Space: Select  e: Enable  d: Disable  u: Update  U: Update Enabled  x: Cancel  /: Search  Esc: Clear",
                 classes="footer keybindings",
             ),
             id="main-container",
@@ -105,6 +104,24 @@ class MainScreen(Screen):
         """Toggle selection of current row."""
         table = self.query_one("#expert-table", ExpertTable)
         table.toggle_selection()
+
+    def action_show_details(self) -> None:
+        """Show version detail screen for current expert."""
+        from hivemind_cli.tui.screens.version_detail_screen import VersionDetailScreen
+
+        table = self.query_one("#expert-table", ExpertTable)
+        current = table.get_current_expert()
+
+        if not current:
+            return
+
+        # Prevent viewing during active operations
+        if current.operation_status == OperationStatus.IN_PROGRESS:
+            self.notify("Cannot view details during active operation", severity="warning")
+            return
+
+        # Push version detail screen
+        self.app.push_screen(VersionDetailScreen(current))
 
     def action_focus_search(self) -> None:
         """Focus the search input."""
@@ -193,7 +210,8 @@ class MainScreen(Screen):
     def action_update_all(self) -> None:
         """Update all enabled experts."""
         # Get all enabled experts
-        enabled = [e.name for e in self.experts if e.status.value == "enabled"]
+        from hivemind_cli.tui.models import ExpertStatus
+        enabled = [e.name for e in self.experts if e.status == ExpertStatus.ENABLED]
         if enabled:
             self.notify(f"Updating {len(enabled)} enabled expert(s)...", severity="information")
 
@@ -304,6 +322,12 @@ class MainScreen(Screen):
             os.kill(pid, signal.SIGKILL)
         except ProcessLookupError:
             pass  # Already dead
+
+    def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
+        """Handle DataTable row selection (Enter key pressed)."""
+        # Only handle events from the expert table
+        if event.data_table.id == "expert-table":
+            self.action_show_details()
 
     def check_action(self, action: str, parameters: tuple) -> bool | None:
         """Check if action should be available."""
