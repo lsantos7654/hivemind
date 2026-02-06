@@ -224,6 +224,46 @@ def _unlink_agent(name: str) -> None:
         agent_link.unlink()
 
 
+def _link_expert(name: str) -> bool:
+    """Create ~/.claude/experts/<name> → {experts,private-experts}/<name>/.
+
+    Returns True if symlink was created/updated, False if expert doesn't exist.
+    """
+    CLAUDE_EXPERTS_DIR = CLAUDE_DIR / "experts"
+    CLAUDE_EXPERTS_DIR.mkdir(parents=True, exist_ok=True)
+
+    source_dir = _get_expert_dir(name)
+    if not source_dir.exists():
+        return False
+
+    expert_link = CLAUDE_EXPERTS_DIR / name
+
+    # Check if already correct
+    if expert_link.is_symlink():
+        if expert_link.resolve() == source_dir.resolve():
+            return True  # Already correct
+        expert_link.unlink()
+    elif expert_link.exists():
+        # Remove non-symlink file/directory
+        if expert_link.is_dir():
+            shutil.rmtree(expert_link)
+        else:
+            expert_link.unlink()
+
+    expert_link.symlink_to(source_dir)
+    return True
+
+
+def _unlink_expert(name: str) -> None:
+    """Remove ~/.claude/experts/<name> if it exists."""
+    expert_link = CLAUDE_DIR / "experts" / name
+    if expert_link.is_symlink() or expert_link.exists():
+        if expert_link.is_dir() and not expert_link.is_symlink():
+            shutil.rmtree(expert_link)
+        else:
+            expert_link.unlink()
+
+
 def _clone_repo(name: str, repos: dict, *, silent: bool = False) -> bool:
     """Clone a repo to cache repos dir if not already present.
 
@@ -743,7 +783,7 @@ async def update_expert_async_internal(
         if not new_commit:
             return {"success": False, "error": "Could not resolve latest commit"}
 
-        expert_dir = EXPERTS_DIR / name
+        expert_dir = _get_expert_dir(name)
         old_commit = _get_head_commit(expert_dir)
 
         if old_commit == new_commit:
@@ -1542,6 +1582,7 @@ def enable_expert(name: str) -> dict:
         return {"success": False, "error": "Failed to clone repository"}
 
     _link_agent(name)
+    _link_expert(name)
 
     # Update librarian to reflect enabled experts
     _update_librarian()
@@ -1570,6 +1611,7 @@ def disable_expert(name: str) -> dict:
         _save_config(config)
 
     _unlink_agent(name)
+    _unlink_expert(name)
 
     # Update librarian to reflect enabled experts
     _update_librarian()
