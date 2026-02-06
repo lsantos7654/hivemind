@@ -221,10 +221,6 @@ class MainScreen(Screen):
         else:
             self.notify("No enabled experts to update", severity="warning")
 
-    def action_refresh(self) -> None:
-        """Refresh the expert list."""
-        self.app.refresh_experts()
-
     def action_cursor_down(self) -> None:
         """Move cursor down in the table."""
         table = self.query_one("#expert-table", ExpertTable)
