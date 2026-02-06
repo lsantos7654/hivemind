@@ -102,10 +102,11 @@ class ExpertTable(DataTable):
 
         expert = self.experts[cursor_row]
 
+        # Use set operations to trigger reactive watchers
         if expert.name in self.selected_rows:
-            self.selected_rows.remove(expert.name)
+            self.selected_rows = self.selected_rows - {expert.name}
         else:
-            self.selected_rows.add(expert.name)
+            self.selected_rows = self.selected_rows | {expert.name}
 
         # Save cursor position before refresh
         saved_cursor = cursor_row
@@ -132,7 +133,8 @@ class ExpertTable(DataTable):
 
     def clear_selection(self) -> None:
         """Clear all selections."""
-        self.selected_rows.clear()
+        # Use assignment to trigger reactive watchers
+        self.selected_rows = set()
 
         # Save cursor position before refresh
         saved_cursor = self.cursor_row

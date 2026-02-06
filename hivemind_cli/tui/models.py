@@ -60,3 +60,4 @@ class VersionInfo:
     name: str  # tag name or commit message
     date: str
     analyzed: bool
+    is_active: bool = False  # True if this is current HEAD

@@ -329,13 +329,13 @@ def add(
             subprocess.run(
                 [
                     "git", "clone", "--progress", "--branch", ref_name,
-                    "--depth", "1", url, str(tmp_repo),
+                    url, str(tmp_repo),
                 ],
                 check=True,
             )
         else:
             subprocess.run(
-                ["git", "clone", "--progress", "--depth", "1", url, str(tmp_repo)],
+                ["git", "clone", "--progress", url, str(tmp_repo)],
                 check=True,
             )
         console.print(f"  [success]✓[/success] Cloned to staging area")

@@ -113,3 +113,48 @@ ModalScreen {
 ProgressBar {
     width: 100%;
 }
+
+/* Version detail screen */
+#expert-header {
+    height: auto;
+    padding: 1 2;
+    background: $panel;
+    margin-bottom: 1;
+}
+
+/* Search container */
+#search-container {
+    height: 3;
+    padding: 1 2;
+    background: $panel;
+    margin: 0 2 1 2;
+}
+
+#search-container.hidden {
+    display: none;
+}
+
+.section-title {
+    padding: 1 2;
+    text-style: bold;
+}
+
+#version-table {
+    height: 1fr;
+    margin: 0 2;
+}
+
+#commit-input-container {
+    height: 3;
+    padding: 1 2;
+    background: $panel;
+}
+
+#commit-input-container.hidden {
+    display: none;
+}
+
+.input-label {
+    width: auto;
+    padding: 0 1;
+}
