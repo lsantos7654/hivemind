@@ -8,6 +8,10 @@ repos
 # User-specific config (enabled/disabled state)
 config.json
 
+# Private experts (NEVER commit)
+private-experts/
+private-repos.json
+
 # Python
 __pycache__/
 *.pyc

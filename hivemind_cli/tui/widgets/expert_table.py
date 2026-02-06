@@ -26,7 +26,7 @@ class ExpertTable(DataTable):
 
     def on_mount(self) -> None:
         """Set up the table when mounted."""
-        self.add_columns("☐", "Name", "Status", "Version", "Versions", "Remote")
+        self.add_columns("☐", "Name", "Status", "Visibility", "Version", "Versions", "Remote")
         self._is_mounted = True
         self.refresh_data()
 
@@ -89,7 +89,13 @@ class ExpertTable(DataTable):
             if len(remote) > 50:
                 remote = remote[:47] + "..."
 
-            self.add_row(checkbox, expert.name, status, version, versions, remote)
+            # Add lock icon for private experts
+            name_display = f"🔒 {expert.name}" if expert.is_private else expert.name
+
+            # Format visibility
+            visibility = "[yellow]Private[/yellow]" if expert.is_private else "[green]Public[/green]"
+
+            self.add_row(checkbox, name_display, status, visibility, version, versions, remote)
 
     def toggle_selection(self) -> None:
         """Toggle selection of the current row."""

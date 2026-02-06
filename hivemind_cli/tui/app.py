@@ -26,6 +26,7 @@ class HivemindApp(App):
         # Paths (same as CLI)
         self.hivemind_root = Path(__file__).resolve().parent.parent.parent
         self.experts_dir = self.hivemind_root / "experts"
+        self.private_experts_dir = self.hivemind_root / "private-experts"
         self.agents_dir = self.hivemind_root / "agents"
         self.config_json = self.hivemind_root / "config.json"
         self.repos_json = self.hivemind_root / "repos.json"
@@ -39,11 +40,14 @@ class HivemindApp(App):
         """Load expert data from config and repos.json."""
         config = self._load_config()
         repos = self._load_repos()
+        private_repos = self._load_private_repos()
+        private_experts = set(config.get("private", []))
         expert_names = self._expert_names()
 
         self.experts = []
 
         for name in expert_names:
+            is_private = name in private_experts
             # Determine status
             if name in config["enabled"]:
                 status = ExpertStatus.ENABLED
@@ -53,7 +57,11 @@ class HivemindApp(App):
                 status = ExpertStatus.UNLISTED
 
             # Get HEAD commit
-            expert_dir = self.experts_dir / name
+            # Get the correct expert directory based on privacy status
+            expert_dir = (
+                self.private_experts_dir / name if is_private
+                else self.experts_dir / name
+            )
             commit = self._get_head_commit(expert_dir)
 
             # Count versions
@@ -62,12 +70,13 @@ class HivemindApp(App):
             # Check if agent exists
             has_agent = (self.agents_dir / f"expert-{name}.md").is_file()
 
-            # Get remote info
+            # Get remote info (check both public and private repos)
             remote = ""
             ref_name = ""
-            if name in repos:
-                remote = repos[name].get("remote", "")
-                ref_name = repos[name].get("ref_name", "")
+            repos_dict = private_repos if is_private else repos
+            if name in repos_dict:
+                remote = repos_dict[name].get("remote", "")
+                ref_name = repos_dict[name].get("ref_name", "")
 
             self.experts.append(
                 ExpertRow(
@@ -78,6 +87,7 @@ class HivemindApp(App):
                     has_agent=has_agent,
                     remote=remote,
                     ref_name=ref_name,
+                    is_private=is_private,
                     operation_status=None,
                 )
             )
@@ -118,11 +128,21 @@ class HivemindApp(App):
             return {}
         return json.loads(self.repos_json.read_text())
 
+    def _load_private_repos(self) -> dict:
+        """Load private-repos.json."""
+        private_repos_json = self.hivemind_root / "private-repos.json"
+        if not private_repos_json.exists():
+            return {}
+        return json.loads(private_repos_json.read_text())
+
     def _expert_names(self) -> list[str]:
-        """List all expert names from experts/ directory."""
-        if not self.experts_dir.exists():
-            return []
-        return sorted(d.name for d in self.experts_dir.iterdir() if d.is_dir())
+        """List all expert names from experts/ and private-experts/ directories."""
+        experts = []
+        if self.experts_dir.exists():
+            experts.extend(d.name for d in self.experts_dir.iterdir() if d.is_dir())
+        if self.private_experts_dir.exists():
+            experts.extend(d.name for d in self.private_experts_dir.iterdir() if d.is_dir())
+        return sorted(experts)
 
     def _get_head_commit(self, expert_dir: Path) -> str | None:
         """Read the HEAD symlink to get the current commit hash."""

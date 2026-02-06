@@ -177,8 +177,6 @@ async def switch_version_async_tui(
                     screen._load_versions()
                     screen._populate_table()
                     # Update the expert header to show new HEAD
-                    from hivemind_cli.core import EXPERTS_DIR
-                    expert_dir = EXPERTS_DIR / expert_name
                     if hasattr(screen, 'query_one'):
                         try:
                             from textual.widgets import Static
