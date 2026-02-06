@@ -1,5 +1,9 @@
 # Generated agent files (recreated by hivemind sync)
-agents/
+agents/*
+!agents/.gitkeep
+
+# Repo symlink (points to ~/.cache/hivemind/repos)
+repos
 
 # Python
 __pycache__/

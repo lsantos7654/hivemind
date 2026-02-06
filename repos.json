@@ -1,12 +1,17 @@
 {
   "bazel": {
     "remote": "https://github.com/bazelbuild/bazel.git",
-    "commit": "",
+    "commit": "b11068b3da3dfce20150a5365cc22d2553d3b372",
     "ref_name": ""
   },
   "bazel-skylib": {
     "remote": "https://github.com/bazelbuild/bazel-skylib.git",
-    "commit": "",
+    "commit": "f7718b7b8e2003b9359248e9632c875cb48a6e48",
+    "ref_name": ""
+  },
+  "rich-cli": {
+    "remote": "https://github.com/Textualize/rich-cli.git",
+    "commit": "309b64b498eca1fa764991e9aa3f7a831a9b1b26",
     "ref_name": ""
   }
 }
