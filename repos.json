@@ -13,5 +13,10 @@
     "remote": "https://github.com/Textualize/rich-cli.git",
     "commit": "309b64b498eca1fa764991e9aa3f7a831a9b1b26",
     "ref_name": ""
+  },
+  "rich": {
+    "remote": "https://github.com/Textualize/rich.git",
+    "commit": "0752ff047295131d98f24284e1d949300cd6f4c1",
+    "ref_name": ""
   }
 }

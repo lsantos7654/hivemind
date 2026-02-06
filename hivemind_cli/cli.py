@@ -358,7 +358,8 @@ Analyze the repository thoroughly using Read, Grep, and Glob tools before writin
     proc = subprocess.Popen(
         cmd,
         stdin=subprocess.PIPE,
-        # stdout/stderr inherit from parent → streams to terminal
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
     )
 
     if background:
@@ -654,8 +655,8 @@ def add(
         console.print(f"  [green]✓[/green] Created staging experts/{name}/{commit[:12]}/")
 
         # Run AI analysis — writes into temp dirs
-        console.print(f"\n[bold]Running AI analysis of {name}...[/bold]")
-        success = _analyze_repo(name, commit, tmp_repo, tmp_expert)
+        with console.status(f"[bold]Running AI analysis of {name}...[/bold]", spinner="dots"):
+            success = _analyze_repo(name, commit, tmp_repo, tmp_expert)
         if not success:
             console.print(f"[red]Error: AI analysis failed for {name}[/red]")
             raise typer.Exit(1)
@@ -700,7 +701,17 @@ def add(
         _link_agent(name)
         _update_librarian()
 
-        console.print(f"\n[green bold]Expert '{name}' created successfully![/green bold]")
+        summary_lines = [
+            f"[green]✓[/green] Expert [bold]{name}[/bold] is ready",
+            f"[green]✓[/green] HEAD → [cyan]{commit[:12]}[/cyan]",
+            f"[green]✓[/green] Agent: [bold]expert-{name}[/bold]",
+        ]
+        console.print()
+        console.print(Panel(
+            "\n".join(summary_lines),
+            title="[green bold]Expert created successfully[/green bold]",
+            border_style="green",
+        ))
 
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
@@ -875,9 +886,11 @@ def update(
             console.print(f"  [cyan]▶[/cyan] Started analysis: {expert_name}")
 
         # Wait for all to complete
-        for (expert_name, proc), (_, new_commit, old_commit, tmpdir) in zip(processes, staged):
-            proc.wait()
+        with console.status("[bold]Waiting for AI analysis to finish...[/bold]", spinner="dots"):
+            for proc_name, proc in processes:
+                proc.wait()
 
+        for (expert_name, proc), (_, new_commit, old_commit, tmpdir) in zip(processes, staged):
             if proc.returncode == 0:
                 # Phase 3: Commit — move staged work to final locations
                 tmp_commit_dir = Path(tmpdir) / "expert" / new_commit
