@@ -5,6 +5,9 @@ agents/*
 # Repo symlink (points to ~/.cache/hivemind/repos)
 repos
 
+# User-specific config (enabled/disabled state)
+config.json
+
 # Python
 __pycache__/
 *.pyc

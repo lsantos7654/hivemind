@@ -1,8 +1,0 @@
-{
-  "enabled": [
-    "bazel-skylib",
-    "bazel",
-    "rich-cli"
-  ],
-  "disabled": []
-}
