@@ -18,5 +18,65 @@
     "remote": "https://github.com/Textualize/rich.git",
     "commit": "0752ff047295131d98f24284e1d949300cd6f4c1",
     "ref_name": ""
+  },
+  "bazel-lib": {
+    "remote": "https://github.com/bazel-contrib/bazel-lib",
+    "commit": "c5fc1ca482274b832bc6de7b90711d1e38dbbf53",
+    "ref_name": ""
+  },
+  "bazel-central-registry": {
+    "remote": "https://github.com/bazelbuild/bazel-central-registry.git",
+    "commit": "e6cefa3fda286425ac938661593f3f505d5cfe9a",
+    "ref_name": ""
+  },
+  "rules_distroless": {
+    "remote": "https://github.com/bazel-contrib/rules_distroless.git",
+    "commit": "f553dfe82987b5d592bb83f5a6da8f11a51e66fc",
+    "ref_name": ""
+  },
+  "distroless": {
+    "remote": "https://github.com/GoogleContainerTools/distroless.git",
+    "commit": "5d295a4971bcfdb49d243139ea32bbd6a1c12d6c",
+    "ref_name": ""
+  },
+  "rules_img": {
+    "remote": "https://github.com/bazel-contrib/rules_img.git",
+    "commit": "40ac347f5a72b01a82d5c5e72a8fa978fae89699",
+    "ref_name": ""
+  },
+  "rules_multirun": {
+    "remote": "https://github.com/keith/rules_multirun.git",
+    "commit": "e2245c6a4e1fb26cea7db6fac16d856693cf1ec1",
+    "ref_name": ""
+  },
+  "textual": {
+    "remote": "https://github.com/Textualize/textual.git",
+    "commit": "58168b05660300924994430a36fe4810d14378db",
+    "ref_name": ""
+  },
+  "rules_py": {
+    "remote": "https://github.com/aspect-build/rules_py.git",
+    "commit": "e39e990c44bc984616f9c6631b7d44589b9142d7",
+    "ref_name": ""
+  },
+  "rules_python": {
+    "remote": "https://github.com/bazel-contrib/rules_python.git",
+    "commit": "3aa6386c38c2ab4bc9c447ef6893ef216faa0131",
+    "ref_name": ""
+  },
+  "rules_testing": {
+    "remote": "https://github.com/bazelbuild/rules_testing.git",
+    "commit": "4ad376dc71ef6c2df3dd59770305239157f058a7",
+    "ref_name": ""
+  },
+  "rules_uv": {
+    "remote": "https://github.com/bazel-contrib/rules_uv.git",
+    "commit": "1481b64a9873524af073df87a104ee646ab68877",
+    "ref_name": ""
+  },
+  "metaflow": {
+    "remote": "https://github.com/Netflix/metaflow.git",
+    "commit": "c834ed108e5b0e1feacb17ba2229cb8a0eb0b949",
+    "ref_name": ""
   }
 }

@@ -20,6 +20,43 @@ from rich.table import Table
 from rich.theme import Theme
 from rich.traceback import install as install_traceback
 
+from hivemind_cli.templates import (
+    create_expert_prompt,
+)
+from hivemind_cli.core import (
+    _load_json,
+    _save_json,
+    _load_config,
+    _save_config,
+    _load_repos,
+    _save_repos,
+    _expert_names,
+    _get_head_commit,
+    _count_versions,
+    _ensure_repos_link,
+    _link_agent,
+    _unlink_agent,
+    _clone_repo,
+    _analyze_repo,
+    _update_librarian,
+    update_expert,
+    enable_expert as core_enable_expert,
+    disable_expert as core_disable_expert,
+    UpdatePhase,
+    ProgressInfo,
+    HIVEMIND_ROOT,
+    CLAUDE_DIR,
+    CACHE_DIR,
+    REPOS_DIR,
+    REPOS_LINK,
+    REPOS_JSON,
+    CONFIG_JSON,
+    AGENTS_DIR,
+    EXPERTS_DIR,
+    COMMANDS_DIR,
+    CLAUDE_MD,
+)
+
 THEME = Theme({
     "success": "green",
     "error": "red",
@@ -37,353 +74,12 @@ app = typer.Typer(
 console = Console(theme=THEME)
 install_traceback(show_locals=True, console=console)
 
-# Paths
-HIVEMIND_ROOT = Path(__file__).resolve().parent.parent
-CLAUDE_DIR = Path.home() / ".claude"
-CACHE_DIR = Path.home() / ".cache" / "hivemind"
-REPOS_DIR = CACHE_DIR / "repos"
-REPOS_LINK = HIVEMIND_ROOT / "repos"
-REPOS_JSON = HIVEMIND_ROOT / "repos.json"
-CONFIG_JSON = HIVEMIND_ROOT / "config.json"
-AGENTS_DIR = HIVEMIND_ROOT / "agents"
-EXPERTS_DIR = HIVEMIND_ROOT / "experts"
-COMMANDS_DIR = HIVEMIND_ROOT / "commands"
-CLAUDE_MD = HIVEMIND_ROOT / "CLAUDE.md"
-
-# --- Helpers ---
-
-
-def _load_json(path: Path) -> dict:
-    if not path.exists():
-        return {}
-    return json.loads(path.read_text())
-
-
-def _save_json(path: Path, data: dict) -> None:
-    path.write_text(json.dumps(data, indent=2) + "\n")
-
-
-def _load_config() -> dict:
-    default = {"enabled": [], "disabled": []}
-    if not CONFIG_JSON.exists():
-        return default
-    data = _load_json(CONFIG_JSON)
-    data.setdefault("enabled", [])
-    data.setdefault("disabled", [])
-    return data
-
-
-def _save_config(config: dict) -> None:
-    _save_json(CONFIG_JSON, config)
-
-
-def _load_repos() -> dict:
-    return _load_json(REPOS_JSON)
-
-
-def _save_repos(repos: dict) -> None:
-    _save_json(REPOS_JSON, repos)
-
-
-def _expert_names() -> list[str]:
-    """List all expert names from experts/ directory."""
-    if not EXPERTS_DIR.exists():
-        return []
-    return sorted(d.name for d in EXPERTS_DIR.iterdir() if d.is_dir())
+# Paths imported from core module
 
 
 def _complete_expert(incomplete: str) -> list[str]:
     """Shell completion for expert names."""
     return [n for n in _expert_names() if n.startswith(incomplete)]
-
-
-def _get_head_commit(expert_dir: Path) -> str | None:
-    """Read the HEAD symlink to get the current commit hash."""
-    head = expert_dir / "HEAD"
-    if not head.is_symlink():
-        return None
-    return os.readlink(head)
-
-
-def _count_versions(expert_dir: Path) -> int:
-    """Count commit directories (excludes HEAD symlink)."""
-    if not expert_dir.exists():
-        return 0
-    return sum(
-        1
-        for d in expert_dir.iterdir()
-        if d.is_dir() and not d.is_symlink() and d.name != "__pycache__"
-    )
-
-
-def _ensure_repos_link() -> None:
-    """Ensure HIVEMIND_ROOT/repos symlink points to the cache repos dir."""
-    REPOS_DIR.mkdir(parents=True, exist_ok=True)
-    if REPOS_LINK.is_symlink():
-        if REPOS_LINK.resolve() == REPOS_DIR.resolve():
-            return
-        REPOS_LINK.unlink()
-    elif REPOS_LINK.is_dir():
-        # Move existing real directory contents to cache
-        for item in REPOS_LINK.iterdir():
-            dest = REPOS_DIR / item.name
-            if not dest.exists():
-                item.rename(dest)
-        REPOS_LINK.rmdir()
-    elif REPOS_LINK.exists():
-        REPOS_LINK.unlink()
-    REPOS_LINK.symlink_to(REPOS_DIR)
-
-
-def _link_agent(name: str) -> bool:
-    """Create agents/expert-<name>.md → ../experts/<name>/HEAD/agent.md. Returns False if HEAD/agent.md doesn't exist."""
-    AGENTS_DIR.mkdir(parents=True, exist_ok=True)
-    expert_dir = EXPERTS_DIR / name
-    head_agent = expert_dir / "HEAD" / "agent.md"
-
-    if not head_agent.exists():
-        head_link = expert_dir / "HEAD"
-        if not head_link.exists():
-            console.print(f"  [warning]![/warning] {name}: no HEAD, skipping agent link")
-        else:
-            console.print(f"  [warning]![/warning] {name}: no agent.md in HEAD, skipping agent link")
-        return False
-
-    agent_link = AGENTS_DIR / f"expert-{name}.md"
-    link_target = Path("..") / "experts" / name / "HEAD" / "agent.md"
-
-    if agent_link.is_symlink():
-        if os.readlink(agent_link) == str(link_target):
-            return True  # Already correct
-        agent_link.unlink()
-    elif agent_link.exists():
-        agent_link.unlink()
-
-    agent_link.symlink_to(link_target)
-    console.print(f"  [success]✓[/success] {name}: agent symlink created")
-    return True
-
-
-def _unlink_agent(name: str) -> None:
-    """Remove agents/expert-<name>.md if it exists."""
-    agent_link = AGENTS_DIR / f"expert-{name}.md"
-    if agent_link.is_symlink() or agent_link.exists():
-        agent_link.unlink()
-        console.print(f"  [success]✓[/success] {name}: agent symlink removed")
-
-
-def _clone_repo(name: str, repos: dict) -> bool:
-    """Clone a repo to cache repos dir if not already present. Returns True if cloned."""
-    if name not in repos:
-        console.print(f"  [warning]![/warning] {name}: not in repos.json, skipping clone")
-        return False
-
-    _ensure_repos_link()
-
-    repo_dir = REPOS_DIR / name
-    if repo_dir.is_dir():
-        return True  # Already cloned
-    repo = repos[name]
-    remote = repo["remote"]
-    commit = repo.get("commit", "")
-    ref_name = repo.get("ref_name", "")
-
-    if commit:
-        console.print(f"  Cloning {name} at {commit[:12]}...")
-        subprocess.run(
-            ["git", "clone", "--progress", remote, str(repo_dir)],
-            check=True,
-        )
-        subprocess.run(
-            ["git", "checkout", "--quiet", commit],
-            cwd=str(repo_dir),
-            check=True,
-        )
-        console.print(f"  [success]✓[/success] {name}: cloned at commit {commit[:12]}")
-    elif ref_name:
-        console.print(f"  Cloning {name} at ref {ref_name}...")
-        subprocess.run(
-            [
-                "git", "clone", "--progress", "--branch", ref_name,
-                "--depth", "1", remote, str(repo_dir),
-            ],
-            check=True,
-        )
-        console.print(f"  [success]✓[/success] {name}: cloned at ref {ref_name}")
-    else:
-        console.print(f"  Cloning {name} (default branch)...")
-        subprocess.run(
-            ["git", "clone", "--progress", "--depth", "1", remote, str(repo_dir)],
-            check=True,
-        )
-        console.print(f"  [success]✓[/success] {name}: cloned (default branch)")
-
-    return True
-
-
-
-def _analyze_repo(
-    name: str,
-    commit: str,
-    repo_dir: Path,
-    expert_dir: Path,
-    *,
-    is_update: bool = False,
-    background: bool = False,
-) -> subprocess.Popen | bool:
-    """Run AI analysis on a repo via `claude -p`.
-
-    For create (is_update=False): generates 5 files (4 knowledge + agent.md).
-    For update (is_update=True): regenerates 4 knowledge files, preserves agent.md.
-
-    If background=True, returns the Popen object immediately.
-    Otherwise, waits for completion and returns True on success.
-    """
-    commit_dir = expert_dir / commit
-
-    if is_update:
-        prompt = f"""\
-You are analyzing the repository at {repo_dir} to refresh knowledge documentation for the "{name}" expert.
-
-The commit is {commit}. Write updated documentation files into {commit_dir}/.
-
-Regenerate these 4 files (overwrite completely):
-
-1. **{commit_dir}/summary.md** (500-800 words)
-   - Repository purpose and goals
-   - Key features and capabilities
-   - Primary use cases and target audience
-   - High-level architecture overview
-   - Related projects and dependencies
-
-2. **{commit_dir}/code_structure.md** (1000-1500 words)
-   - Complete annotated directory tree
-   - Module and package organization
-   - Main source directories and their purposes
-   - Key files and their roles
-   - Code organization patterns
-
-3. **{commit_dir}/build_system.md** (800-1200 words)
-   - Build system type and configuration files
-   - External dependencies and management
-   - Build targets and commands
-   - How to build, test, and deploy
-
-4. **{commit_dir}/apis_and_interfaces.md** (1000-1500 words)
-   - Public APIs and entry points
-   - Key classes, functions, and macros
-   - Usage examples with code snippets
-   - Integration patterns and workflows
-   - Configuration options and extension points
-
-**IMPORTANT:** Do NOT modify {commit_dir}/agent.md — it contains custom agent configuration that must be preserved.
-
-Analyze the repository thoroughly using Read, Grep, and Glob tools before writing. Explore the directory structure, key source files, build files, and documentation. Write comprehensive, accurate documentation based on actual code inspection."""
-    else:
-        prompt = f"""\
-You are performing a deep analysis of the repository at {repo_dir} to create expert knowledge documentation for the "{name}" expert.
-
-The commit is {commit}. Write all files into {commit_dir}/.
-
-Generate these 5 files:
-
-1. **{commit_dir}/summary.md** (500-800 words)
-   - Repository purpose and goals
-   - Key features and capabilities
-   - Primary use cases and target audience
-   - High-level architecture overview
-   - Related projects and dependencies
-
-2. **{commit_dir}/code_structure.md** (1000-1500 words)
-   - Complete annotated directory tree
-   - Module and package organization
-   - Main source directories and their purposes
-   - Key files and their roles
-   - Code organization patterns
-
-3. **{commit_dir}/build_system.md** (800-1200 words)
-   - Build system type and configuration files
-   - External dependencies and management
-   - Build targets and commands
-   - How to build, test, and deploy
-
-4. **{commit_dir}/apis_and_interfaces.md** (1000-1500 words)
-   - Public APIs and entry points
-   - Key classes, functions, and macros
-   - Usage examples with code snippets
-   - Integration patterns and workflows
-   - Configuration options and extension points
-
-5. **{commit_dir}/agent.md** — Expert subagent definition. Use this exact template, filling in the bracketed sections from your analysis:
-
-```markdown
----
-name: expert-{name}
-description: Expert on {name} repository. Use proactively when questions involve [topics from analysis]. Automatically invoked for questions about [scenarios from analysis].
-tools: Read, Grep, Glob, Bash, mcp__context7__resolve-library-id, mcp__context7__get-library-docs
-model: sonnet
----
-
-# Expert: [Full Repository Name]
-
-## Knowledge Base
-
-- Summary: ~/.claude/experts/{name}/HEAD/summary.md
-- Code Structure: ~/.claude/experts/{name}/HEAD/code_structure.md
-- Build System: ~/.claude/experts/{name}/HEAD/build_system.md
-- APIs: ~/.claude/experts/{name}/HEAD/apis_and_interfaces.md
-
-## Source Access
-
-Repository source at `~/.cache/hivemind/repos/{name}`.
-If not present, run: `hivemind enable {name}`
-
-## Instructions
-
-1. Read relevant knowledge docs first
-2. Search source at ~/.cache/hivemind/repos/{name} for details
-3. Provide file paths and code references
-4. Include working examples from actual repo patterns
-
-## Expertise
-
-[Generate detailed list of expertise areas from your analysis]
-
-## Constraints
-
-- Only answer questions related to this repository
-- Defer to source code when knowledge docs are insufficient
-- Note if information might be outdated relative to repo version
-```
-
-Replace the bracketed sections with specific content from your analysis. The description field in the YAML frontmatter should list concrete topics and scenarios.
-
-Analyze the repository thoroughly using Read, Grep, and Glob tools before writing. Explore the directory structure, key source files, build files, and documentation. Write comprehensive, accurate documentation based on actual code inspection."""
-
-    cmd = [
-        "claude", "-p",
-        "--verbose",
-        "--allowedTools", "Read,Grep,Glob,Bash,Write",
-        "--model", "sonnet",
-        "--add-dir", str(repo_dir),
-        "--add-dir", str(expert_dir),
-        "--dangerously-skip-permissions",
-    ]
-
-    proc = subprocess.Popen(
-        cmd,
-        stdin=subprocess.PIPE,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
-
-    if background:
-        proc.stdin.write(prompt.encode())
-        proc.stdin.close()
-        return proc
-
-    proc.communicate(input=prompt.encode())
-    return proc.returncode == 0
 
 
 def _setup_symlink(target: Path, link: Path, label: str) -> None:
@@ -410,74 +106,65 @@ def _setup_symlink(target: Path, link: Path, label: str) -> None:
     console.print(f"  [success]✓[/success] {label} → {target}")
 
 
-def _update_librarian() -> None:
-    """Regenerate agents/librarian.md from all experts with valid HEAD/agent.md."""
-    entries: list[str] = []
+# Wrapper functions to add console output to core module functions
+def _link_agent_cli(name: str) -> bool:
+    """Wrapper for _link_agent that adds console output."""
+    result = _link_agent(name)
+    if result:
+        console.print(f"  [success]✓[/success] {name}: agent symlink created")
+    else:
+        expert_dir = EXPERTS_DIR / name
+        head_link = expert_dir / "HEAD"
+        if not head_link.exists():
+            console.print(f"  [warning]![/warning] {name}: no HEAD, skipping agent link")
+        else:
+            console.print(f"  [warning]![/warning] {name}: no agent.md in HEAD, skipping agent link")
+    return result
 
-    for expert_dir in sorted(EXPERTS_DIR.iterdir()):
-        if not expert_dir.is_dir():
-            continue
-        name = expert_dir.name
-        agent_md = expert_dir / "HEAD" / "agent.md"
-        if not agent_md.exists():
-            continue
 
-        # Parse description from frontmatter
-        description = ""
-        try:
-            text = agent_md.read_text()
-            parts = text.split("---", 2)
-            if len(parts) >= 3:
-                for line in parts[1].splitlines():
-                    if line.startswith("description:"):
-                        description = line[len("description:"):].strip()
-                        break
-        except OSError:
-            pass
+def _unlink_agent_cli(name: str) -> None:
+    """Wrapper for _unlink_agent that adds console output."""
+    _unlink_agent(name)
+    console.print(f"  [success]✓[/success] {name}: agent symlink removed")
 
-        # Read first ~5 lines of summary.md
-        summary_lines = ""
-        summary_md = expert_dir / "HEAD" / "summary.md"
-        try:
-            lines = summary_md.read_text().splitlines()
-            summary_lines = "\n".join(lines[:5])
-        except OSError:
-            pass
 
-        entry = f"### expert-{name}\n{description}\n\n{summary_lines}"
-        entries.append(entry)
+def _clone_repo_cli(name: str, repos: dict) -> bool:
+    """Wrapper for _clone_repo that adds console output."""
+    if name not in repos:
+        console.print(f"  [warning]![/warning] {name}: not in repos.json, skipping clone")
+        return False
 
-    if not entries:
-        return
+    repo_dir = REPOS_DIR / name
+    if repo_dir.is_dir():
+        return True  # Already cloned
 
-    catalog = "\n\n---\n\n".join(entries)
+    repo = repos[name]
+    commit = repo.get("commit", "")
+    ref_name = repo.get("ref_name", "")
 
-    content = f"""\
----
-name: librarian
-description: "Hivemind librarian — knows every expert agent and their capabilities. Ask the librarian to find the right expert for a question before delegating to specialists."
-tools: Read, Grep, Glob
-model: sonnet
----
+    if commit:
+        console.print(f"  Cloning {name} at {commit[:12]}...")
+    elif ref_name:
+        console.print(f"  Cloning {name} at ref {ref_name}...")
+    else:
+        console.print(f"  Cloning {name} (default branch)...")
 
-# Hivemind Librarian
+    result = _clone_repo(name, repos, silent=False)
 
-You are the hivemind librarian. You know every registered expert and what they specialize in. When asked a question, identify which expert(s) are best suited and recommend them by name.
+    if result:
+        if commit:
+            console.print(f"  [success]✓[/success] {name}: cloned at commit {commit[:12]}")
+        elif ref_name:
+            console.print(f"  [success]✓[/success] {name}: cloned at ref {ref_name}")
+        else:
+            console.print(f"  [success]✓[/success] {name}: cloned (default branch)")
 
-## Expert Catalog
+    return result
 
-{catalog}
 
-## Instructions
-
-1. Identify the most relevant expert(s) from the catalog
-2. Respond with expert name(s) and why they're the right fit
-3. If multiple experts are relevant, rank by relevance
-4. If no expert matches, say so clearly
-"""
-
-    AGENTS_DIR.mkdir(parents=True, exist_ok=True)
-    (AGENTS_DIR / "librarian.md").write_text(content)
+def _update_librarian_cli() -> None:
+    """Wrapper for _update_librarian that adds console output."""
+    _update_librarian()
     console.print("  [success]✓[/success] Librarian updated")
 
 
@@ -503,10 +190,10 @@ def init() -> None:
 
     console.print()
     for name in config["enabled"]:
-        _clone_repo(name, repos)
-        _link_agent(name)
+        _clone_repo_cli(name, repos)
+        _link_agent_cli(name)
 
-    _update_librarian()
+    _update_librarian_cli()
 
     # Remove stale agent symlinks
     for f in AGENTS_DIR.glob("expert-*.md"):
@@ -556,9 +243,10 @@ def list_experts() -> None:
         versions = str(version_count) if version_count > 0 else "[dim]0[/dim]"
 
         # Agent file generated
+        agent_file = AGENTS_DIR / f"expert-{name}.md"
         agent = (
             "[success]yes[/success]"
-            if (AGENTS_DIR / f"expert-{name}.md").is_file()
+            if agent_file.is_file()
             else "[dim]no[/dim]"
         )
 
@@ -713,8 +401,8 @@ def add(
         console.print("  [success]✓[/success] Enabled in config.json")
 
         # Create agent symlink
-        _link_agent(name)
-        _update_librarian()
+        _link_agent_cli(name)
+        _update_librarian_cli()
 
         summary_lines = [
             f"[success]✓[/success] Expert [heading]{name}[/heading] is ready",
@@ -735,24 +423,17 @@ def add(
 @app.command()
 def enable(name: str = typer.Argument(help="Expert name to enable", autocompletion=_complete_expert)) -> None:
     """Enable an expert (clones repo if needed, creates agent symlink)."""
-    if not (EXPERTS_DIR / name).is_dir():
-        console.print(f"[error]Error: expert '{name}' not found in experts/[/error]")
+    result = core_enable_expert(name)
+
+    if not result["success"]:
+        console.print(f"[error]Error: {result['error']}[/error]")
         raise typer.Exit(1)
 
-    config = _load_config()
-    already_enabled = name in config["enabled"]
-
-    if not already_enabled:
-        config["enabled"].append(name)
-        if name in config["disabled"]:
-            config["disabled"].remove(name)
-        _save_config(config)
-
     repos = _load_repos()
-    _clone_repo(name, repos)
-    _link_agent(name)
+    _clone_repo_cli(name, repos)
+    _link_agent_cli(name)
 
-    if already_enabled:
+    if result["already_enabled"]:
         console.print(f"[success]✓[/success] {name}: already enabled, ensured repo and agent link")
     else:
         console.print(f"[success]✓[/success] Enabled: {name}")
@@ -761,23 +442,15 @@ def enable(name: str = typer.Argument(help="Expert name to enable", autocompleti
 @app.command()
 def disable(name: str = typer.Argument(help="Expert name to disable", autocompletion=_complete_expert)) -> None:
     """Disable an expert (removes agent symlink)."""
-    if not (EXPERTS_DIR / name).is_dir():
-        console.print(f"[error]Error: expert '{name}' not found in experts/[/error]")
+    result = core_disable_expert(name)
+
+    if not result["success"]:
+        console.print(f"[error]Error: {result['error']}[/error]")
         raise typer.Exit(1)
 
-    config = _load_config()
-    already_disabled = name not in config["enabled"] and name in config["disabled"]
+    _unlink_agent_cli(name)
 
-    if not already_disabled:
-        if name in config["enabled"]:
-            config["enabled"].remove(name)
-        if name not in config["disabled"]:
-            config["disabled"].append(name)
-        _save_config(config)
-
-    _unlink_agent(name)
-
-    if already_disabled:
+    if result["already_disabled"]:
         console.print(f"[warning]✓[/warning] {name}: already disabled, ensured agent link removed")
     else:
         console.print(f"[warning]✓[/warning] Disabled: {name}")
@@ -804,171 +477,36 @@ def update(
         console.print("No experts to update.")
         return
 
-    # Phase 1: Fetch and stage into temp dirs — no visible state changes
-    # Each entry: (expert_name, new_commit, old_commit, tmpdir)
-    staged: list[tuple[str, str, str | None, str]] = []
+    # Track which experts need updating (not already up to date)
+    experts_to_update: list[str] = []
 
     for expert_name in names:
         console.print(f"\n[heading]Updating {expert_name}...[/heading]")
 
-        if expert_name not in repos:
-            console.print(f"  [warning]![/warning] {expert_name}: not in repos.json, skipping")
-            continue
+        # Define progress callback for CLI
+        def on_progress(info: ProgressInfo):
+            if info.phase == UpdatePhase.ANALYZING:
+                console.print(f"  [info]→[/info] {info.message}")
+            elif info.phase not in [UpdatePhase.CLONING, UpdatePhase.FETCHING]:
+                console.print(f"  [success]✓[/success] {info.message}")
 
-        repo_dir = REPOS_DIR / expert_name
+        result = update_expert(expert_name, on_progress=on_progress)
 
-        # Ensure repo is cloned
-        if not _clone_repo(expert_name, repos):
-            continue
+        if not result["success"]:
+            console.print(f"  [error]✗[/error] {result['error']}")
+        elif result.get("already_up_to_date"):
+            console.print(f"  [success]✓[/success] Already up to date ({result['new_commit'][:12]})")
+        else:
+            old_display = result["old_commit"][:12] if result["old_commit"] else "none"
+            console.print(f"  [success]✓[/success] Updated from {old_display} to {result['new_commit'][:12]}")
+            experts_to_update.append(expert_name)
 
-        # Fetch latest from remote
-        with console.status(f"Fetching {expert_name}...", spinner="dots"):
-            subprocess.run(
-                ["git", "fetch", "origin"],
-                cwd=str(repo_dir),
-                capture_output=True,
-                check=True,
-            )
-
-        # Get latest commit hash
-        # Try origin/HEAD first, fall back to origin/main, then origin/master
-        new_commit = None
-        for ref in ["origin/HEAD", "origin/main", "origin/master"]:
-            result = subprocess.run(
-                ["git", "rev-parse", ref],
-                cwd=str(repo_dir),
-                capture_output=True,
-                text=True,
-            )
-            if result.returncode == 0:
-                new_commit = result.stdout.strip()
-                break
-
-        if not new_commit:
-            console.print(f"  [error]✗[/error] {expert_name}: could not resolve latest commit")
-            continue
-
-        # Check if already up to date
-        expert_dir = EXPERTS_DIR / expert_name
-        current_head = _get_head_commit(expert_dir)
-        if current_head == new_commit:
-            console.print(f"  [success]✓[/success] {expert_name}: already up to date ({new_commit[:12]})")
-            continue
-
-        # Stage work in temp dir
-        tmpdir = tempfile.mkdtemp(prefix=f"hivemind-update-{expert_name}-")
-        tmp_expert = Path(tmpdir) / "expert"
-        tmp_expert.mkdir()
-        tmp_commit_dir = tmp_expert / new_commit
-        tmp_commit_dir.mkdir()
-
-        # Copy files from previous HEAD version as baseline
-        if current_head:
-            old_dir = expert_dir / current_head
-            if old_dir.is_dir():
-                for f in old_dir.iterdir():
-                    if f.is_file():
-                        shutil.copy2(f, tmp_commit_dir / f.name)
-                console.print(f"  [success]✓[/success] Copied files from {current_head[:12]} as baseline")
-
-        # Checkout new commit in repo (needed for analysis)
-        subprocess.run(
-            ["git", "checkout", "--quiet", new_commit],
-            cwd=str(repo_dir),
-            check=True,
-        )
-        console.print(f"  [success]✓[/success] Staged for analysis: {new_commit[:12]}")
-
-        staged.append((expert_name, new_commit, current_head, tmpdir))
-
-    if not staged:
-        console.print("\n[success]All experts are up to date.[/success]")
-        return
-
-    # Phase 2: Parallel AI analysis — all writes go to temp dirs
-    console.print(f"\n[heading]Running AI analysis for {len(staged)} updated expert(s)...[/heading]")
-
-    try:
-        processes: list[tuple[str, subprocess.Popen]] = []
-
-        # Build a live-updating status table
-        def _make_progress_table(
-            statuses: dict[str, str],
-        ) -> Table:
-            t = Table(box=box.ROUNDED, title="AI Analysis")
-            t.add_column("Expert", style="bold")
-            t.add_column("Status")
-            for ename, st in statuses.items():
-                t.add_row(ename, st)
-            return t
-
-        statuses: dict[str, str] = {}
-
-        for expert_name, new_commit, _old_commit, tmpdir in staged:
-            tmp_expert = Path(tmpdir) / "expert"
-            repo_dir = REPOS_DIR / expert_name
-            proc = _analyze_repo(
-                expert_name, new_commit, repo_dir, tmp_expert,
-                is_update=True, background=True,
-            )
-            processes.append((expert_name, proc))
-            statuses[expert_name] = "[info]analyzing...[/info]"
-
-        # Live display while waiting for processes
-        with Live(_make_progress_table(statuses), console=console, refresh_per_second=2) as live:
-            while any(proc.poll() is None for _, proc in processes):
-                for ename, proc in processes:
-                    if proc.poll() is not None and statuses[ename] == "[info]analyzing...[/info]":
-                        if proc.returncode == 0:
-                            statuses[ename] = "[success]✓ done[/success]"
-                        else:
-                            statuses[ename] = f"[error]✗ failed (exit {proc.returncode})[/error]"
-                live.update(_make_progress_table(statuses))
-                time.sleep(0.5)
-            # Final update for any that finished in the last iteration
-            for ename, proc in processes:
-                if statuses[ename] == "[info]analyzing...[/info]":
-                    if proc.returncode == 0:
-                        statuses[ename] = "[success]✓ done[/success]"
-                    else:
-                        statuses[ename] = f"[error]✗ failed (exit {proc.returncode})[/error]"
-            live.update(_make_progress_table(statuses))
-
-        for (expert_name, proc), (_, new_commit, old_commit, tmpdir) in zip(processes, staged):
-            if proc.returncode == 0:
-                # Phase 3: Commit — move staged work to final locations
-                tmp_commit_dir = Path(tmpdir) / "expert" / new_commit
-                expert_dir = EXPERTS_DIR / expert_name
-
-                shutil.move(str(tmp_commit_dir), str(expert_dir / new_commit))
-
-                head_link = expert_dir / "HEAD"
-                if head_link.is_symlink():
-                    head_link.unlink()
-                head_link.symlink_to(new_commit)
-
-                repos[expert_name]["commit"] = new_commit
-
-                console.print(f"  [success]✓[/success] {expert_name}: HEAD → {new_commit[:12]}")
-            else:
-                # Revert repo checkout to old commit
-                if old_commit:
-                    subprocess.run(
-                        ["git", "checkout", "--quiet", old_commit],
-                        cwd=str(REPOS_DIR / expert_name),
-                        capture_output=True,
-                    )
-                console.print(f"  [error]✗[/error] {expert_name}: analysis failed, reverted")
-
-        # Batch-save repos.json once after all updates
-        _save_repos(repos)
-        _update_librarian()
-
+    # Regenerate librarian if any experts were updated
+    if experts_to_update:
+        _update_librarian_cli()
         console.print(f"\n[bold success]Update complete.[/bold success]")
-
-    finally:
-        for _, _, _, tmpdir in staged:
-            shutil.rmtree(tmpdir, ignore_errors=True)
+    else:
+        console.print("\n[success]All experts are up to date.[/success]")
 
 
 @app.command()
@@ -991,6 +529,15 @@ def query(
         )
     if result.stdout:
         console.print(result.stdout.rstrip())
+
+
+@app.command()
+def tui() -> None:
+    """Launch interactive TUI for managing experts."""
+    from hivemind_cli.tui import HivemindApp
+
+    app_instance = HivemindApp()
+    app_instance.run()
 
 
 @app.command()
