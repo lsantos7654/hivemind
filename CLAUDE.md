@@ -25,3 +25,14 @@ hivemind init              # Set up ~/.claude symlinks and enable agents
 - Fetched repos: `~/.cache/hivemind/repos/<name>`
 
 When editing experts, edit `experts/<name>/HEAD/agent.md` — changes are live immediately (agents are symlinks).
+
+## Code Quality Principles
+
+**Avoid Brittle Meta-Checks and Transient Features:**
+- Never add validation that checks for specific keywords, phrasing, or formatting
+- No CLI commands for one-time migrations or template updates
+- No "health check" features that validate against current implementation details
+- Comments and features should never mention meta design decisions that become outdated
+- Aim for lean code: minimize noise and prevent creation of dead code
+- If something is only useful for a single migration, use a standalone script in `scripts/` instead of adding to core CLI
+- Core codebase should only contain features that stay relevant as the project matures

@@ -1,0 +1,115 @@
+/* Hivemind TUI Styles */
+
+Screen {
+    background: $surface;
+}
+
+/* Header */
+.header {
+    background: $primary;
+    color: $text;
+    padding: 1;
+    text-align: center;
+}
+
+/* Search bar */
+.search-container {
+    height: 3;
+    padding: 0 1;
+    background: $panel;
+}
+
+.search-label {
+    padding: 1 0;
+    width: auto;
+}
+
+Input {
+    width: 1fr;
+    border: tall $primary;
+}
+
+Input:focus {
+    border: tall $accent;
+}
+
+/* Expert table */
+DataTable {
+    height: 1fr;
+}
+
+DataTable > .datatable--cursor {
+    background: $accent;
+}
+
+/* Status indicators */
+.status-enabled {
+    color: $success;
+}
+
+.status-disabled {
+    color: $warning;
+}
+
+.status-unlisted {
+    color: $error;
+}
+
+/* Progress indicators */
+.progress-queued {
+    color: $warning;
+}
+
+.progress-in-progress {
+    color: $accent;
+}
+
+.progress-success {
+    color: $success;
+}
+
+.progress-failed {
+    color: $error;
+}
+
+/* Footer */
+.footer {
+    background: $panel;
+    color: $text;
+    height: 3;
+    padding: 0 1;
+}
+
+.keybindings {
+    text-align: left;
+    padding: 0 1;
+}
+
+/* Modal dialogs */
+ModalScreen {
+    align: center middle;
+}
+
+#version-modal {
+    width: 80;
+    height: 30;
+    border: thick $primary;
+    background: $surface;
+}
+
+#detail-modal {
+    width: 100;
+    height: 40;
+    border: thick $primary;
+    background: $surface;
+}
+
+/* Progress screen */
+#progress-container {
+    width: 100%;
+    height: 100%;
+}
+
+ProgressBar {
+    width: 100%;
+}
