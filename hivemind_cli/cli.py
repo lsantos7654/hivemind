@@ -40,6 +40,8 @@ from hivemind_cli.core import (
     _ensure_repos_link,
     _link_agent,
     _unlink_agent,
+    _link_expert,
+    _unlink_expert,
     _clone_repo,
     _analyze_repo,
     _update_librarian,
@@ -134,6 +136,16 @@ def _unlink_agent_cli(name: str) -> None:
     console.print(f"  [success]✓[/success] {name}: agent symlink removed")
 
 
+def _link_expert_cli(name: str) -> bool:
+    """Wrapper for _link_expert that adds console output."""
+    result = _link_expert(name)
+    if result:
+        console.print(f"  [success]✓[/success] {name}: expert symlink created")
+    else:
+        console.print(f"  [warning]![/warning] {name}: expert directory not found")
+    return result
+
+
 def _clone_repo_cli(name: str, repos: dict) -> bool:
     """Wrapper for _clone_repo that adds console output."""
     if name not in repos:
@@ -186,10 +198,13 @@ def init() -> None:
 
     _setup_symlink(AGENTS_DIR, CLAUDE_DIR / "agents", "agents/")
     _setup_symlink(COMMANDS_DIR, CLAUDE_DIR / "commands", "commands/")
-    _setup_symlink(EXPERTS_DIR, CLAUDE_DIR / "experts", "experts/")
     _setup_symlink(CLAUDE_MD, CLAUDE_DIR / "CLAUDE.md", "CLAUDE.md")
     _ensure_repos_link()
     console.print(f"  [success]✓[/success] repos/ → {REPOS_DIR}")
+
+    # Create experts directory (no migration logic - use scripts/migrate_experts_symlinks.py)
+    experts_dir = CLAUDE_DIR / "experts"
+    experts_dir.mkdir(parents=True, exist_ok=True)
 
     config = _load_config()
     repos = _load_repos()
@@ -198,6 +213,7 @@ def init() -> None:
     for name in config["enabled"]:
         _clone_repo_cli(name, repos)
         _link_agent_cli(name)
+        _link_expert_cli(name)
 
     _update_librarian_cli()
 
@@ -207,6 +223,18 @@ def init() -> None:
         if expert_name not in config["enabled"]:
             f.unlink()
             console.print(f"  [error]✗[/error] Removed stale: {f.name}")
+
+    # Clean up stale expert symlinks
+    if experts_dir.is_dir():
+        for link in experts_dir.iterdir():
+            expert_name = link.name
+            if expert_name not in config["enabled"]:
+                if link.is_symlink():
+                    link.unlink()
+                elif link.is_dir():
+                    import shutil
+                    shutil.rmtree(link)
+                console.print(f"  [error]✗[/error] Removed stale expert: {expert_name}")
 
     console.print("\n[bold success]Hivemind initialized![/bold success]")
 
@@ -446,6 +474,7 @@ def add(
 
         # Create agent symlink
         _link_agent_cli(name)
+        _link_expert(name)
         _update_librarian_cli()
 
         summary_lines = [
@@ -592,7 +621,6 @@ def status() -> None:
     for display_name, target, link in [
         ("~/.claude/agents/", AGENTS_DIR, CLAUDE_DIR / "agents"),
         ("~/.claude/commands/", COMMANDS_DIR, CLAUDE_DIR / "commands"),
-        ("~/.claude/experts/", EXPERTS_DIR, CLAUDE_DIR / "experts"),
         ("~/.claude/CLAUDE.md", CLAUDE_MD, CLAUDE_DIR / "CLAUDE.md"),
         ("repos/", REPOS_DIR, REPOS_LINK),
     ]:
@@ -610,6 +638,22 @@ def status() -> None:
                 f"[error]✗[/error] {display_name} is not a symlink "
                 "(run: [heading]hivemind init[/heading])"
             )
+
+    # Check experts directory (now a real directory with per-expert symlinks)
+    claude_experts = CLAUDE_DIR / "experts"
+    if claude_experts.is_dir() and not claude_experts.is_symlink():
+        expert_count = sum(1 for _ in claude_experts.iterdir())
+        symlink_lines.append(
+            f"[success]✓[/success] ~/.claude/experts/ (directory with {expert_count} expert symlinks)"
+        )
+    elif claude_experts.is_symlink():
+        symlink_lines.append(
+            f"[warning]![/warning] ~/.claude/experts/ is a symlink (expected directory, run: hivemind init)"
+        )
+    else:
+        symlink_lines.append(
+            f"[error]✗[/error] ~/.claude/experts/ does not exist (run: hivemind init)"
+        )
 
     console.print(
         Panel("\n".join(symlink_lines), title="Symlinks", border_style="blue")
