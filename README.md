@@ -7,7 +7,7 @@ Hivemind clones repositories, runs AI-powered analysis to generate knowledge doc
 ## Install
 
 ```
-uv pip install -e ~/projects/hivemind
+uv tool install -e ~/projects/hivemind
 hivemind init
 ```
 

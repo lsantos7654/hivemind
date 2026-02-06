@@ -7,20 +7,35 @@ import os
 import shutil
 import subprocess
 import tempfile
+import time
 import typing
 from pathlib import Path
 
 import typer
+from rich import box
 from rich.console import Console
+from rich.live import Live
 from rich.panel import Panel
 from rich.table import Table
+from rich.theme import Theme
+from rich.traceback import install as install_traceback
+
+THEME = Theme({
+    "success": "green",
+    "error": "red",
+    "warning": "yellow",
+    "info": "cyan",
+    "heading": "bold",
+    "commit": "cyan",
+})
 
 app = typer.Typer(
     name="hivemind",
     help="Manage Claude Code expert agents.",
     no_args_is_help=True,
 )
-console = Console()
+console = Console(theme=THEME)
+install_traceback(show_locals=True, console=console)
 
 # Paths
 HIVEMIND_ROOT = Path(__file__).resolve().parent.parent
@@ -129,9 +144,9 @@ def _link_agent(name: str) -> bool:
     if not head_agent.exists():
         head_link = expert_dir / "HEAD"
         if not head_link.exists():
-            console.print(f"  [yellow]![/yellow] {name}: no HEAD, skipping agent link")
+            console.print(f"  [warning]![/warning] {name}: no HEAD, skipping agent link")
         else:
-            console.print(f"  [yellow]![/yellow] {name}: no agent.md in HEAD, skipping agent link")
+            console.print(f"  [warning]![/warning] {name}: no agent.md in HEAD, skipping agent link")
         return False
 
     agent_link = AGENTS_DIR / f"expert-{name}.md"
@@ -145,7 +160,7 @@ def _link_agent(name: str) -> bool:
         agent_link.unlink()
 
     agent_link.symlink_to(link_target)
-    console.print(f"  [green]✓[/green] {name}: agent symlink created")
+    console.print(f"  [success]✓[/success] {name}: agent symlink created")
     return True
 
 
@@ -154,13 +169,13 @@ def _unlink_agent(name: str) -> None:
     agent_link = AGENTS_DIR / f"expert-{name}.md"
     if agent_link.is_symlink() or agent_link.exists():
         agent_link.unlink()
-        console.print(f"  [green]✓[/green] {name}: agent symlink removed")
+        console.print(f"  [success]✓[/success] {name}: agent symlink removed")
 
 
 def _clone_repo(name: str, repos: dict) -> bool:
     """Clone a repo to cache repos dir if not already present. Returns True if cloned."""
     if name not in repos:
-        console.print(f"  [yellow]![/yellow] {name}: not in repos.json, skipping clone")
+        console.print(f"  [warning]![/warning] {name}: not in repos.json, skipping clone")
         return False
 
     _ensure_repos_link()
@@ -184,7 +199,7 @@ def _clone_repo(name: str, repos: dict) -> bool:
             cwd=str(repo_dir),
             check=True,
         )
-        console.print(f"  [green]✓[/green] {name}: cloned at commit {commit[:12]}")
+        console.print(f"  [success]✓[/success] {name}: cloned at commit {commit[:12]}")
     elif ref_name:
         console.print(f"  Cloning {name} at ref {ref_name}...")
         subprocess.run(
@@ -194,14 +209,14 @@ def _clone_repo(name: str, repos: dict) -> bool:
             ],
             check=True,
         )
-        console.print(f"  [green]✓[/green] {name}: cloned at ref {ref_name}")
+        console.print(f"  [success]✓[/success] {name}: cloned at ref {ref_name}")
     else:
         console.print(f"  Cloning {name} (default branch)...")
         subprocess.run(
             ["git", "clone", "--progress", "--depth", "1", remote, str(repo_dir)],
             check=True,
         )
-        console.print(f"  [green]✓[/green] {name}: cloned (default branch)")
+        console.print(f"  [success]✓[/success] {name}: cloned (default branch)")
 
     return True
 
@@ -376,23 +391,23 @@ def _setup_symlink(target: Path, link: Path, label: str) -> None:
     if link.is_symlink():
         current = link.resolve()
         if current == target.resolve():
-            console.print(f"  [green]✓[/green] {label} symlink already correct")
+            console.print(f"  [success]✓[/success] {label} symlink already correct")
             return
         console.print(
-            f"  [yellow]![/yellow] {label} symlink points to {link.readlink()}, updating..."
+            f"  [warning]![/warning] {label} symlink points to {link.readlink()}, updating..."
         )
         link.unlink()
     elif link.is_dir():
         backup = link.with_name(link.name + ".bak")
         console.print(
-            f"  [yellow]![/yellow] {label} is a real directory, backing up to {backup.name}/"
+            f"  [warning]![/warning] {label} is a real directory, backing up to {backup.name}/"
         )
         link.rename(backup)
     elif link.exists():
         link.unlink()
 
     link.symlink_to(target)
-    console.print(f"  [green]✓[/green] {label} → {target}")
+    console.print(f"  [success]✓[/success] {label} → {target}")
 
 
 def _update_librarian() -> None:
@@ -463,7 +478,7 @@ You are the hivemind librarian. You know every registered expert and what they s
 
     AGENTS_DIR.mkdir(parents=True, exist_ok=True)
     (AGENTS_DIR / "librarian.md").write_text(content)
-    console.print("  [green]✓[/green] Librarian updated")
+    console.print("  [success]✓[/success] Librarian updated")
 
 
 # --- Commands ---
@@ -472,7 +487,7 @@ You are the hivemind librarian. You know every registered expert and what they s
 @app.command()
 def init() -> None:
     """Set up ~/.claude symlinks and enable agents."""
-    console.print("[bold]Initializing hivemind...[/bold]\n")
+    console.print("[heading]Initializing hivemind...[/heading]\n")
 
     CLAUDE_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -481,7 +496,7 @@ def init() -> None:
     _setup_symlink(EXPERTS_DIR, CLAUDE_DIR / "experts", "experts/")
     _setup_symlink(CLAUDE_MD, CLAUDE_DIR / "CLAUDE.md", "CLAUDE.md")
     _ensure_repos_link()
-    console.print(f"  [green]✓[/green] repos/ → {REPOS_DIR}")
+    console.print(f"  [success]✓[/success] repos/ → {REPOS_DIR}")
 
     config = _load_config()
     repos = _load_repos()
@@ -498,9 +513,9 @@ def init() -> None:
         expert_name = f.name.removeprefix("expert-").removesuffix(".md")
         if expert_name not in config["enabled"]:
             f.unlink()
-            console.print(f"  [red]✗[/red] Removed stale: {f.name}")
+            console.print(f"  [error]✗[/error] Removed stale: {f.name}")
 
-    console.print("\n[green bold]Hivemind initialized![/green bold]")
+    console.print("\n[bold success]Hivemind initialized![/bold success]")
 
 
 @app.command(name="list")
@@ -511,10 +526,10 @@ def list_experts() -> None:
     experts = _expert_names()
 
     if not experts:
-        console.print("No experts found. Use [bold]hivemind add <url>[/bold] to add one.")
+        console.print("No experts found. Use [heading]hivemind add <url>[/heading] to add one.")
         return
 
-    table = Table(title="Experts", show_header=True, header_style="bold")
+    table = Table(title="Experts", show_header=True, header_style="bold", box=box.ROUNDED)
     table.add_column("Name", style="bold")
     table.add_column("Status")
     table.add_column("HEAD")
@@ -525,16 +540,16 @@ def list_experts() -> None:
     for name in experts:
         # Status
         if name in config["enabled"]:
-            status = "[green]enabled[/green]"
+            status = "[success]enabled[/success]"
         elif name in config["disabled"]:
-            status = "[yellow]disabled[/yellow]"
+            status = "[warning]disabled[/warning]"
         else:
-            status = "[red]unlisted[/red]"
+            status = "[error]unlisted[/error]"
 
         # HEAD commit
         expert_dir = EXPERTS_DIR / name
         head_commit = _get_head_commit(expert_dir)
-        head_display = f"[cyan]{head_commit[:12]}[/cyan]" if head_commit else "[dim]none[/dim]"
+        head_display = f"[commit]{head_commit[:12]}[/commit]" if head_commit else "[dim]none[/dim]"
 
         # Version count
         version_count = _count_versions(expert_dir)
@@ -542,7 +557,7 @@ def list_experts() -> None:
 
         # Agent file generated
         agent = (
-            "[green]yes[/green]"
+            "[success]yes[/success]"
             if (AGENTS_DIR / f"expert-{name}.md").is_file()
             else "[dim]no[/dim]"
         )
@@ -570,15 +585,15 @@ def add(
     # Derive name from URL
     name = url.rstrip("/").split("/")[-1].removesuffix(".git")
 
-    console.print(f"[bold]Adding expert: {name}[/bold]")
+    console.print(f"[heading]Adding expert: {name}[/heading]")
     console.print(f"  URL: {url}")
 
     # Error out early if expert already exists
     expert_dir = EXPERTS_DIR / name
     if expert_dir.is_dir():
         console.print(
-            f"[red]Error: expert '{name}' already exists. "
-            f"Use [bold]hivemind update {name}[/bold] instead.[/red]"
+            f"[error]Error: expert '{name}' already exists. "
+            f"Use [bold]hivemind update {name}[/bold] instead.[/error]"
         )
         raise typer.Exit(1)
 
@@ -635,7 +650,7 @@ def add(
                 ["git", "clone", "--progress", "--depth", "1", url, str(tmp_repo)],
                 check=True,
             )
-        console.print(f"  [green]✓[/green] Cloned to staging area")
+        console.print(f"  [success]✓[/success] Cloned to staging area")
 
         # Resolve commit hash from clone if not pinned
         if not commit:
@@ -647,20 +662,20 @@ def add(
                 check=True,
             )
             commit = result.stdout.strip()
-            console.print(f"  [green]✓[/green] Resolved commit: {commit[:12]}")
+            console.print(f"  [success]✓[/success] Resolved commit: {commit[:12]}")
 
         # Create versioned directory in temp expert dir
         tmp_commit_dir = tmp_expert / commit
         tmp_commit_dir.mkdir(parents=True, exist_ok=True)
-        console.print(f"  [green]✓[/green] Created staging experts/{name}/{commit[:12]}/")
+        console.print(f"  [success]✓[/success] Created staging experts/{name}/{commit[:12]}/")
 
         # Run AI analysis — writes into temp dirs
-        with console.status(f"[bold]Running AI analysis of {name}...[/bold]", spinner="dots"):
+        with console.status(f"[heading]Running AI analysis of {name}...[/heading]", spinner="dots"):
             success = _analyze_repo(name, commit, tmp_repo, tmp_expert)
         if not success:
-            console.print(f"[red]Error: AI analysis failed for {name}[/red]")
+            console.print(f"[error]Error: AI analysis failed for {name}[/error]")
             raise typer.Exit(1)
-        console.print(f"  [green]✓[/green] AI analysis complete")
+        console.print(f"  [success]✓[/success] AI analysis complete")
 
         # --- Success: move everything to final locations ---
 
@@ -670,23 +685,23 @@ def add(
         if final_repo.exists():
             shutil.rmtree(final_repo)
         shutil.move(str(tmp_repo), str(final_repo))
-        console.print(f"  [green]✓[/green] Repo installed to repos/{name}/")
+        console.print(f"  [success]✓[/success] Repo installed to repos/{name}/")
 
         # Move expert dir to final location
         EXPERTS_DIR.mkdir(parents=True, exist_ok=True)
         shutil.move(str(tmp_expert), str(expert_dir))
-        console.print(f"  [green]✓[/green] Expert installed to experts/{name}/")
+        console.print(f"  [success]✓[/success] Expert installed to experts/{name}/")
 
         # Create HEAD symlink
         head_link = expert_dir / "HEAD"
         head_link.symlink_to(commit)
-        console.print(f"  [green]✓[/green] HEAD → {commit[:12]}")
+        console.print(f"  [success]✓[/success] HEAD → {commit[:12]}")
 
         # Update repos.json
         repos = _load_repos()
         repos[name] = {"remote": url, "commit": commit, "ref_name": ref_name}
         _save_repos(repos)
-        console.print("  [green]✓[/green] Added to repos.json")
+        console.print("  [success]✓[/success] Added to repos.json")
 
         # Enable in config
         config = _load_config()
@@ -695,21 +710,21 @@ def add(
         if name in config["disabled"]:
             config["disabled"].remove(name)
         _save_config(config)
-        console.print("  [green]✓[/green] Enabled in config.json")
+        console.print("  [success]✓[/success] Enabled in config.json")
 
         # Create agent symlink
         _link_agent(name)
         _update_librarian()
 
         summary_lines = [
-            f"[green]✓[/green] Expert [bold]{name}[/bold] is ready",
-            f"[green]✓[/green] HEAD → [cyan]{commit[:12]}[/cyan]",
-            f"[green]✓[/green] Agent: [bold]expert-{name}[/bold]",
+            f"[success]✓[/success] Expert [heading]{name}[/heading] is ready",
+            f"[success]✓[/success] HEAD → [commit]{commit[:12]}[/commit]",
+            f"[success]✓[/success] Agent: [heading]expert-{name}[/heading]",
         ]
         console.print()
         console.print(Panel(
             "\n".join(summary_lines),
-            title="[green bold]Expert created successfully[/green bold]",
+            title="[bold success]Expert created successfully[/bold success]",
             border_style="green",
         ))
 
@@ -721,7 +736,7 @@ def add(
 def enable(name: str = typer.Argument(help="Expert name to enable", autocompletion=_complete_expert)) -> None:
     """Enable an expert (clones repo if needed, creates agent symlink)."""
     if not (EXPERTS_DIR / name).is_dir():
-        console.print(f"[red]Error: expert '{name}' not found in experts/[/red]")
+        console.print(f"[error]Error: expert '{name}' not found in experts/[/error]")
         raise typer.Exit(1)
 
     config = _load_config()
@@ -738,16 +753,16 @@ def enable(name: str = typer.Argument(help="Expert name to enable", autocompleti
     _link_agent(name)
 
     if already_enabled:
-        console.print(f"[green]✓[/green] {name}: already enabled, ensured repo and agent link")
+        console.print(f"[success]✓[/success] {name}: already enabled, ensured repo and agent link")
     else:
-        console.print(f"[green]✓[/green] Enabled: {name}")
+        console.print(f"[success]✓[/success] Enabled: {name}")
 
 
 @app.command()
 def disable(name: str = typer.Argument(help="Expert name to disable", autocompletion=_complete_expert)) -> None:
     """Disable an expert (removes agent symlink)."""
     if not (EXPERTS_DIR / name).is_dir():
-        console.print(f"[red]Error: expert '{name}' not found in experts/[/red]")
+        console.print(f"[error]Error: expert '{name}' not found in experts/[/error]")
         raise typer.Exit(1)
 
     config = _load_config()
@@ -763,9 +778,9 @@ def disable(name: str = typer.Argument(help="Expert name to disable", autocomple
     _unlink_agent(name)
 
     if already_disabled:
-        console.print(f"[yellow]✓[/yellow] {name}: already disabled, ensured agent link removed")
+        console.print(f"[warning]✓[/warning] {name}: already disabled, ensured agent link removed")
     else:
-        console.print(f"[yellow]✓[/yellow] Disabled: {name}")
+        console.print(f"[warning]✓[/warning] Disabled: {name}")
 
 
 
@@ -780,7 +795,7 @@ def update(
     if name:
         names = [name]
         if name not in repos:
-            console.print(f"[red]Error: '{name}' not found in repos.json[/red]")
+            console.print(f"[error]Error: '{name}' not found in repos.json[/error]")
             raise typer.Exit(1)
     else:
         names = config["enabled"]
@@ -794,10 +809,10 @@ def update(
     staged: list[tuple[str, str, str | None, str]] = []
 
     for expert_name in names:
-        console.print(f"\n[bold]Updating {expert_name}...[/bold]")
+        console.print(f"\n[heading]Updating {expert_name}...[/heading]")
 
         if expert_name not in repos:
-            console.print(f"  [yellow]![/yellow] {expert_name}: not in repos.json, skipping")
+            console.print(f"  [warning]![/warning] {expert_name}: not in repos.json, skipping")
             continue
 
         repo_dir = REPOS_DIR / expert_name
@@ -830,14 +845,14 @@ def update(
                 break
 
         if not new_commit:
-            console.print(f"  [red]✗[/red] {expert_name}: could not resolve latest commit")
+            console.print(f"  [error]✗[/error] {expert_name}: could not resolve latest commit")
             continue
 
         # Check if already up to date
         expert_dir = EXPERTS_DIR / expert_name
         current_head = _get_head_commit(expert_dir)
         if current_head == new_commit:
-            console.print(f"  [green]✓[/green] {expert_name}: already up to date ({new_commit[:12]})")
+            console.print(f"  [success]✓[/success] {expert_name}: already up to date ({new_commit[:12]})")
             continue
 
         # Stage work in temp dir
@@ -854,7 +869,7 @@ def update(
                 for f in old_dir.iterdir():
                     if f.is_file():
                         shutil.copy2(f, tmp_commit_dir / f.name)
-                console.print(f"  [green]✓[/green] Copied files from {current_head[:12]} as baseline")
+                console.print(f"  [success]✓[/success] Copied files from {current_head[:12]} as baseline")
 
         # Checkout new commit in repo (needed for analysis)
         subprocess.run(
@@ -862,19 +877,33 @@ def update(
             cwd=str(repo_dir),
             check=True,
         )
-        console.print(f"  [green]✓[/green] Staged for analysis: {new_commit[:12]}")
+        console.print(f"  [success]✓[/success] Staged for analysis: {new_commit[:12]}")
 
         staged.append((expert_name, new_commit, current_head, tmpdir))
 
     if not staged:
-        console.print("\n[green]All experts are up to date.[/green]")
+        console.print("\n[success]All experts are up to date.[/success]")
         return
 
     # Phase 2: Parallel AI analysis — all writes go to temp dirs
-    console.print(f"\n[bold]Running AI analysis for {len(staged)} updated expert(s)...[/bold]")
+    console.print(f"\n[heading]Running AI analysis for {len(staged)} updated expert(s)...[/heading]")
 
     try:
         processes: list[tuple[str, subprocess.Popen]] = []
+
+        # Build a live-updating status table
+        def _make_progress_table(
+            statuses: dict[str, str],
+        ) -> Table:
+            t = Table(box=box.ROUNDED, title="AI Analysis")
+            t.add_column("Expert", style="bold")
+            t.add_column("Status")
+            for ename, st in statuses.items():
+                t.add_row(ename, st)
+            return t
+
+        statuses: dict[str, str] = {}
+
         for expert_name, new_commit, _old_commit, tmpdir in staged:
             tmp_expert = Path(tmpdir) / "expert"
             repo_dir = REPOS_DIR / expert_name
@@ -883,12 +912,27 @@ def update(
                 is_update=True, background=True,
             )
             processes.append((expert_name, proc))
-            console.print(f"  [cyan]▶[/cyan] Started analysis: {expert_name}")
+            statuses[expert_name] = "[info]analyzing...[/info]"
 
-        # Wait for all to complete
-        with console.status("[bold]Waiting for AI analysis to finish...[/bold]", spinner="dots"):
-            for proc_name, proc in processes:
-                proc.wait()
+        # Live display while waiting for processes
+        with Live(_make_progress_table(statuses), console=console, refresh_per_second=2) as live:
+            while any(proc.poll() is None for _, proc in processes):
+                for ename, proc in processes:
+                    if proc.poll() is not None and statuses[ename] == "[info]analyzing...[/info]":
+                        if proc.returncode == 0:
+                            statuses[ename] = "[success]✓ done[/success]"
+                        else:
+                            statuses[ename] = f"[error]✗ failed (exit {proc.returncode})[/error]"
+                live.update(_make_progress_table(statuses))
+                time.sleep(0.5)
+            # Final update for any that finished in the last iteration
+            for ename, proc in processes:
+                if statuses[ename] == "[info]analyzing...[/info]":
+                    if proc.returncode == 0:
+                        statuses[ename] = "[success]✓ done[/success]"
+                    else:
+                        statuses[ename] = f"[error]✗ failed (exit {proc.returncode})[/error]"
+            live.update(_make_progress_table(statuses))
 
         for (expert_name, proc), (_, new_commit, old_commit, tmpdir) in zip(processes, staged):
             if proc.returncode == 0:
@@ -905,7 +949,7 @@ def update(
 
                 repos[expert_name]["commit"] = new_commit
 
-                console.print(f"  [green]✓[/green] {expert_name}: analysis complete, HEAD → {new_commit[:12]}")
+                console.print(f"  [success]✓[/success] {expert_name}: HEAD → {new_commit[:12]}")
             else:
                 # Revert repo checkout to old commit
                 if old_commit:
@@ -914,13 +958,13 @@ def update(
                         cwd=str(REPOS_DIR / expert_name),
                         capture_output=True,
                     )
-                console.print(f"  [red]✗[/red] {expert_name}: analysis failed (exit {proc.returncode}), reverted")
+                console.print(f"  [error]✗[/error] {expert_name}: analysis failed, reverted")
 
         # Batch-save repos.json once after all updates
         _save_repos(repos)
         _update_librarian()
 
-        console.print(f"\n[green bold]Update complete.[/green bold]")
+        console.print(f"\n[bold success]Update complete.[/bold success]")
 
     finally:
         for _, _, _, tmpdir in staged:
@@ -934,7 +978,7 @@ def query(
     """Ask the librarian which expert(s) can help with a question."""
     librarian = AGENTS_DIR / "librarian.md"
     if not librarian.exists():
-        console.print("[red]Error: librarian.md not found. Run [bold]hivemind init[/bold] first.[/red]")
+        console.print("[error]Error: librarian.md not found. Run [bold]hivemind init[/bold] first.[/error]")
         raise typer.Exit(1)
 
     system_prompt = librarian.read_text()
@@ -964,16 +1008,16 @@ def status() -> None:
         if link.is_symlink():
             actual = link.resolve()
             if actual == target.resolve():
-                symlink_lines.append(f"[green]✓[/green] {display_name} → {target}")
+                symlink_lines.append(f"[success]✓[/success] {display_name} → {target}")
             else:
                 symlink_lines.append(
-                    f"[yellow]![/yellow] {display_name} → {link.readlink()} "
+                    f"[warning]![/warning] {display_name} → {link.readlink()} "
                     f"(expected {target})"
                 )
         else:
             symlink_lines.append(
-                f"[red]✗[/red] {display_name} is not a symlink "
-                "(run: [bold]hivemind init[/bold])"
+                f"[error]✗[/error] {display_name} is not a symlink "
+                "(run: [heading]hivemind init[/heading])"
             )
 
     console.print(
@@ -989,9 +1033,9 @@ def status() -> None:
             commit = repos[name].get("commit", "")
             ref_name = repos[name].get("ref_name", "")
             fetched = (
-                "[green]fetched[/green]"
+                "[success]fetched[/success]"
                 if (REPOS_DIR / name).is_dir()
-                else "[red]not fetched[/red]"
+                else "[error]not fetched[/error]"
             )
             # Show HEAD commit from expert dir
             expert_dir = EXPERTS_DIR / name
@@ -1005,7 +1049,7 @@ def status() -> None:
             elif commit:
                 ref_display = f" @ {commit[:12]}"
             repo_lines.append(
-                f"[bold]{name}[/bold]: {remote}{ref_display} [{fetched}] "
+                f"[heading]{name}[/heading]: {remote}{ref_display} [{fetched}] "
                 f"({head_display}, {versions} version{'s' if versions != 1 else ''})"
             )
 

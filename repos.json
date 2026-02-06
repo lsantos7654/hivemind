@@ -1,7 +1,7 @@
 {
   "bazel": {
     "remote": "https://github.com/bazelbuild/bazel.git",
-    "commit": "b11068b3da3dfce20150a5365cc22d2553d3b372",
+    "commit": "32eef3485d66f448df4b66fe4f0d530e1a88f99b",
     "ref_name": ""
   },
   "bazel-skylib": {
