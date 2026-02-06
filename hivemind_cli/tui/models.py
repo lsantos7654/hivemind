@@ -36,6 +36,7 @@ class ExpertRow:
     has_agent: bool
     remote: str
     ref_name: str
+    is_private: bool = False
     operation_status: OperationStatus | None = None  # Track if operation is in progress
     status_message: str | None = None  # Detailed progress message for display
 

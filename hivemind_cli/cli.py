@@ -30,6 +30,10 @@ from hivemind_cli.core import (
     _save_config,
     _load_repos,
     _save_repos,
+    _load_private_repos,
+    _save_private_repos,
+    _is_private_expert,
+    _get_expert_dir,
     _expert_names,
     _get_head_commit,
     _count_versions,
@@ -53,6 +57,8 @@ from hivemind_cli.core import (
     CONFIG_JSON,
     AGENTS_DIR,
     EXPERTS_DIR,
+    PRIVATE_EXPERTS_DIR,
+    PRIVATE_REPOS_JSON,
     COMMANDS_DIR,
     CLAUDE_MD,
 )
@@ -210,64 +216,82 @@ def list_experts() -> None:
     """Show all experts with their status."""
     config = _load_config()
     repos = _load_repos()
+    private_repos = _load_private_repos()
+    private_experts = set(config.get("private", []))
     experts = _expert_names()
 
     if not experts:
         console.print("No experts found. Use [heading]hivemind add <url>[/heading] to add one.")
         return
 
-    table = Table(title="Experts", show_header=True, header_style="bold", box=box.ROUNDED)
-    table.add_column("Name", style="bold")
-    table.add_column("Status")
-    table.add_column("HEAD")
-    table.add_column("Versions")
-    table.add_column("Agent")
-    table.add_column("Remote")
+    # Separate into public and private
+    public_expert_names = [name for name in experts if name not in private_experts]
+    private_expert_names = [name for name in experts if name in private_experts]
 
-    for name in experts:
-        # Status
-        if name in config["enabled"]:
-            status = "[success]enabled[/success]"
-        elif name in config["disabled"]:
-            status = "[warning]disabled[/warning]"
-        else:
-            status = "[error]unlisted[/error]"
+    def create_table_for_experts(expert_names: list[str], title: str) -> Table | None:
+        """Create a table for a list of experts."""
+        if not expert_names:
+            return None
 
-        # HEAD commit
-        expert_dir = EXPERTS_DIR / name
-        head_commit = _get_head_commit(expert_dir)
-        head_display = f"[commit]{head_commit[:12]}[/commit]" if head_commit else "[dim]none[/dim]"
+        table = Table(title=title, show_header=True, header_style="bold", box=box.ROUNDED)
+        table.add_column("Name", style="bold")
+        table.add_column("Status")
+        table.add_column("HEAD")
+        table.add_column("Versions")
+        table.add_column("Remote")
 
-        # Version count
-        version_count = _count_versions(expert_dir)
-        versions = str(version_count) if version_count > 0 else "[dim]0[/dim]"
+        for name in expert_names:
+            is_private = name in private_experts
 
-        # Agent file generated
-        agent_file = AGENTS_DIR / f"expert-{name}.md"
-        agent = (
-            "[success]yes[/success]"
-            if agent_file.is_file()
-            else "[dim]no[/dim]"
-        )
+            # Status
+            if name in config["enabled"]:
+                status = "[success]enabled[/success]"
+            elif name in config["disabled"]:
+                status = "[warning]disabled[/warning]"
+            else:
+                status = "[error]unlisted[/error]"
 
-        # Remote URL
-        remote = ""
-        if name in repos:
-            url = repos[name].get("remote", "")
-            ref = repos[name].get("ref_name", "")
-            remote = url
-            if ref:
-                remote += f" @ {ref}"
+            # HEAD commit
+            expert_dir = _get_expert_dir(name)
+            head_commit = _get_head_commit(expert_dir)
+            head_display = f"[commit]{head_commit[:12]}[/commit]" if head_commit else "[dim]none[/dim]"
 
-        table.add_row(name, status, head_display, versions, agent, remote)
+            # Version count
+            version_count = _count_versions(expert_dir)
+            versions = str(version_count) if version_count > 0 else "[dim]0[/dim]"
 
-    console.print(table)
+            # Remote URL (check both repos)
+            remote = ""
+            repos_dict = private_repos if is_private else repos
+            if name in repos_dict:
+                url = repos_dict[name].get("remote", "")
+                ref = repos_dict[name].get("ref_name", "")
+                remote = url
+                if ref:
+                    remote += f" @ {ref}"
+
+            table.add_row(name, status, head_display, versions, remote)
+
+        return table
+
+    # Display public experts table
+    public_table = create_table_for_experts(public_expert_names, "Public Experts")
+    if public_table:
+        console.print(public_table)
+
+    # Display private experts table
+    private_table = create_table_for_experts(private_expert_names, "Private Experts")
+    if private_table:
+        if public_table:
+            console.print()  # Add spacing between tables
+        console.print(private_table)
 
 
 @app.command()
 def add(
     url: str = typer.Argument(help="Git remote URL"),
     ref: typing.Optional[str] = typer.Option(None, "--ref", help="Tag, branch, or commit"),
+    private: bool = typer.Option(False, "--private", help="Mark as private (won't be committed to git)"),
 ) -> None:
     """Register a new repo expert, clone, analyze, and create agent."""
     # Derive name from URL
@@ -275,10 +299,13 @@ def add(
 
     console.print(f"[heading]Adding expert: {name}[/heading]")
     console.print(f"  URL: {url}")
+    if private:
+        console.print(f"  [warning]Mode: PRIVATE (will not be committed to git)[/warning]")
 
-    # Error out early if expert already exists
-    expert_dir = EXPERTS_DIR / name
-    if expert_dir.is_dir():
+    # Error out early if expert already exists (check both public and private)
+    public_expert_dir = EXPERTS_DIR / name
+    private_expert_dir = PRIVATE_EXPERTS_DIR / name
+    if public_expert_dir.is_dir() or private_expert_dir.is_dir():
         console.print(
             f"[error]Error: expert '{name}' already exists. "
             f"Use [bold]hivemind update {name}[/bold] instead.[/error]"
@@ -375,28 +402,45 @@ def add(
         shutil.move(str(tmp_repo), str(final_repo))
         console.print(f"  [success]✓[/success] Repo installed to repos/{name}/")
 
-        # Move expert dir to final location
-        EXPERTS_DIR.mkdir(parents=True, exist_ok=True)
-        shutil.move(str(tmp_expert), str(expert_dir))
-        console.print(f"  [success]✓[/success] Expert installed to experts/{name}/")
+        # Move expert dir to final location (public or private)
+        if private:
+            expert_dir = PRIVATE_EXPERTS_DIR / name
+            PRIVATE_EXPERTS_DIR.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(tmp_expert), str(expert_dir))
+            console.print(f"  [success]✓[/success] Expert installed to private-experts/{name}/")
+        else:
+            expert_dir = EXPERTS_DIR / name
+            EXPERTS_DIR.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(tmp_expert), str(expert_dir))
+            console.print(f"  [success]✓[/success] Expert installed to experts/{name}/")
 
         # Create HEAD symlink
         head_link = expert_dir / "HEAD"
         head_link.symlink_to(commit)
         console.print(f"  [success]✓[/success] HEAD → {commit[:12]}")
 
-        # Update repos.json
-        repos = _load_repos()
-        repos[name] = {"remote": url, "commit": commit, "ref_name": ref_name}
-        _save_repos(repos)
-        console.print("  [success]✓[/success] Added to repos.json")
+        # Update repos.json or private-repos.json
+        if private:
+            repos = _load_private_repos()
+            repos[name] = {"remote": url, "commit": commit, "ref_name": ref_name}
+            _save_private_repos(repos)
+            console.print("  [success]✓[/success] Added to private-repos.json")
+        else:
+            repos = _load_repos()
+            repos[name] = {"remote": url, "commit": commit, "ref_name": ref_name}
+            _save_repos(repos)
+            console.print("  [success]✓[/success] Added to repos.json")
 
-        # Enable in config
+        # Enable in config and mark as private if needed
         config = _load_config()
         if name not in config["enabled"]:
             config["enabled"].append(name)
         if name in config["disabled"]:
             config["disabled"].remove(name)
+        if private:
+            config.setdefault("private", [])
+            if name not in config["private"]:
+                config["private"].append(name)
         _save_config(config)
         console.print("  [success]✓[/success] Enabled in config.json")
 
@@ -571,21 +615,29 @@ def status() -> None:
         Panel("\n".join(symlink_lines), title="Symlinks", border_style="blue")
     )
 
-    # Repos section
+    # Repos section (combine public and private)
     repos = _load_repos()
-    if repos:
+    private_repos = _load_private_repos()
+    config = _load_config()
+    private_experts = set(config.get("private", []))
+
+    all_repos = {**repos, **private_repos}
+    if all_repos:
         repo_lines: list[str] = []
-        for name in sorted(repos):
-            remote = repos[name].get("remote", "")
-            commit = repos[name].get("commit", "")
-            ref_name = repos[name].get("ref_name", "")
+        for name in sorted(all_repos):
+            is_private = name in private_experts
+            repos_dict = private_repos if is_private else repos
+
+            remote = repos_dict[name].get("remote", "")
+            commit = repos_dict[name].get("commit", "")
+            ref_name = repos_dict[name].get("ref_name", "")
             fetched = (
                 "[success]fetched[/success]"
                 if (REPOS_DIR / name).is_dir()
                 else "[error]not fetched[/error]"
             )
             # Show HEAD commit from expert dir
-            expert_dir = EXPERTS_DIR / name
+            expert_dir = _get_expert_dir(name)
             head_commit = _get_head_commit(expert_dir)
             head_display = f"HEAD: {head_commit[:12]}" if head_commit else "HEAD: none"
             versions = _count_versions(expert_dir)
@@ -595,8 +647,10 @@ def status() -> None:
                 ref_display = f" @ {ref_name}"
             elif commit:
                 ref_display = f" @ {commit[:12]}"
+
+            name_display = f"{name} [private]" if is_private else name
             repo_lines.append(
-                f"[heading]{name}[/heading]: {remote}{ref_display} [{fetched}] "
+                f"[heading]{name_display}[/heading]: {remote}{ref_display} [{fetched}] "
                 f"({head_display}, {versions} version{'s' if versions != 1 else ''})"
             )
 

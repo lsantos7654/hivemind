@@ -11,7 +11,7 @@ from textual.binding import Binding
 from textual.reactive import reactive
 
 from hivemind_cli.tui.models import ExpertRow, VersionInfo, OperationStatus
-from hivemind_cli.core import get_git_versions, commit_exists_in_repo, EXPERTS_DIR
+from hivemind_cli.core import get_git_versions, commit_exists_in_repo, EXPERTS_DIR, PRIVATE_EXPERTS_DIR
 
 
 class VersionDetailScreen(Screen):
@@ -97,7 +97,11 @@ class VersionDetailScreen(Screen):
 
     def _load_versions(self) -> None:
         """Load versions from git repo."""
-        expert_dir = EXPERTS_DIR / self.expert.name
+        # Get the correct expert directory based on privacy status
+        expert_dir = (
+            PRIVATE_EXPERTS_DIR / self.expert.name if self.expert.is_private
+            else EXPERTS_DIR / self.expert.name
+        )
         self.versions = get_git_versions(self.expert.name, expert_dir)
 
     def _populate_table(self) -> None:

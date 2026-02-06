@@ -65,6 +65,8 @@ AGENTS_DIR = HIVEMIND_ROOT / "agents"
 EXPERTS_DIR = HIVEMIND_ROOT / "experts"
 COMMANDS_DIR = HIVEMIND_ROOT / "commands"
 CLAUDE_MD = HIVEMIND_ROOT / "CLAUDE.md"
+PRIVATE_EXPERTS_DIR = HIVEMIND_ROOT / "private-experts"
+PRIVATE_REPOS_JSON = HIVEMIND_ROOT / "private-repos.json"
 
 
 # --- Helper Functions ---
@@ -102,11 +104,49 @@ def _save_repos(repos: dict) -> None:
     _save_json(REPOS_JSON, repos)
 
 
+def _load_private_repos() -> dict:
+    """Load private-repos.json."""
+    if not PRIVATE_REPOS_JSON.exists():
+        return {}
+    try:
+        return json.loads(PRIVATE_REPOS_JSON.read_text())
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
+def _save_private_repos(repos: dict) -> None:
+    """Save private-repos.json."""
+    PRIVATE_REPOS_JSON.write_text(json.dumps(repos, indent=2) + "\n")
+
+
+def _is_private_expert(name: str) -> bool:
+    """Check if expert is private based on config."""
+    config = _load_config()
+    return name in config.get("private", [])
+
+
+def _get_expert_dir(name: str) -> Path:
+    """Get expert directory (public or private)."""
+    if _is_private_expert(name):
+        return PRIVATE_EXPERTS_DIR / name
+    return EXPERTS_DIR / name
+
+
+def _get_repos_for_expert(name: str) -> tuple[dict, bool]:
+    """Get (repos_dict, is_private) for expert."""
+    if _is_private_expert(name):
+        return _load_private_repos(), True
+    return _load_repos(), False
+
+
 def _expert_names() -> list[str]:
-    """List all expert names from experts/ directory."""
-    if not EXPERTS_DIR.exists():
-        return []
-    return sorted(d.name for d in EXPERTS_DIR.iterdir() if d.is_dir())
+    """List all expert names from experts/ and private-experts/ directories."""
+    experts = []
+    if EXPERTS_DIR.exists():
+        experts.extend(d.name for d in EXPERTS_DIR.iterdir() if d.is_dir())
+    if PRIVATE_EXPERTS_DIR.exists():
+        experts.extend(d.name for d in PRIVATE_EXPERTS_DIR.iterdir() if d.is_dir())
+    return sorted(experts)
 
 
 def _get_head_commit(expert_dir: Path) -> str | None:
@@ -153,14 +193,18 @@ def _link_agent(name: str) -> bool:
     Returns False if HEAD/agent.md doesn't exist.
     """
     AGENTS_DIR.mkdir(parents=True, exist_ok=True)
-    expert_dir = EXPERTS_DIR / name
+    expert_dir = _get_expert_dir(name)
     head_agent = expert_dir / "HEAD" / "agent.md"
 
     if not head_agent.exists():
         return False
 
     agent_link = AGENTS_DIR / f"expert-{name}.md"
-    link_target = Path("..") / "experts" / name / "HEAD" / "agent.md"
+    # Determine correct link target based on private/public
+    if _is_private_expert(name):
+        link_target = Path("..") / "private-experts" / name / "HEAD" / "agent.md"
+    else:
+        link_target = Path("..") / "experts" / name / "HEAD" / "agent.md"
 
     if agent_link.is_symlink():
         if os.readlink(agent_link) == str(link_target):
@@ -337,43 +381,47 @@ def _update_librarian() -> None:
 
     entries: list[str] = []
 
-    for expert_dir in sorted(EXPERTS_DIR.iterdir()):
-        if not expert_dir.is_dir():
+    # Scan both public and private experts
+    for expert_base_dir in [EXPERTS_DIR, PRIVATE_EXPERTS_DIR]:
+        if not expert_base_dir.exists():
             continue
-        name = expert_dir.name
+        for expert_dir in sorted(expert_base_dir.iterdir()):
+            if not expert_dir.is_dir():
+                continue
+            name = expert_dir.name
 
-        # Skip if not enabled
-        if name not in enabled_experts:
-            continue
+            # Skip if not enabled
+            if name not in enabled_experts:
+                continue
 
-        agent_md = expert_dir / "HEAD" / "agent.md"
-        if not agent_md.exists():
-            continue
+            agent_md = expert_dir / "HEAD" / "agent.md"
+            if not agent_md.exists():
+                continue
 
-        # Parse description from frontmatter
-        description = ""
-        try:
-            text = agent_md.read_text()
-            parts = text.split("---", 2)
-            if len(parts) >= 3:
-                for line in parts[1].splitlines():
-                    if line.startswith("description:"):
-                        description = line[len("description:") :].strip()
-                        break
-        except OSError:
-            pass
+            # Parse description from frontmatter
+            description = ""
+            try:
+                text = agent_md.read_text()
+                parts = text.split("---", 2)
+                if len(parts) >= 3:
+                    for line in parts[1].splitlines():
+                        if line.startswith("description:"):
+                            description = line[len("description:") :].strip()
+                            break
+            except OSError:
+                pass
 
-        # Read first ~5 lines of summary.md
-        summary_lines = ""
-        summary_md = expert_dir / "HEAD" / "summary.md"
-        try:
-            lines = summary_md.read_text().splitlines()
-            summary_lines = "\n".join(lines[:5])
-        except OSError:
-            pass
+            # Read first ~5 lines of summary.md
+            summary_lines = ""
+            summary_md = expert_dir / "HEAD" / "summary.md"
+            try:
+                lines = summary_md.read_text().splitlines()
+                summary_lines = "\n".join(lines[:5])
+            except OSError:
+                pass
 
-        entry = f"### expert-{name}\n{description}\n\n{summary_lines}"
-        entries.append(entry)
+            entry = f"### expert-{name}\n{description}\n\n{summary_lines}"
+            entries.append(entry)
 
     # Generate catalog even if empty, so librarian reflects current state
     catalog = "\n\n---\n\n".join(entries) if entries else "No experts are currently enabled."
@@ -397,10 +445,10 @@ def update_expert(
     Returns:
         dict with keys: success (bool), new_commit (str), old_commit (str), error (str | None)
     """
-    repos = _load_repos()
+    repos, is_private = _get_repos_for_expert(name)
 
     if name not in repos:
-        return {"success": False, "error": f"{name} not in repos.json"}
+        return {"success": False, "error": f"{name} not in repos"}
 
     # Phase 1: Clone/fetch
     if on_progress:
@@ -443,7 +491,7 @@ def update_expert(
     if not new_commit:
         return {"success": False, "error": "Could not resolve latest commit"}
 
-    expert_dir = EXPERTS_DIR / name
+    expert_dir = _get_expert_dir(name)
     old_commit = _get_head_commit(expert_dir)
 
     if old_commit == new_commit:
@@ -591,9 +639,12 @@ def update_expert(
             head_link.unlink()
         head_link.symlink_to(new_commit)
 
-        # Update repos.json
+        # Update repos.json or private-repos.json
         repos[name]["commit"] = new_commit
-        _save_repos(repos)
+        if is_private:
+            _save_private_repos(repos)
+        else:
+            _save_repos(repos)
 
         return {
             "success": True,
@@ -635,10 +686,10 @@ async def update_expert_async_internal(
         if phase not in risky_phases:
             raise asyncio.CancelledError(f"Cancelled before {phase}")
 
-    repos = _load_repos()
+    repos, is_private = _get_repos_for_expert(name)
 
     if name not in repos:
-        return {"success": False, "error": f"{name} not in repos.json"}
+        return {"success": False, "error": f"{name} not in repos"}
 
     tmpdir = None
     staged_path = None
@@ -1136,12 +1187,12 @@ async def switch_version_async(
         if phase not in risky_phases:
             raise asyncio.CancelledError(f"Cancelled before {phase}")
 
-    repos = _load_repos()
+    repos, is_private = _get_repos_for_expert(name)
 
     if name not in repos:
-        return {"success": False, "error": f"{name} not in repos.json"}
+        return {"success": False, "error": f"{name} not in repos"}
 
-    expert_dir = EXPERTS_DIR / name
+    expert_dir = _get_expert_dir(name)
     repo_dir = REPOS_DIR / name
 
     if not repo_dir.exists():
@@ -1414,9 +1465,12 @@ async def switch_version_async(
         # Update agent symlink
         _link_agent(name)
 
-        # Update repos.json
+        # Update repos.json or private-repos.json
         repos[name]["commit"] = target_commit
-        _save_repos(repos)
+        if is_private:
+            _save_private_repos(repos)
+        else:
+            _save_repos(repos)
 
         return {
             "success": True,
@@ -1470,8 +1524,9 @@ def enable_expert(name: str) -> dict:
     Returns:
         dict with keys: success (bool), already_enabled (bool), error (str | None)
     """
-    if not (EXPERTS_DIR / name).is_dir():
-        return {"success": False, "error": f"Expert '{name}' not found in experts/"}
+    expert_dir = _get_expert_dir(name)
+    if not expert_dir.is_dir():
+        return {"success": False, "error": f"Expert '{name}' not found"}
 
     config = _load_config()
     already_enabled = name in config["enabled"]
@@ -1482,7 +1537,7 @@ def enable_expert(name: str) -> dict:
             config["disabled"].remove(name)
         _save_config(config)
 
-    repos = _load_repos()
+    repos, is_private = _get_repos_for_expert(name)
     if not _clone_repo(name, repos, silent=True):
         return {"success": False, "error": "Failed to clone repository"}
 
@@ -1500,8 +1555,9 @@ def disable_expert(name: str) -> dict:
     Returns:
         dict with keys: success (bool), already_disabled (bool), error (str | None)
     """
-    if not (EXPERTS_DIR / name).is_dir():
-        return {"success": False, "error": f"Expert '{name}' not found in experts/"}
+    expert_dir = _get_expert_dir(name)
+    if not expert_dir.is_dir():
+        return {"success": False, "error": f"Expert '{name}' not found"}
 
     config = _load_config()
     already_disabled = name not in config["enabled"] and name in config["disabled"]
