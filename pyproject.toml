@@ -1,0 +1,16 @@
+[project]
+name = "hivemind"
+version = "0.1.0"
+description = "Central expert agent management for Claude Code"
+requires-python = ">=3.10"
+dependencies = ["typer>=0.12.0", "rich>=13.7.0"]
+
+[project.scripts]
+hivemind = "hivemind_cli.cli:app"
+
+[tool.hatch.build.targets.wheel]
+packages = ["hivemind_cli"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

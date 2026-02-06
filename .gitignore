@@ -1,0 +1,12 @@
+# Generated agent files (recreated by hivemind sync)
+agents/
+
+# Python
+__pycache__/
+*.pyc
+*.egg-info/
+dist/
+build/
+
+# OS files
+.DS_Store

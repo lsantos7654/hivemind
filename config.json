@@ -1,0 +1,4 @@
+{
+  "enabled": ["bazel", "bazel-skylib"],
+  "disabled": []
+}

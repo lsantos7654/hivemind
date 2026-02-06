@@ -1,0 +1,615 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Resolve HIVEMIND_ROOT to the directory containing this script's parent
+HIVEMIND_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+CLAUDE_DIR="$HOME/.claude"
+REPOS_DIR="$CLAUDE_DIR/repos"
+REPOS_JSON="$HIVEMIND_ROOT/repos.json"
+CONFIG_JSON="$HIVEMIND_ROOT/config.json"
+AGENTS_DIR="$HIVEMIND_ROOT/agents"
+EXPERTS_DIR="$HIVEMIND_ROOT/experts"
+
+# Colors
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
+BLUE='\033[0;34m'
+BOLD='\033[1m'
+NC='\033[0m' # No Color
+
+usage() {
+    cat <<EOF
+${BOLD}hivemind${NC} - Manage Claude Code expert agents
+
+${BOLD}USAGE:${NC}
+    hivemind <command> [args]
+
+${BOLD}COMMANDS:${NC}
+    init                          Set up ~/.claude symlinks
+    list                          Show all experts with status
+    add <url> [--ref <ref>]       Add repo to repos.json + create skeleton
+              [--name <name>]
+    fetch <name> [--force]        Clone repo to ~/.claude/repos/<name>
+    fetch --all                   Fetch all repos
+    enable <name>                 Enable expert, run sync
+    disable <name>                Disable expert, run sync
+    sync                          Regenerate agents/ from enabled experts
+    status                        Overview of repos, fetch state, agent state
+
+EOF
+}
+
+# --- JSON helpers (pure bash/sed, no jq dependency) ---
+
+# Read a top-level string field from a simple JSON object
+# Usage: json_get_field file key
+json_get_field() {
+    local file="$1" key="$2"
+    python3 -c "
+import json, sys
+with open('$file') as f:
+    data = json.load(f)
+keys = '$key'.split('.')
+obj = data
+for k in keys:
+    obj = obj[k]
+print(obj if isinstance(obj, str) else json.dumps(obj))
+" 2>/dev/null || echo ""
+}
+
+# Write repos.json using python3 for reliable JSON handling
+json_set_repo() {
+    local file="$1" name="$2" remote="$3" commit="$4" ref_name="$5"
+    python3 -c "
+import json
+with open('$file') as f:
+    data = json.load(f)
+data['$name'] = {'remote': '$remote', 'commit': '$commit', 'ref_name': '$ref_name'}
+with open('$file', 'w') as f:
+    json.dump(data, f, indent=2)
+    f.write('\n')
+"
+}
+
+# Read config.json arrays
+config_get_list() {
+    local key="$1"
+    python3 -c "
+import json
+with open('$CONFIG_JSON') as f:
+    data = json.load(f)
+for item in data.get('$key', []):
+    print(item)
+"
+}
+
+# Add item to config.json array
+config_add_to() {
+    local key="$1" value="$2"
+    python3 -c "
+import json
+with open('$CONFIG_JSON') as f:
+    data = json.load(f)
+lst = data.get('$key', [])
+if '$value' not in lst:
+    lst.append('$value')
+data['$key'] = lst
+with open('$CONFIG_JSON', 'w') as f:
+    json.dump(data, f, indent=2)
+    f.write('\n')
+"
+}
+
+# Remove item from config.json array
+config_remove_from() {
+    local key="$1" value="$2"
+    python3 -c "
+import json
+with open('$CONFIG_JSON') as f:
+    data = json.load(f)
+lst = data.get('$key', [])
+lst = [x for x in lst if x != '$value']
+data['$key'] = lst
+with open('$CONFIG_JSON', 'w') as f:
+    json.dump(data, f, indent=2)
+    f.write('\n')
+"
+}
+
+# List all repo names from repos.json
+repos_list_names() {
+    python3 -c "
+import json
+with open('$REPOS_JSON') as f:
+    data = json.load(f)
+for k in sorted(data.keys()):
+    print(k)
+"
+}
+
+# --- Commands ---
+
+cmd_init() {
+    echo -e "${BOLD}Initializing hivemind...${NC}"
+
+    # Create ~/.claude dirs if needed
+    mkdir -p "$CLAUDE_DIR"
+    mkdir -p "$REPOS_DIR"
+
+    # Symlink agents/
+    if [ -L "$CLAUDE_DIR/agents" ]; then
+        local current_target
+        current_target="$(readlink "$CLAUDE_DIR/agents")"
+        if [ "$current_target" = "$AGENTS_DIR" ]; then
+            echo -e "  ${GREEN}✓${NC} agents/ symlink already correct"
+        else
+            echo -e "  ${YELLOW}!${NC} agents/ symlink points to $current_target, updating..."
+            rm "$CLAUDE_DIR/agents"
+            ln -s "$AGENTS_DIR" "$CLAUDE_DIR/agents"
+            echo -e "  ${GREEN}✓${NC} agents/ → $AGENTS_DIR"
+        fi
+    elif [ -d "$CLAUDE_DIR/agents" ]; then
+        echo -e "  ${YELLOW}!${NC} agents/ is a real directory, backing up to agents.bak/"
+        mv "$CLAUDE_DIR/agents" "$CLAUDE_DIR/agents.bak"
+        ln -s "$AGENTS_DIR" "$CLAUDE_DIR/agents"
+        echo -e "  ${GREEN}✓${NC} agents/ → $AGENTS_DIR (old dir backed up)"
+    else
+        ln -s "$AGENTS_DIR" "$CLAUDE_DIR/agents"
+        echo -e "  ${GREEN}✓${NC} agents/ → $AGENTS_DIR"
+    fi
+
+    # Symlink commands/
+    local commands_src="$HIVEMIND_ROOT/commands"
+    if [ -L "$CLAUDE_DIR/commands" ]; then
+        local current_target
+        current_target="$(readlink "$CLAUDE_DIR/commands")"
+        if [ "$current_target" = "$commands_src" ]; then
+            echo -e "  ${GREEN}✓${NC} commands/ symlink already correct"
+        else
+            echo -e "  ${YELLOW}!${NC} commands/ symlink points to $current_target, updating..."
+            rm "$CLAUDE_DIR/commands"
+            ln -s "$commands_src" "$CLAUDE_DIR/commands"
+            echo -e "  ${GREEN}✓${NC} commands/ → $commands_src"
+        fi
+    elif [ -d "$CLAUDE_DIR/commands" ]; then
+        echo -e "  ${YELLOW}!${NC} commands/ is a real directory, backing up to commands.bak/"
+        mv "$CLAUDE_DIR/commands" "$CLAUDE_DIR/commands.bak"
+        ln -s "$commands_src" "$CLAUDE_DIR/commands"
+        echo -e "  ${GREEN}✓${NC} commands/ → $commands_src (old dir backed up)"
+    else
+        ln -s "$commands_src" "$CLAUDE_DIR/commands"
+        echo -e "  ${GREEN}✓${NC} commands/ → $commands_src"
+    fi
+
+    # Run sync to generate agent files
+    echo ""
+    cmd_sync
+
+    echo ""
+    echo -e "${GREEN}${BOLD}Hivemind initialized!${NC}"
+}
+
+cmd_list() {
+    echo -e "${BOLD}Experts:${NC}"
+    echo ""
+
+    local enabled disabled
+    enabled=$(config_get_list "enabled")
+    disabled=$(config_get_list "disabled")
+
+    # Collect all expert names from experts/ dir
+    local all_experts=()
+    if [ -d "$EXPERTS_DIR" ]; then
+        for dir in "$EXPERTS_DIR"/*/; do
+            [ -d "$dir" ] || continue
+            local name
+            name="$(basename "$dir")"
+            all_experts+=("$name")
+        done
+    fi
+
+    if [ ${#all_experts[@]} -eq 0 ]; then
+        echo "  No experts found. Use 'hivemind add <url>' to add one."
+        return
+    fi
+
+    printf "  ${BOLD}%-20s %-10s %-10s %-8s${NC}\n" "NAME" "STATUS" "FETCHED" "AGENT"
+    echo "  ────────────────────────────────────────────────────"
+
+    for name in "${all_experts[@]}"; do
+        local status="unknown"
+        if echo "$enabled" | grep -qx "$name"; then
+            status="${GREEN}enabled${NC}"
+        elif echo "$disabled" | grep -qx "$name"; then
+            status="${YELLOW}disabled${NC}"
+        else
+            status="${RED}unlisted${NC}"
+        fi
+
+        local fetched="${RED}no${NC}"
+        if [ -d "$REPOS_DIR/$name" ]; then
+            fetched="${GREEN}yes${NC}"
+        fi
+
+        local agent="${RED}no${NC}"
+        if [ -f "$AGENTS_DIR/expert-$name.md" ]; then
+            agent="${GREEN}yes${NC}"
+        fi
+
+        printf "  %-20s %-22b %-22b %-20b\n" "$name" "$status" "$fetched" "$agent"
+    done
+}
+
+cmd_add() {
+    local url="" ref="" name=""
+
+    # Parse arguments
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --ref)
+                ref="$2"
+                shift 2
+                ;;
+            --name)
+                name="$2"
+                shift 2
+                ;;
+            *)
+                if [ -z "$url" ]; then
+                    url="$1"
+                fi
+                shift
+                ;;
+        esac
+    done
+
+    if [ -z "$url" ]; then
+        echo -e "${RED}Error: URL is required${NC}"
+        echo "Usage: hivemind add <url> [--ref <ref>] [--name <name>]"
+        return 1
+    fi
+
+    # Derive name from URL if not provided
+    if [ -z "$name" ]; then
+        name="$(basename "$url" .git)"
+    fi
+
+    echo -e "${BOLD}Adding expert: $name${NC}"
+    echo "  URL: $url"
+
+    # Resolve commit if ref provided
+    local commit=""
+    local ref_name="$ref"
+    if [ -n "$ref" ]; then
+        echo "  Resolving ref '$ref'..."
+        commit=$(git ls-remote "$url" "$ref" 2>/dev/null | head -1 | cut -f1)
+        if [ -z "$commit" ]; then
+            # Try as a commit hash directly
+            commit="$ref"
+            ref_name="$ref"
+        fi
+        echo "  Commit: $commit"
+    fi
+
+    # Add to repos.json
+    json_set_repo "$REPOS_JSON" "$name" "$url" "$commit" "$ref_name"
+    echo -e "  ${GREEN}✓${NC} Added to repos.json"
+
+    # Create experts/<name>/ skeleton
+    local expert_dir="$EXPERTS_DIR/$name"
+    mkdir -p "$expert_dir"
+
+    if [ ! -f "$expert_dir/agent.md" ]; then
+        cat > "$expert_dir/agent.md" <<AGENT
+---
+name: expert-$name
+description: Expert on $name repository. Use proactively when questions involve $name. Automatically invoked for questions about $name.
+tools: Read, Grep, Glob, Bash, mcp__context7__resolve-library-id, mcp__context7__get-library-docs
+model: sonnet
+---
+
+# Expert: $name
+
+## Knowledge Base
+
+- Summary: {{HIVEMIND_ROOT}}/experts/$name/summary.md
+- Code Structure: {{HIVEMIND_ROOT}}/experts/$name/code_structure.md
+- Build System: {{HIVEMIND_ROOT}}/experts/$name/build_system.md
+- APIs: {{HIVEMIND_ROOT}}/experts/$name/apis_and_interfaces.md
+
+## Source Access
+
+Repository source at \`~/.claude/repos/$name\`.
+If not present, run: \`hivemind fetch $name\`
+
+## Instructions
+
+1. Read relevant knowledge docs first
+2. Search source at ~/.claude/repos/$name for details
+3. Provide file paths and code references
+4. Include working examples from actual repo patterns
+
+## Expertise
+
+[Generated from analysis - run /create-repo-expert to populate]
+
+## Constraints
+
+- Only answer questions related to this repository
+- Defer to source code when knowledge docs are insufficient
+- Note if information might be outdated relative to repo version
+AGENT
+        echo -e "  ${GREEN}✓${NC} Created $expert_dir/agent.md (skeleton)"
+    else
+        echo -e "  ${YELLOW}!${NC} agent.md already exists, skipping"
+    fi
+
+    # Add to enabled list if not already present
+    config_add_to "enabled" "$name"
+    config_remove_from "disabled" "$name"
+    echo -e "  ${GREEN}✓${NC} Enabled in config.json"
+
+    echo ""
+    echo -e "${GREEN}Done!${NC} Next steps:"
+    echo "  hivemind fetch $name        # Clone the repo"
+    echo "  /create-repo-expert $url    # Generate knowledge docs (in Claude)"
+    echo "  hivemind sync               # Regenerate agent files"
+}
+
+cmd_fetch() {
+    local name="" force=false all=false
+
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --force) force=true; shift ;;
+            --all) all=true; shift ;;
+            *) name="$1"; shift ;;
+        esac
+    done
+
+    if $all; then
+        echo -e "${BOLD}Fetching all repos...${NC}"
+        local names
+        names=$(repos_list_names)
+        for n in $names; do
+            cmd_fetch_one "$n" "$force"
+        done
+        return
+    fi
+
+    if [ -z "$name" ]; then
+        echo -e "${RED}Error: name is required (or use --all)${NC}"
+        echo "Usage: hivemind fetch <name> [--force]"
+        return 1
+    fi
+
+    cmd_fetch_one "$name" "$force"
+}
+
+cmd_fetch_one() {
+    local name="$1" force="$2"
+    local remote commit ref_name
+
+    remote=$(json_get_field "$REPOS_JSON" "$name.remote")
+    commit=$(json_get_field "$REPOS_JSON" "$name.commit")
+    ref_name=$(json_get_field "$REPOS_JSON" "$name.ref_name")
+
+    if [ -z "$remote" ]; then
+        echo -e "  ${RED}✗${NC} $name: not found in repos.json"
+        return 1
+    fi
+
+    local repo_dir="$REPOS_DIR/$name"
+    mkdir -p "$REPOS_DIR"
+
+    if [ -d "$repo_dir" ] && [ "$force" != "true" ]; then
+        echo -e "  ${YELLOW}!${NC} $name: already fetched at $repo_dir (use --force to re-clone)"
+        return 0
+    fi
+
+    if [ -d "$repo_dir" ] && [ "$force" = "true" ]; then
+        echo -e "  ${YELLOW}!${NC} $name: removing existing clone..."
+        rm -rf "$repo_dir"
+    fi
+
+    echo -e "  ${BLUE}⟳${NC} $name: cloning from $remote..."
+
+    if [ -n "$commit" ] && [ "$commit" != "" ]; then
+        # Clone and checkout specific commit
+        git clone --quiet "$remote" "$repo_dir"
+        (cd "$repo_dir" && git checkout --quiet "$commit")
+        echo -e "  ${GREEN}✓${NC} $name: cloned at commit ${commit:0:12}"
+    elif [ -n "$ref_name" ] && [ "$ref_name" != "" ]; then
+        git clone --quiet --branch "$ref_name" --depth 1 "$remote" "$repo_dir"
+        echo -e "  ${GREEN}✓${NC} $name: cloned at ref $ref_name"
+    else
+        git clone --quiet --depth 1 "$remote" "$repo_dir"
+        echo -e "  ${GREEN}✓${NC} $name: cloned (latest)"
+    fi
+}
+
+cmd_enable() {
+    local name="$1"
+
+    if [ -z "$name" ]; then
+        echo -e "${RED}Error: expert name is required${NC}"
+        echo "Usage: hivemind enable <name>"
+        return 1
+    fi
+
+    if [ ! -d "$EXPERTS_DIR/$name" ]; then
+        echo -e "${RED}Error: expert '$name' not found in experts/${NC}"
+        return 1
+    fi
+
+    config_add_to "enabled" "$name"
+    config_remove_from "disabled" "$name"
+    echo -e "${GREEN}✓${NC} Enabled: $name"
+
+    cmd_sync
+}
+
+cmd_disable() {
+    local name="$1"
+
+    if [ -z "$name" ]; then
+        echo -e "${RED}Error: expert name is required${NC}"
+        echo "Usage: hivemind disable <name>"
+        return 1
+    fi
+
+    config_remove_from "enabled" "$name"
+    config_add_to "disabled" "$name"
+    echo -e "${YELLOW}✓${NC} Disabled: $name"
+
+    cmd_sync
+}
+
+cmd_sync() {
+    echo -e "${BOLD}Syncing agents...${NC}"
+
+    # Ensure agents dir exists
+    mkdir -p "$AGENTS_DIR"
+
+    # Get enabled list
+    local enabled
+    enabled=$(config_get_list "enabled")
+
+    # Track which agent files we generate (to clean up stale ones)
+    local generated_files=()
+
+    for name in $enabled; do
+        local agent_src="$EXPERTS_DIR/$name/agent.md"
+        local agent_dst="$AGENTS_DIR/expert-$name.md"
+
+        if [ ! -f "$agent_src" ]; then
+            echo -e "  ${YELLOW}!${NC} $name: no agent.md found, skipping"
+            continue
+        fi
+
+        # Read agent.md and resolve {{HIVEMIND_ROOT}} placeholders
+        sed "s|{{HIVEMIND_ROOT}}|$HIVEMIND_ROOT|g" "$agent_src" > "$agent_dst"
+
+        echo -e "  ${GREEN}✓${NC} $name → agents/expert-$name.md"
+        generated_files+=("expert-$name.md")
+    done
+
+    # Remove agent files for disabled/deleted experts
+    if [ -d "$AGENTS_DIR" ]; then
+        for f in "$AGENTS_DIR"/expert-*.md; do
+            [ -f "$f" ] || continue
+            local basename
+            basename="$(basename "$f")"
+            local found=false
+            for gf in "${generated_files[@]}"; do
+                if [ "$gf" = "$basename" ]; then
+                    found=true
+                    break
+                fi
+            done
+            if ! $found; then
+                rm "$f"
+                echo -e "  ${RED}✗${NC} Removed stale: $basename"
+            fi
+        done
+    fi
+
+    echo -e "${GREEN}Sync complete.${NC}"
+}
+
+cmd_status() {
+    echo -e "${BOLD}Hivemind Status${NC}"
+    echo ""
+
+    # Check symlinks
+    echo -e "${BOLD}Symlinks:${NC}"
+    if [ -L "$CLAUDE_DIR/agents" ]; then
+        local target
+        target="$(readlink "$CLAUDE_DIR/agents")"
+        if [ "$target" = "$AGENTS_DIR" ]; then
+            echo -e "  ${GREEN}✓${NC} ~/.claude/agents → $AGENTS_DIR"
+        else
+            echo -e "  ${YELLOW}!${NC} ~/.claude/agents → $target (expected $AGENTS_DIR)"
+        fi
+    else
+        echo -e "  ${RED}✗${NC} ~/.claude/agents is not a symlink (run: hivemind init)"
+    fi
+
+    if [ -L "$CLAUDE_DIR/commands" ]; then
+        local target
+        target="$(readlink "$CLAUDE_DIR/commands")"
+        local expected="$HIVEMIND_ROOT/commands"
+        if [ "$target" = "$expected" ]; then
+            echo -e "  ${GREEN}✓${NC} ~/.claude/commands → $expected"
+        else
+            echo -e "  ${YELLOW}!${NC} ~/.claude/commands → $target (expected $expected)"
+        fi
+    else
+        echo -e "  ${RED}✗${NC} ~/.claude/commands is not a symlink (run: hivemind init)"
+    fi
+
+    echo ""
+
+    # Repos
+    echo -e "${BOLD}Repos:${NC}"
+    local names
+    names=$(repos_list_names)
+    if [ -z "$names" ]; then
+        echo "  No repos configured."
+    else
+        for name in $names; do
+            local remote commit ref_name fetched
+            remote=$(json_get_field "$REPOS_JSON" "$name.remote")
+            commit=$(json_get_field "$REPOS_JSON" "$name.commit")
+            ref_name=$(json_get_field "$REPOS_JSON" "$name.ref_name")
+
+            if [ -d "$REPOS_DIR/$name" ]; then
+                fetched="${GREEN}fetched${NC}"
+            else
+                fetched="${RED}not fetched${NC}"
+            fi
+
+            local ref_display=""
+            if [ -n "$ref_name" ] && [ "$ref_name" != "" ]; then
+                ref_display=" @ $ref_name"
+            elif [ -n "$commit" ] && [ "$commit" != "" ]; then
+                ref_display=" @ ${commit:0:12}"
+            fi
+
+            echo -e "  $name: $remote$ref_display [$fetched]"
+        done
+    fi
+
+    echo ""
+
+    # Experts
+    cmd_list
+}
+
+# --- Main ---
+
+if [ $# -eq 0 ]; then
+    usage
+    exit 0
+fi
+
+command="$1"
+shift
+
+case "$command" in
+    init)    cmd_init ;;
+    list)    cmd_list ;;
+    add)     cmd_add "$@" ;;
+    fetch)   cmd_fetch "$@" ;;
+    enable)  cmd_enable "$@" ;;
+    disable) cmd_disable "$@" ;;
+    sync)    cmd_sync ;;
+    status)  cmd_status ;;
+    help)    usage ;;
+    *)
+        echo -e "${RED}Unknown command: $command${NC}"
+        usage
+        exit 1
+        ;;
+esac

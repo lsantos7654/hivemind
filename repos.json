@@ -1,0 +1,12 @@
+{
+  "bazel": {
+    "remote": "https://github.com/bazelbuild/bazel.git",
+    "commit": "",
+    "ref_name": ""
+  },
+  "bazel-skylib": {
+    "remote": "https://github.com/bazelbuild/bazel-skylib.git",
+    "commit": "",
+    "ref_name": ""
+  }
+}
