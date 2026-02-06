@@ -50,7 +50,6 @@ class MainScreen(Screen):
         """Compose the main screen."""
         yield Header(show_clock=True)
         yield Container(
-            Static("Hivemind Expert Manager", classes="header"),
             SearchBar(classes="search-container"),
             ExpertTable(self.experts, id="expert-table"),
             Static(
