@@ -328,8 +328,12 @@ def _analyze_repo(
 
 
 def _update_librarian() -> None:
-    """Regenerate agents/librarian.md from all experts with valid HEAD/agent.md."""
+    """Regenerate agents/librarian.md from enabled experts with valid HEAD/agent.md."""
     from hivemind_cli.templates import librarian_template
+
+    # Load config to get enabled experts
+    config = _load_config()
+    enabled_experts = set(config.get("enabled", []))
 
     entries: list[str] = []
 
@@ -337,6 +341,11 @@ def _update_librarian() -> None:
         if not expert_dir.is_dir():
             continue
         name = expert_dir.name
+
+        # Skip if not enabled
+        if name not in enabled_experts:
+            continue
+
         agent_md = expert_dir / "HEAD" / "agent.md"
         if not agent_md.exists():
             continue
@@ -366,10 +375,8 @@ def _update_librarian() -> None:
         entry = f"### expert-{name}\n{description}\n\n{summary_lines}"
         entries.append(entry)
 
-    if not entries:
-        return
-
-    catalog = "\n\n---\n\n".join(entries)
+    # Generate catalog even if empty, so librarian reflects current state
+    catalog = "\n\n---\n\n".join(entries) if entries else "No experts are currently enabled."
 
     # Use centralized librarian template
     content = librarian_template(catalog)
@@ -1481,6 +1488,9 @@ def enable_expert(name: str) -> dict:
 
     _link_agent(name)
 
+    # Update librarian to reflect enabled experts
+    _update_librarian()
+
     return {"success": True, "already_enabled": already_enabled}
 
 
@@ -1504,5 +1514,8 @@ def disable_expert(name: str) -> dict:
         _save_config(config)
 
     _unlink_agent(name)
+
+    # Update librarian to reflect enabled experts
+    _update_librarian()
 
     return {"success": True, "already_disabled": already_disabled}
