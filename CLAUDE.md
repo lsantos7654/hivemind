@@ -36,3 +36,12 @@ When editing experts, edit `experts/<name>/HEAD/agent.md` — changes are live i
 - Aim for lean code: minimize noise and prevent creation of dead code
 - If something is only useful for a single migration, use a standalone script in `scripts/` instead of adding to core CLI
 - Core codebase should only contain features that stay relevant as the project matures
+
+**Modern Python Type Hints:**
+- ALWAYS use modern Python type hints (PEP 604, Python 3.10+)
+- Use `a | b` instead of `Optional[a]` or `Union[a, b]`
+- Use `list[str]` instead of `List[str]`
+- Use `dict[str, int]` instead of `Dict[str, int]`
+- Use `tuple[int, ...]` instead of `Tuple[int, ...]`
+- NEVER import from `typing` module for basic types (List, Dict, Optional, Union, Tuple)
+- Only import from `typing` for advanced types like `Callable`, `Protocol`, etc. when needed
