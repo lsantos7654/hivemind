@@ -3,13 +3,14 @@ name = "hivemind"
 version = "0.1.0"
 description = "Central expert agent management for Claude Code"
 requires-python = ">=3.10"
-dependencies = ["typer>=0.12.0", "rich>=13.7.0", "textual>=0.90.0"]
+dependencies = ["typer>=0.12.0", "rich>=13.7.0", "textual>=0.90.0", "crawl4ai>=0.4.0"]
 
 [project.scripts]
 hivemind = "hivemind_cli.cli:app"
+crawl_site = "crawl_site.cli:app"
 
 [tool.hatch.build.targets.wheel]
-packages = ["hivemind_cli"]
+packages = ["hivemind_cli", "crawl_site"]
 
 [build-system]
 requires = ["hatchling"]
