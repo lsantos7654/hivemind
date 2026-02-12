@@ -7,10 +7,9 @@ dependencies = ["typer>=0.12.0", "rich>=13.7.0", "textual>=0.90.0", "crawl4ai>=0
 
 [project.scripts]
 hivemind = "hivemind_cli.cli:app"
-crawl_site = "crawl_site.cli:app"
 
 [tool.hatch.build.targets.wheel]
-packages = ["hivemind_cli", "crawl_site"]
+packages = ["hivemind_cli"]
 
 [build-system]
 requires = ["hatchling"]

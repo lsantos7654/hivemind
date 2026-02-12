@@ -53,7 +53,6 @@ def create_path_filter(url: str) -> FilterChain:
     """
     parsed = urlparse(url)
     # Create pattern that matches the starting URL and anything under it
-    # e.g., https://example.com/docs/api -> https://example.com/docs/api*
     base_pattern = f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
     if not base_pattern.endswith("/"):
         base_pattern += "*"

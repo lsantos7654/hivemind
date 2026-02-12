@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import shutil
@@ -611,6 +612,133 @@ def tui() -> None:
 
     app_instance = HivemindApp()
     app_instance.run()
+
+
+@app.command()
+def crawl(
+    url: str = typer.Argument(..., help="Starting URL to crawl"),
+    agent: str = typer.Argument(..., help="Agent name for output directory", autocompletion=_complete_expert),
+    max_pages: int = typer.Option(50, "--max-pages", "-n", help="Maximum pages to crawl"),
+) -> None:
+    """Crawl a website and save documentation for an expert agent.
+
+    Crawls the specified URL and saves markdown files to
+    ~/.cache/hivemind/external_docs/<agent>/ for use by expert agents.
+
+    Always runs in preview mode - you'll see all discovered URLs
+    before the crawl begins.
+    """
+    # Validate that the agent exists
+    expert_dir = _get_expert_dir(agent)
+    if not expert_dir.is_dir():
+        console.print(f"[error]Error: Expert '{agent}' not found.[/error]")
+        console.print("\n[info]Available experts:[/info]")
+        experts = sorted(_expert_names())
+        if experts:
+            for expert in experts:
+                console.print(f"  - {expert}")
+        else:
+            console.print("  [dim]No experts configured. Use [bold]hivemind add <url>[/bold] to add one.[/dim]")
+        raise typer.Exit(1)
+
+    from hivemind_cli.crawler import crawl_website, preview_crawl
+
+    output_dir = CACHE_DIR / "external_docs" / agent
+
+    console.print(f"[heading]Crawling Documentation for {agent}[/heading]\n")
+    console.print(f"[info]URL:[/info] {url}")
+    console.print(f"[info]Output:[/info] {output_dir}")
+    console.print()
+
+    # Phase 1: Preview (discover URLs)
+    console.print("[info]Discovering URLs...[/info]")
+
+    try:
+        discovered_urls = asyncio.run(preview_crawl(url=url, max_pages=max_pages))
+    except Exception as e:
+        console.print(f"[error]✗ Failed to discover URLs: {e}[/error]")
+        raise typer.Exit(1)
+
+    if not discovered_urls:
+        console.print("[error]✗ No URLs discovered[/error]")
+        raise typer.Exit(1)
+
+    console.print(f"\n[success]Found {len(discovered_urls)} pages:[/success]\n")
+
+    # Show ALL discovered URLs
+    for i, discovered_url in enumerate(discovered_urls, 1):
+        console.print(f"  {i}. {discovered_url}")
+
+    console.print()
+
+    # Ask for confirmation
+    if not typer.confirm(f"Crawl all {len(discovered_urls)} pages?", default=True):
+        console.print("[warning]Crawl cancelled[/warning]")
+        raise typer.Exit(0)
+
+    console.print()
+
+    # Phase 2: Full crawl with progress
+    console.print("[heading]Crawling pages...[/heading]\n")
+
+    from rich.progress import BarColumn, Progress, TextColumn, TimeRemainingColumn
+
+    progress = Progress(
+        TextColumn("[bold blue]{task.fields[current_url]}"),
+        BarColumn(bar_width=None),
+        "[progress.percentage]{task.percentage:>3.0f}%",
+        TextColumn("{task.completed}/{task.total} pages"),
+        TimeRemainingColumn(),
+        console=console,
+    )
+
+    def on_page(page_url: str, success: bool) -> None:
+        progress.update(task_id, advance=1, current_url=page_url)
+        if success:
+            progress.console.log(f"[success]✓[/success] {page_url}")
+
+    with progress:
+        task_id = progress.add_task(
+            "crawling",
+            total=len(discovered_urls),
+            current_url=url,
+        )
+
+        try:
+            result = asyncio.run(
+                crawl_website(
+                    url=url,
+                    max_pages=len(discovered_urls),
+                    output_dir=str(output_dir),
+                    on_page_callback=on_page,
+                )
+            )
+        except Exception as e:
+            console.print(f"\n[error]✗ Crawl failed: {e}[/error]")
+            raise typer.Exit(1)
+
+    # Display summary
+    console.print()
+
+    table = Table(title="Crawl Summary")
+    table.add_column("Metric", style="cyan")
+    table.add_column("Value", justify="right", style="magenta")
+
+    table.add_row("Total Pages", str(result.total_pages))
+    table.add_row("Successful", str(result.successful_pages))
+    table.add_row("Failed", str(result.failed_pages))
+    table.add_row("Output Directory", str(output_dir))
+
+    console.print(table)
+    console.print()
+
+    if result.successful_pages > 0:
+        console.print(f"[success]✓ Successfully crawled {result.successful_pages} pages[/success]")
+        console.print(f"\n[info]Documentation saved to:[/info] {output_dir}")
+        console.print(f"[info]Expert agents can now access these docs[/info]")
+    else:
+        console.print("[error]✗ No pages were successfully crawled[/error]")
+        raise typer.Exit(1)
 
 
 @app.command()
