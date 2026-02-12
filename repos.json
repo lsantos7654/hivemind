@@ -88,5 +88,10 @@
     "remote": "https://github.com/unclecode/crawl4ai.git",
     "commit": "55de32d92594721e2ad4df59e74fe15769e0a978",
     "ref_name": ""
+  },
+  "nocobase": {
+    "remote": "https://github.com/nocobase/nocobase.git",
+    "commit": "c15920f910314a0ddd059a01b83aff36496f729b",
+    "ref_name": ""
   }
 }

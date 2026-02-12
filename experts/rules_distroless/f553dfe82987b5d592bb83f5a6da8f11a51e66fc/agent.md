@@ -19,6 +19,11 @@ model: sonnet
 Repository source at `~/.cache/hivemind/repos/rules_distroless`.
 If not present, run: `hivemind enable rules_distroless`
 
+**External Documentation:**
+Additional crawled documentation may be available at `~/.cache/hivemind/external_docs/rules_distroless/`.
+These are supplementary markdown files from external sources (not from the repository).
+Use these docs when repository knowledge is insufficient or for external API references.
+
 ## Instructions
 
 **CRITICAL: You MUST follow this workflow for EVERY question:**
