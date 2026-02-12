@@ -78,5 +78,15 @@
     "remote": "https://github.com/Netflix/metaflow.git",
     "commit": "c834ed108e5b0e1feacb17ba2229cb8a0eb0b949",
     "ref_name": ""
+  },
+  "nocodb": {
+    "remote": "https://github.com/nocodb/nocodb.git",
+    "commit": "9b7d311ec0e77f2b6651ae568443d9fb2c2deaf3",
+    "ref_name": ""
+  },
+  "crawl4ai": {
+    "remote": "https://github.com/unclecode/crawl4ai.git",
+    "commit": "55de32d92594721e2ad4df59e74fe15769e0a978",
+    "ref_name": ""
   }
 }
