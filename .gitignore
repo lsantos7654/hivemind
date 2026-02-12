@@ -5,6 +5,9 @@ agents/*
 # Repo symlink (points to ~/.cache/hivemind/repos)
 repos
 
+# External docs symlink (points to ~/.cache/hivemind/external_docs)
+external_docs
+
 # User-specific config (enabled/disabled state)
 config.json
 

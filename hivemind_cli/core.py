@@ -59,6 +59,8 @@ CLAUDE_DIR = Path.home() / ".claude"
 CACHE_DIR = Path.home() / ".cache" / "hivemind"
 REPOS_DIR = CACHE_DIR / "repos"
 REPOS_LINK = HIVEMIND_ROOT / "repos"
+EXTERNAL_DOCS_DIR = CACHE_DIR / "external_docs"
+EXTERNAL_DOCS_LINK = HIVEMIND_ROOT / "external_docs"
 REPOS_JSON = HIVEMIND_ROOT / "repos.json"
 CONFIG_JSON = HIVEMIND_ROOT / "config.json"
 AGENTS_DIR = HIVEMIND_ROOT / "agents"
@@ -185,6 +187,25 @@ def _ensure_repos_link() -> None:
     elif REPOS_LINK.exists():
         REPOS_LINK.unlink()
     REPOS_LINK.symlink_to(REPOS_DIR)
+
+
+def _ensure_external_docs_link() -> None:
+    """Ensure HIVEMIND_ROOT/external_docs symlink points to the cache external_docs dir."""
+    EXTERNAL_DOCS_DIR.mkdir(parents=True, exist_ok=True)
+    if EXTERNAL_DOCS_LINK.is_symlink():
+        if EXTERNAL_DOCS_LINK.resolve() == EXTERNAL_DOCS_DIR.resolve():
+            return
+        EXTERNAL_DOCS_LINK.unlink()
+    elif EXTERNAL_DOCS_LINK.is_dir():
+        # Move existing real directory contents to cache
+        for item in EXTERNAL_DOCS_LINK.iterdir():
+            dest = EXTERNAL_DOCS_DIR / item.name
+            if not dest.exists():
+                item.rename(dest)
+        EXTERNAL_DOCS_LINK.rmdir()
+    elif EXTERNAL_DOCS_LINK.exists():
+        EXTERNAL_DOCS_LINK.unlink()
+    EXTERNAL_DOCS_LINK.symlink_to(EXTERNAL_DOCS_DIR)
 
 
 def _link_agent(name: str) -> bool:

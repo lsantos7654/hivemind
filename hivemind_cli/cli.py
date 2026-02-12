@@ -39,6 +39,7 @@ from hivemind_cli.core import (
     _get_head_commit,
     _count_versions,
     _ensure_repos_link,
+    _ensure_external_docs_link,
     _link_agent,
     _unlink_agent,
     _link_expert,
@@ -56,6 +57,8 @@ from hivemind_cli.core import (
     CACHE_DIR,
     REPOS_DIR,
     REPOS_LINK,
+    EXTERNAL_DOCS_DIR,
+    EXTERNAL_DOCS_LINK,
     REPOS_JSON,
     CONFIG_JSON,
     AGENTS_DIR,
@@ -202,6 +205,8 @@ def init() -> None:
     _setup_symlink(CLAUDE_MD, CLAUDE_DIR / "CLAUDE.md", "CLAUDE.md")
     _ensure_repos_link()
     console.print(f"  [success]✓[/success] repos/ → {REPOS_DIR}")
+    _ensure_external_docs_link()
+    console.print(f"  [success]✓[/success] external_docs/ → {EXTERNAL_DOCS_DIR}")
 
     # Create experts directory (no migration logic - use scripts/migrate_experts_symlinks.py)
     experts_dir = CLAUDE_DIR / "experts"
@@ -643,7 +648,7 @@ def crawl(
 
     from hivemind_cli.crawler import crawl_website, preview_crawl
 
-    output_dir = CACHE_DIR / "external_docs" / agent
+    output_dir = EXTERNAL_DOCS_DIR / agent
 
     console.print(f"[heading]Crawling Documentation for {agent}[/heading]\n")
     console.print(f"[info]URL:[/info] {url}")
@@ -751,6 +756,7 @@ def status() -> None:
         ("~/.claude/commands/", COMMANDS_DIR, CLAUDE_DIR / "commands"),
         ("~/.claude/CLAUDE.md", CLAUDE_MD, CLAUDE_DIR / "CLAUDE.md"),
         ("repos/", REPOS_DIR, REPOS_LINK),
+        ("external_docs/", EXTERNAL_DOCS_DIR, EXTERNAL_DOCS_LINK),
     ]:
         if link.is_symlink():
             actual = link.resolve()
