@@ -623,7 +623,7 @@ def tui() -> None:
 def crawl(
     url: str = typer.Argument(..., help="Starting URL to crawl"),
     agent: str = typer.Argument(..., help="Agent name for output directory", autocompletion=_complete_expert),
-    max_pages: int = typer.Option(50, "--max-pages", "-n", help="Maximum pages to crawl"),
+    max_pages: int | None = typer.Option(None, "--max-pages", "-n", help="Maximum pages to crawl (default: no limit)"),
 ) -> None:
     """Crawl a website and save documentation for an expert agent.
 
@@ -646,7 +646,13 @@ def crawl(
             console.print("  [dim]No experts configured. Use [bold]hivemind add <url>[/bold] to add one.[/dim]")
         raise typer.Exit(1)
 
-    from hivemind_cli.crawler import crawl_website, preview_crawl
+    from hivemind_cli.crawler import (
+        crawl_from_sitemap,
+        crawl_website,
+        is_sitemap_url,
+        preview_crawl,
+        preview_sitemap,
+    )
 
     output_dir = EXTERNAL_DOCS_DIR / agent
 
@@ -656,13 +662,23 @@ def crawl(
     console.print()
 
     # Phase 1: Preview (discover URLs)
-    console.print("[info]Discovering URLs...[/info]")
-
-    try:
-        discovered_urls = asyncio.run(preview_crawl(url=url, max_pages=max_pages))
-    except Exception as e:
-        console.print(f"[error]✗ Failed to discover URLs: {e}[/error]")
-        raise typer.Exit(1)
+    # Detect and route based on URL type
+    if is_sitemap_url(url):
+        console.print("[info]🗺️  Detected sitemap URL, discovering pages...[/info]")
+        try:
+            discovered_urls = asyncio.run(preview_sitemap(sitemap_url=url, max_pages=max_pages))
+        except Exception as e:
+            console.print(f"[error]✗ Failed to fetch sitemap: {e}[/error]")
+            raise typer.Exit(1)
+        is_sitemap = True
+    else:
+        console.print("[info]Discovering URLs...[/info]")
+        try:
+            discovered_urls = asyncio.run(preview_crawl(url=url, max_pages=max_pages))
+        except Exception as e:
+            console.print(f"[error]✗ Failed to discover URLs: {e}[/error]")
+            raise typer.Exit(1)
+        is_sitemap = False
 
     if not discovered_urls:
         console.print("[error]✗ No URLs discovered[/error]")
@@ -710,14 +726,24 @@ def crawl(
         )
 
         try:
-            result = asyncio.run(
-                crawl_website(
-                    url=url,
-                    max_pages=len(discovered_urls),
-                    output_dir=str(output_dir),
-                    on_page_callback=on_page,
+            if is_sitemap:
+                result = asyncio.run(
+                    crawl_from_sitemap(
+                        sitemap_url=url,
+                        max_pages=len(discovered_urls),
+                        output_dir=str(output_dir),
+                        on_page_callback=on_page,
+                    )
                 )
-            )
+            else:
+                result = asyncio.run(
+                    crawl_website(
+                        url=url,
+                        max_pages=len(discovered_urls),
+                        output_dir=str(output_dir),
+                        on_page_callback=on_page,
+                    )
+                )
         except Exception as e:
             console.print(f"\n[error]✗ Crawl failed: {e}[/error]")
             raise typer.Exit(1)
