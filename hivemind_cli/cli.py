@@ -67,6 +67,7 @@ from hivemind_cli.core import (
     PRIVATE_REPOS_JSON,
     COMMANDS_DIR,
     CLAUDE_MD,
+    SETTINGS_JSON,
 )
 
 THEME = Theme({
@@ -203,6 +204,7 @@ def init() -> None:
     _setup_symlink(AGENTS_DIR, CLAUDE_DIR / "agents", "agents/")
     _setup_symlink(COMMANDS_DIR, CLAUDE_DIR / "commands", "commands/")
     _setup_symlink(CLAUDE_MD, CLAUDE_DIR / "CLAUDE.md", "CLAUDE.md")
+    _setup_symlink(SETTINGS_JSON, CLAUDE_DIR / "settings.json", "settings.json")
     _ensure_repos_link()
     console.print(f"  [success]✓[/success] repos/ → {REPOS_DIR}")
     _ensure_external_docs_link()
@@ -624,6 +626,7 @@ def crawl(
     url: str = typer.Argument(..., help="Starting URL to crawl"),
     agent: str = typer.Argument(..., help="Agent name for output directory", autocompletion=_complete_expert),
     max_pages: int | None = typer.Option(None, "--max-pages", "-n", help="Maximum pages to crawl (default: no limit)"),
+    raw_markdown: bool = typer.Option(False, "--raw-markdown", help="Force raw markdown fetching (.md endpoints only, no browser fallback)"),
 ) -> None:
     """Crawl a website and save documentation for an expert agent.
 
@@ -648,6 +651,7 @@ def crawl(
 
     from hivemind_cli.crawler import (
         crawl_from_sitemap,
+        crawl_urls_raw_markdown,
         crawl_website,
         is_sitemap_url,
         preview_crawl,
@@ -700,7 +704,19 @@ def crawl(
     console.print()
 
     # Phase 2: Full crawl with progress
-    console.print("[heading]Crawling pages...[/heading]\n")
+    # Determine strategy based on explicit flags
+    if raw_markdown:
+        # User explicitly requested raw markdown only
+        console.print("[info]Raw markdown mode enabled (no browser fallback)[/info]\n")
+        strategy_name = "raw_markdown"
+    elif is_sitemap:
+        # Sitemap-based crawl
+        console.print("[heading]Crawling pages...[/heading]\n")
+        strategy_name = "sitemap"
+    else:
+        # Default: browser-based scraping
+        console.print("[heading]Crawling pages...[/heading]\n")
+        strategy_name = "browser"
 
     from rich.progress import BarColumn, Progress, TextColumn, TimeRemainingColumn
 
@@ -726,7 +742,17 @@ def crawl(
         )
 
         try:
-            if is_sitemap:
+            if strategy_name == "raw_markdown":
+                # Pure raw markdown (no fallback)
+                result = asyncio.run(
+                    crawl_urls_raw_markdown(
+                        urls=discovered_urls,
+                        output_dir=str(output_dir),
+                        on_page_callback=on_page,
+                    )
+                )
+            elif strategy_name == "sitemap":
+                # Sitemap-based browser crawl
                 result = asyncio.run(
                     crawl_from_sitemap(
                         sitemap_url=url,
@@ -735,7 +761,8 @@ def crawl(
                         on_page_callback=on_page,
                     )
                 )
-            else:
+            else:  # browser
+                # Browser crawl with BFS
                 result = asyncio.run(
                     crawl_website(
                         url=url,
@@ -781,6 +808,7 @@ def status() -> None:
         ("~/.claude/agents/", AGENTS_DIR, CLAUDE_DIR / "agents"),
         ("~/.claude/commands/", COMMANDS_DIR, CLAUDE_DIR / "commands"),
         ("~/.claude/CLAUDE.md", CLAUDE_MD, CLAUDE_DIR / "CLAUDE.md"),
+        ("~/.claude/settings.json", SETTINGS_JSON, CLAUDE_DIR / "settings.json"),
         ("repos/", REPOS_DIR, REPOS_LINK),
         ("external_docs/", EXTERNAL_DOCS_DIR, EXTERNAL_DOCS_LINK),
     ]:
