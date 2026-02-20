@@ -7,11 +7,47 @@ from math import inf
 from pathlib import Path
 from urllib.parse import urlparse
 
+import httpx
+
 from crawl4ai import AsyncWebCrawler, CrawlerRunConfig, AsyncUrlSeeder, SeedingConfig
 from crawl4ai.content_filter_strategy import PruningContentFilter
 from crawl4ai.deep_crawling import BFSDeepCrawlStrategy
 from crawl4ai.deep_crawling.filters import FilterChain, URLPatternFilter
 from crawl4ai.markdown_generation_strategy import DefaultMarkdownGenerator
+
+
+def normalize_url(url: str) -> str:
+    """Normalize URL for deduplication.
+
+    - Remove fragment (#section)
+    - Lowercase scheme and domain
+    - Remove trailing slash (except root)
+    """
+    parsed = urlparse(url)
+    normalized = parsed._replace(fragment="")
+    normalized = normalized._replace(
+        scheme=normalized.scheme.lower(),
+        netloc=normalized.netloc.lower()
+    )
+
+    path = normalized.path
+    if len(path) > 1 and path.endswith("/"):
+        path = path.rstrip("/")
+    normalized = normalized._replace(path=path)
+
+    return normalized.geturl()
+
+
+def deduplicate_urls(urls: list[str]) -> list[str]:
+    """Deduplicate URLs preserving order."""
+    seen = set()
+    result = []
+    for url in urls:
+        norm = normalize_url(url)
+        if norm not in seen:
+            seen.add(norm)
+            result.append(url)
+    return result
 
 
 @dataclass
@@ -172,7 +208,8 @@ async def preview_sitemap(sitemap_url: str, max_pages: int | None) -> list[str]:
     results = await seeder.urls(domain=domain, config=config)
 
     # AsyncUrlSeeder returns list of dicts, extract URLs
-    return [r["url"] for r in results if "url" in r]
+    urls = [r["url"] for r in results if "url" in r]
+    return deduplicate_urls(urls)
 
 
 async def preview_crawl(url: str, max_pages: int | None) -> list[str]:
@@ -204,7 +241,8 @@ async def preview_crawl(url: str, max_pages: int | None) -> list[str]:
 
     async with AsyncWebCrawler() as crawler:
         results = await crawler.arun(url=url, config=config)
-        return [result.url for result in results if result.success]
+        discovered_urls = [result.url for result in results if result.success]
+        return deduplicate_urls(discovered_urls)
 
 
 async def crawl_website(
@@ -213,10 +251,11 @@ async def crawl_website(
     output_dir: str,
     on_page_callback: Callable[[str, bool], None] | None = None,
 ) -> CrawlResult:
-    """Crawl a website and save each page as markdown.
+    """Crawl a website by discovering URLs first, then crawling each.
 
-    Uses structural filtering (CSS selectors + excluded tags) to remove
-    navigation/UI chrome while preserving all documentation content.
+    This two-phase approach avoids BFS early termination issues:
+    1. Discovery: Fast BFS prefetch to find all URLs
+    2. Execution: Crawl all discovered URLs (no BFS recursion)
 
     Args:
         url: The starting URL to crawl
@@ -230,48 +269,199 @@ async def crawl_website(
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
 
-    # Create path filter to restrict to starting URL's path
-    path_filter = create_path_filter(url)
+    # Phase 1: Discovery (fast BFS prefetch)
+    discovered_urls = await preview_crawl(url=url, max_pages=max_pages)
 
-    # Create BFS strategy with path filtering
-    strategy = BFSDeepCrawlStrategy(
-        max_depth=inf,
-        max_pages=max_pages if max_pages is not None else inf,
-        include_external=False,
-        filter_chain=path_filter,
-    )
-
-    # Configure crawler with multi-layer content filtering for clean docs
-    config_params = create_clean_docs_config(stream=True)
-    config = CrawlerRunConfig(
-        deep_crawl_strategy=strategy,
-        **config_params,
-    )
-
+    # Phase 2: Execution (crawl all discovered URLs)
     successful = 0
     failed = 0
-    total = 0
+    config = CrawlerRunConfig(**create_clean_docs_config(stream=True))
 
     async with AsyncWebCrawler() as crawler:
-        # Use streaming mode to process results as they arrive
-        async for page_result in await crawler.arun(url=url, config=config):
-            total += 1
-
+        async for page_result in await crawler.arun_many(
+            urls=discovered_urls,
+            config=config
+        ):
             if on_page_callback:
                 on_page_callback(page_result.url, page_result.success)
 
-            if page_result.success:
+            if page_result.success and page_result.markdown:
                 filename = url_to_filename(page_result.url)
                 filepath = output_path / f"{filename}.md"
-
-                # Use fit_markdown for cleanest output (boilerplate removed)
                 filepath.write_text(page_result.markdown.fit_markdown)
                 successful += 1
             else:
                 failed += 1
 
     return CrawlResult(
-        total_pages=total,
+        total_pages=len(discovered_urls),
+        successful_pages=successful,
+        failed_pages=failed,
+    )
+
+
+def _raw_markdown_url(url: str) -> str:
+    """Return the raw markdown URL for a given page URL.
+
+    Rspress serves source markdown at:
+    - <url>.md        for regular pages (no trailing slash)
+    - <url>index.md   for directory-style URLs (trailing slash)
+    """
+    if url.endswith("/"):
+        return url + "index.md"
+    return url + ".md"
+
+
+def _is_markdown_response(text: str) -> bool:
+    return bool(text) and not text.strip().startswith("<")
+
+
+async def supports_raw_markdown(url: str) -> bool:
+    """Check if a site serves raw markdown by appending .md to URLs.
+
+    Some documentation sites (e.g. rspress-based) expose a .md endpoint
+    for each page that returns clean source markdown instead of rendered HTML.
+
+    Args:
+        url: A page URL to probe
+
+    Returns:
+        True if the site returns non-HTML content for <url>.md or <url>index.md
+    """
+    md_url = _raw_markdown_url(url)
+    try:
+        async with httpx.AsyncClient(follow_redirects=True, timeout=10) as client:
+            response = await client.get(md_url)
+            if response.status_code == 200 and _is_markdown_response(response.text):
+                return True
+    except Exception:
+        pass
+    return False
+
+
+async def crawl_urls_raw_markdown(
+    urls: list[str],
+    output_dir: str,
+    on_page_callback: Callable[[str, bool], None] | None = None,
+) -> CrawlResult:
+    """Fetch raw markdown for each URL by appending .md to the URL path.
+
+    Used for sites that support a .md suffix endpoint (e.g. rspress-based docs).
+    Much faster and more accurate than browser-based scraping since it retrieves
+    the source markdown directly.
+
+    Args:
+        urls: List of page URLs to fetch
+        output_dir: Directory to save markdown files
+        on_page_callback: Optional callback called after each page (url, success)
+
+    Returns:
+        CrawlResult with statistics
+    """
+    output_path = Path(output_dir)
+    output_path.mkdir(parents=True, exist_ok=True)
+
+    # Deduplicate URLs (e.g. /foo/ and /foo are the same page)
+    urls = deduplicate_urls(urls)
+
+    successful = 0
+    failed = 0
+
+    async with httpx.AsyncClient(follow_redirects=True, timeout=30) as client:
+        for page_url in urls:
+            md_url = _raw_markdown_url(page_url)
+            try:
+                response = await client.get(md_url)
+                if response.status_code == 200 and _is_markdown_response(response.text):
+                    filename = url_to_filename(page_url)
+                    filepath = output_path / f"{filename}.md"
+                    filepath.write_text(response.text)
+                    successful += 1
+                    if on_page_callback:
+                        on_page_callback(page_url, True)
+                    continue
+            except Exception:
+                pass
+            failed += 1
+            if on_page_callback:
+                on_page_callback(page_url, False)
+
+    return CrawlResult(
+        total_pages=len(urls),
+        successful_pages=successful,
+        failed_pages=failed,
+    )
+
+
+async def crawl_with_fallback(
+    urls: list[str],
+    output_dir: str,
+    on_page_callback: Callable[[str, bool], None] | None = None,
+) -> CrawlResult:
+    """Try raw markdown first, fall back to browser for failures.
+
+    This handles the "empty parent" edge case where /get-started/
+    doesn't exist but /get-started/installation/ does.
+
+    Args:
+        urls: List of page URLs to fetch
+        output_dir: Directory to save markdown files
+        on_page_callback: Optional callback called after each page (url, success)
+
+    Returns:
+        CrawlResult with statistics
+    """
+    output_path = Path(output_dir)
+    output_path.mkdir(parents=True, exist_ok=True)
+
+    urls = deduplicate_urls(urls)
+    successful = 0
+    failed_urls: list[str] = []
+
+    # Phase 1: Try raw markdown for all URLs
+    async with httpx.AsyncClient(follow_redirects=True, timeout=30) as client:
+        for page_url in urls:
+            md_url = _raw_markdown_url(page_url)
+            try:
+                response = await client.get(md_url)
+                if response.status_code == 200 and _is_markdown_response(response.text):
+                    filename = url_to_filename(page_url)
+                    filepath = output_path / f"{filename}.md"
+                    filepath.write_text(response.text)
+                    successful += 1
+                    if on_page_callback:
+                        on_page_callback(page_url, True)
+                    continue
+            except Exception:
+                pass
+
+            # Track failures for browser retry
+            failed_urls.append(page_url)
+
+    # Phase 2: Retry failures with browser rendering
+    if failed_urls:
+        config = CrawlerRunConfig(**create_clean_docs_config(stream=True))
+
+        async with AsyncWebCrawler() as crawler:
+            async for page_result in await crawler.arun_many(
+                urls=failed_urls,
+                config=config
+            ):
+                if page_result.success and page_result.markdown:
+                    filename = url_to_filename(page_result.url)
+                    filepath = output_path / f"{filename}.md"
+                    filepath.write_text(page_result.markdown.fit_markdown)
+                    successful += 1
+                    if on_page_callback:
+                        on_page_callback(page_result.url, True)
+                else:
+                    if on_page_callback:
+                        on_page_callback(page_result.url, False)
+
+    failed = len(urls) - successful
+
+    return CrawlResult(
+        total_pages=len(urls),
         successful_pages=successful,
         failed_pages=failed,
     )
