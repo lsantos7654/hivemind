@@ -93,5 +93,10 @@
     "remote": "https://github.com/nocobase/nocobase.git",
     "commit": "c15920f910314a0ddd059a01b83aff36496f729b",
     "ref_name": ""
+  },
+  "formily": {
+    "remote": "https://github.com/alibaba/formily.git",
+    "commit": "d9a46442a575aa5f0fc1bd945e34d9a85d191d0e",
+    "ref_name": ""
   }
 }
