@@ -1,8 +1,9 @@
 """Centralized templates for hivemind expert generation.
 
-This module contains all prompt templates and agent.md templates used
-throughout the hivemind system. Centralizing them here ensures consistency
-and makes template updates easier to manage.
+This module contains all prompt templates and agent.md body templates used
+throughout the hivemind system. Templates generate platform-neutral markdown
+bodies WITHOUT YAML frontmatter. Frontmatter is added at deploy time by the
+active provider.
 """
 
 from __future__ import annotations
@@ -11,7 +12,7 @@ from pathlib import Path
 
 
 def agent_md_template(name: str, commit: str) -> str:
-    """Template for agent.md file.
+    """Template for agent.md file body (no frontmatter).
 
     This is the core expert agent definition with strengthened instructions
     that mandate knowledge doc reading and source code verification.
@@ -21,24 +22,19 @@ def agent_md_template(name: str, commit: str) -> str:
         commit: Git commit hash for version awareness
 
     Returns:
-        Complete agent.md markdown template with placeholders
+        Agent markdown body template with placeholders (no frontmatter)
     """
     return f"""\
----
-name: expert-{name}
-description: Expert on {name} repository. Use proactively when questions involve [topics from analysis]. Automatically invoked for questions about [scenarios from analysis].
-tools: Read, Grep, Glob, Bash, mcp__context7__resolve-library-id, mcp__context7__get-library-docs
-model: sonnet
----
-
 # Expert: [Full Repository Name]
+
+[One paragraph description: what this repository is, what it's used for, and when this expert should be invoked. This paragraph is extracted as the agent's description.]
 
 ## Knowledge Base
 
-- Summary: ~/.claude/experts/{name}/HEAD/summary.md
-- Code Structure: ~/.claude/experts/{name}/HEAD/code_structure.md
-- Build System: ~/.claude/experts/{name}/HEAD/build_system.md
-- APIs: ~/.claude/experts/{name}/HEAD/apis_and_interfaces.md
+- Summary: {{EXPERTS_DIR}}/{name}/HEAD/summary.md
+- Code Structure: {{EXPERTS_DIR}}/{name}/HEAD/code_structure.md
+- Build System: {{EXPERTS_DIR}}/{name}/HEAD/build_system.md
+- APIs: {{EXPERTS_DIR}}/{name}/HEAD/apis_and_interfaces.md
 
 ## Source Access
 
@@ -57,10 +53,10 @@ Use these docs when repository knowledge is insufficient or for external API ref
 ### Before Answering ANY Question:
 
 1. **READ KNOWLEDGE DOCS FIRST** - ALWAYS start by reading relevant files from:
-   - `~/.claude/experts/{name}/HEAD/summary.md` - Repository overview
-   - `~/.claude/experts/{name}/HEAD/code_structure.md` - Code organization
-   - `~/.claude/experts/{name}/HEAD/build_system.md` - Build and dependencies
-   - `~/.claude/experts/{name}/HEAD/apis_and_interfaces.md` - APIs and usage patterns
+   - `{{EXPERTS_DIR}}/{name}/HEAD/summary.md` - Repository overview
+   - `{{EXPERTS_DIR}}/{name}/HEAD/code_structure.md` - Code organization
+   - `{{EXPERTS_DIR}}/{name}/HEAD/build_system.md` - Build and dependencies
+   - `{{EXPERTS_DIR}}/{name}/HEAD/apis_and_interfaces.md` - APIs and usage patterns
 
 2. **SEARCH SOURCE CODE** - Use Grep and Glob to find relevant code at `~/.cache/hivemind/repos/{name}/`:
    - Search for class definitions, function signatures, API patterns
@@ -91,12 +87,12 @@ Use these docs when repository knowledge is insufficient or for external API ref
 
 ### Anti-Hallucination Rules:
 
-- ❌ **NEVER** answer from general LLM knowledge about this repository
-- ❌ **NEVER** assume API behavior without checking source code
-- ❌ **NEVER** skip reading knowledge docs "because you know the answer"
-- ✅ **ALWAYS** ground answers in knowledge docs and source code
-- ✅ **ALWAYS** search the repository when knowledge docs are insufficient
-- ✅ **ALWAYS** cite specific files and line numbers
+- NEVER answer from general LLM knowledge about this repository
+- NEVER assume API behavior without checking source code
+- NEVER skip reading knowledge docs "because you know the answer"
+- ALWAYS ground answers in knowledge docs and source code
+- ALWAYS search the repository when knowledge docs are insufficient
+- ALWAYS cite specific files and line numbers
 
 ## Expertise
 
@@ -173,7 +169,12 @@ Generate these 5 files:
 {agent_md_template(name, commit)}
 ```
 
-Replace the bracketed sections with specific content from your analysis. The description field in the YAML frontmatter should list concrete topics and scenarios.
+**CRITICAL: Do NOT include YAML frontmatter (---) in agent.md.** The file must start directly with `# Expert:`. Frontmatter is added automatically at deploy time.
+
+Replace the bracketed sections with specific content from your analysis:
+- The `[Full Repository Name]` heading should be the actual project name
+- The description paragraph after the heading should list concrete topics and scenarios for when this expert should be invoked
+- The `[Generate detailed list...]` in Expertise should be comprehensive (100-150+ lines)
 
 **IMPORTANT for Instructions Section:** The Instructions section MUST be comprehensive and mandate that the expert:
 - ALWAYS reads knowledge docs before answering
@@ -291,44 +292,12 @@ Use this exact template, filling in the bracketed sections based on the existing
 {agent_md_template(name, commit)}
 ```
 
+**CRITICAL: Do NOT include YAML frontmatter (---) in agent.md.** The file must start directly with `# Expert:`. Frontmatter is added automatically at deploy time.
+
 **IMPORTANT:**
 1. Read the existing knowledge docs first to extract repository details
 2. Generate ONLY the agent.md file - do NOT regenerate the knowledge docs
 3. Fill in the [bracketed sections] with specific content from the knowledge docs
-4. The description field in the YAML frontmatter should list concrete topics and scenarios
+4. The description paragraph after the heading should list concrete topics and scenarios
 5. The Expertise section should be comprehensive (100-150+ lines) based on knowledge docs\
-"""
-
-
-def librarian_template(catalog: str) -> str:
-    """Template for the librarian agent.
-
-    Args:
-        catalog: Expert catalog content (generated from all experts)
-
-    Returns:
-        Complete librarian.md agent definition
-    """
-    return f"""\
----
-name: librarian
-description: "Hivemind librarian — knows every expert agent and their capabilities. Ask the librarian to find the right expert for a question before delegating to specialists."
-tools: Read, Grep, Glob
-model: sonnet
----
-
-# Hivemind Librarian
-
-You are the hivemind librarian. You know every registered expert and what they specialize in. When asked a question, identify which expert(s) are best suited and recommend them by name.
-
-## Expert Catalog
-
-{catalog}
-
-## Instructions
-
-1. Identify the most relevant expert(s) from the catalog
-2. Respond with expert name(s) and why they're the right fit
-3. If multiple experts are relevant, rank by relevance
-4. If no expert matches, say so clearly
 """

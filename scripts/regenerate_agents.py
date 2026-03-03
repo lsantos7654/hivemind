@@ -24,10 +24,10 @@ from rich.console import Console
 from rich.live import Live
 from rich.table import Table
 
-# Import centralized templates
-import sys
+# Import centralized templates and core
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from hivemind_cli.templates import regenerate_agent_prompt
+from hivemind_cli.core import _get_provider
 
 # Paths
 HIVEMIND_ROOT = Path(__file__).resolve().parent.parent
@@ -59,10 +59,13 @@ def get_head_commit(expert_dir: Path) -> str | None:
     if not head.is_symlink():
         return None
     import os
+
     return os.readlink(head)
 
 
-def regenerate_agent_md(name: str, commit: str, repo_dir: Path, expert_dir: Path, background: bool = False):
+def regenerate_agent_md(
+    name: str, commit: str, repo_dir: Path, expert_dir: Path, background: bool = False
+):
     """Regenerate ONLY agent.md for an expert using existing knowledge docs.
 
     Args:
@@ -80,15 +83,11 @@ def regenerate_agent_md(name: str, commit: str, repo_dir: Path, expert_dir: Path
     # Use centralized template from templates.py
     prompt = regenerate_agent_prompt(name, commit, repo_dir, commit_dir)
 
-    cmd = [
-        "claude", "-p",
-        "--verbose",
-        "--allowedTools", "Read,Grep,Glob,Bash,Write",
-        "--model", "sonnet",
-        "--add-dir", str(repo_dir),
-        "--add-dir", str(expert_dir),
-        "--dangerously-skip-permissions",
-    ]
+    # Build command from active provider
+    provider = _get_provider()
+    cmd = provider.build_analysis_command(
+        extra_dirs=[repo_dir, expert_dir],
+    )
 
     if background:
         proc = subprocess.Popen(
@@ -110,8 +109,12 @@ def regenerate_agent_md(name: str, commit: str, repo_dir: Path, expert_dir: Path
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Regenerate agent.md files for all commit versions")
-    parser.add_argument("name", nargs="?", help="Expert name to regenerate (or omit for enabled)")
+    parser = argparse.ArgumentParser(
+        description="Regenerate agent.md files for all commit versions"
+    )
+    parser.add_argument(
+        "name", nargs="?", help="Expert name to regenerate (or omit for enabled)"
+    )
     parser.add_argument("--all", action="store_true", help="Regenerate all experts")
     args = parser.parse_args()
 
@@ -122,7 +125,9 @@ def main():
     if args.name:
         names = [args.name]
         if not (EXPERTS_DIR / args.name).is_dir():
-            console.print(f"[red]Error: expert '{args.name}' not found in experts/[/red]")
+            console.print(
+                f"[red]Error: expert '{args.name}' not found in experts/[/red]"
+            )
             sys.exit(1)
     elif args.all:
         names = sorted(d.name for d in EXPERTS_DIR.iterdir() if d.is_dir())
@@ -133,10 +138,14 @@ def main():
         console.print("No experts to regenerate.")
         return
 
-    console.print(f"[bold cyan]Finding all agent.md files to regenerate...[/bold cyan]\n")
+    console.print(
+        f"[bold cyan]Finding all agent.md files to regenerate...[/bold cyan]\n"
+    )
 
     # Find ALL commit versions for each expert
-    to_process: list[tuple[str, str, Path, Path]] = []  # (name, commit, repo_dir, expert_dir)
+    to_process: list[
+        tuple[str, str, Path, Path]
+    ] = []  # (name, commit, repo_dir, expert_dir)
 
     for name in names:
         expert_dir = EXPERTS_DIR / name
@@ -152,22 +161,32 @@ def main():
 
         # Find all commit directories (exclude HEAD symlink)
         commit_dirs = [
-            d for d in expert_dir.iterdir()
+            d
+            for d in expert_dir.iterdir()
             if d.is_dir() and not d.is_symlink() and d.name != "__pycache__"
         ]
 
         if not commit_dirs:
-            console.print(f"  [yellow]![/yellow] {name}: no commit directories found, skipping")
+            console.print(
+                f"  [yellow]![/yellow] {name}: no commit directories found, skipping"
+            )
             continue
 
         # Add all commit versions to the processing queue
         for commit_dir in commit_dirs:
             commit = commit_dir.name
-            required_docs = ["summary.md", "code_structure.md", "build_system.md", "apis_and_interfaces.md"]
+            required_docs = [
+                "summary.md",
+                "code_structure.md",
+                "build_system.md",
+                "apis_and_interfaces.md",
+            ]
             missing = [doc for doc in required_docs if not (commit_dir / doc).exists()]
 
             if missing:
-                console.print(f"  [yellow]![/yellow] {name}/{commit[:12]}: missing docs, skipping")
+                console.print(
+                    f"  [yellow]![/yellow] {name}/{commit[:12]}: missing docs, skipping"
+                )
                 continue
 
             to_process.append((name, commit, repo_dir, expert_dir))
@@ -176,7 +195,9 @@ def main():
         console.print("\n[yellow]No agent.md files to regenerate.[/yellow]")
         return
 
-    console.print(f"[bold cyan]Found {len(to_process)} agent.md file(s) to regenerate[/bold cyan]\n")
+    console.print(
+        f"[bold cyan]Found {len(to_process)} agent.md file(s) to regenerate[/bold cyan]\n"
+    )
     console.print(f"[bold cyan]Running AI analysis in parallel...[/bold cyan]\n")
 
     # Run all regenerations in parallel
@@ -206,7 +227,10 @@ def main():
         while any(proc.poll() is None for _, _, proc in processes):
             for name, commit, proc in processes:
                 key = f"{name}/{commit[:12]}"
-                if proc.poll() is not None and statuses[key] == "[cyan]analyzing...[/cyan]":
+                if (
+                    proc.poll() is not None
+                    and statuses[key] == "[cyan]analyzing...[/cyan]"
+                ):
                     expert_dir = EXPERTS_DIR / name
                     agent_md = expert_dir / commit / "agent.md"
 
@@ -236,7 +260,9 @@ def main():
 
         live.update(make_progress_table())
 
-    console.print(f"\n[bold green]Regeneration complete: {success_count} succeeded, {fail_count} failed.[/bold green]")
+    console.print(
+        f"\n[bold green]Regeneration complete: {success_count} succeeded, {fail_count} failed.[/bold green]"
+    )
 
 
 if __name__ == "__main__":

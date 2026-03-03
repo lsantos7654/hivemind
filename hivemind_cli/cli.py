@@ -1,4 +1,4 @@
-"""Hivemind CLI - Manage Claude Code expert agents."""
+"""Hivemind CLI - Manage expert agents for AI coding platforms."""
 
 from __future__ import annotations
 
@@ -35,25 +35,27 @@ from hivemind_cli.core import (
     _save_private_repos,
     _is_private_expert,
     _get_expert_dir,
+    _get_provider,
     _expert_names,
     _get_head_commit,
     _count_versions,
     _ensure_repos_link,
     _ensure_external_docs_link,
-    _link_agent,
-    _unlink_agent,
-    _link_expert,
-    _unlink_expert,
+    _deploy_agent,
+    _undeploy_agent,
+    _deploy_expert,
+    _undeploy_expert,
     _clone_repo,
     _analyze_repo,
     _update_librarian,
     update_expert,
     enable_expert as core_enable_expert,
     disable_expert as core_disable_expert,
+    redeploy_all_agents,
+    switch_provider,
     UpdatePhase,
     ProgressInfo,
     HIVEMIND_ROOT,
-    CLAUDE_DIR,
     CACHE_DIR,
     REPOS_DIR,
     REPOS_LINK,
@@ -66,22 +68,23 @@ from hivemind_cli.core import (
     PRIVATE_EXPERTS_DIR,
     PRIVATE_REPOS_JSON,
     COMMANDS_DIR,
-    CLAUDE_MD,
     SETTINGS_JSON,
 )
 
-THEME = Theme({
-    "success": "green",
-    "error": "red",
-    "warning": "yellow",
-    "info": "cyan",
-    "heading": "bold",
-    "commit": "cyan",
-})
+THEME = Theme(
+    {
+        "success": "green",
+        "error": "red",
+        "warning": "yellow",
+        "info": "cyan",
+        "heading": "bold",
+        "commit": "cyan",
+    }
+)
 
 app = typer.Typer(
     name="hivemind",
-    help="Manage Claude Code expert agents.",
+    help="Manage expert agents for AI coding platforms.",
     no_args_is_help=True,
 )
 console = Console(theme=THEME)
@@ -93,6 +96,13 @@ install_traceback(show_locals=True, console=console)
 def _complete_expert(incomplete: str) -> list[str]:
     """Shell completion for expert names."""
     return [n for n in _expert_names() if n.startswith(incomplete)]
+
+
+def _complete_provider(incomplete: str) -> list[str]:
+    """Shell completion for provider names."""
+    from hivemind_cli.providers import PROVIDER_CLASSES
+
+    return [n for n in PROVIDER_CLASSES if n.startswith(incomplete)]
 
 
 def _setup_symlink(target: Path, link: Path, label: str) -> None:
@@ -120,32 +130,36 @@ def _setup_symlink(target: Path, link: Path, label: str) -> None:
 
 
 # Wrapper functions to add console output to core module functions
-def _link_agent_cli(name: str) -> bool:
-    """Wrapper for _link_agent that adds console output."""
-    result = _link_agent(name)
+def _deploy_agent_cli(name: str) -> bool:
+    """Wrapper for _deploy_agent that adds console output."""
+    result = _deploy_agent(name)
     if result:
-        console.print(f"  [success]✓[/success] {name}: agent symlink created")
+        console.print(f"  [success]✓[/success] {name}: agent deployed")
     else:
-        expert_dir = EXPERTS_DIR / name
+        expert_dir = _get_expert_dir(name)
         head_link = expert_dir / "HEAD"
         if not head_link.exists():
-            console.print(f"  [warning]![/warning] {name}: no HEAD, skipping agent link")
+            console.print(
+                f"  [warning]![/warning] {name}: no HEAD, skipping agent deploy"
+            )
         else:
-            console.print(f"  [warning]![/warning] {name}: no agent.md in HEAD, skipping agent link")
+            console.print(
+                f"  [warning]![/warning] {name}: no agent.md in HEAD, skipping agent deploy"
+            )
     return result
 
 
-def _unlink_agent_cli(name: str) -> None:
-    """Wrapper for _unlink_agent that adds console output."""
-    _unlink_agent(name)
-    console.print(f"  [success]✓[/success] {name}: agent symlink removed")
+def _undeploy_agent_cli(name: str) -> None:
+    """Wrapper for _undeploy_agent that adds console output."""
+    _undeploy_agent(name)
+    console.print(f"  [success]✓[/success] {name}: agent removed")
 
 
-def _link_expert_cli(name: str) -> bool:
-    """Wrapper for _link_expert that adds console output."""
-    result = _link_expert(name)
+def _deploy_expert_cli(name: str) -> bool:
+    """Wrapper for _deploy_expert that adds console output."""
+    result = _deploy_expert(name)
     if result:
-        console.print(f"  [success]✓[/success] {name}: expert symlink created")
+        console.print(f"  [success]✓[/success] {name}: expert deployed")
     else:
         console.print(f"  [warning]![/warning] {name}: expert directory not found")
     return result
@@ -154,7 +168,9 @@ def _link_expert_cli(name: str) -> bool:
 def _clone_repo_cli(name: str, repos: dict) -> bool:
     """Wrapper for _clone_repo that adds console output."""
     if name not in repos:
-        console.print(f"  [warning]![/warning] {name}: not in repos.json, skipping clone")
+        console.print(
+            f"  [warning]![/warning] {name}: not in repos.json, skipping clone"
+        )
         return False
 
     repo_dir = REPOS_DIR / name
@@ -176,7 +192,9 @@ def _clone_repo_cli(name: str, repos: dict) -> bool:
 
     if result:
         if commit:
-            console.print(f"  [success]✓[/success] {name}: cloned at commit {commit[:12]}")
+            console.print(
+                f"  [success]✓[/success] {name}: cloned at commit {commit[:12]}"
+            )
         elif ref_name:
             console.print(f"  [success]✓[/success] {name}: cloned at ref {ref_name}")
         else:
@@ -196,23 +214,26 @@ def _update_librarian_cli() -> None:
 
 @app.command()
 def init() -> None:
-    """Set up ~/.claude symlinks and enable agents."""
-    console.print("[heading]Initializing hivemind...[/heading]\n")
+    """Set up provider directory symlinks and enable agents."""
+    provider = _get_provider()
+    console.print(
+        f"[heading]Initializing hivemind (provider: {provider.name})...[/heading]\n"
+    )
 
-    CLAUDE_DIR.mkdir(parents=True, exist_ok=True)
+    # Use provider to initialize directory structure
+    results = provider.init_dirs(
+        agents_dir=AGENTS_DIR,
+        commands_dir=COMMANDS_DIR,
+        rules_source=HIVEMIND_ROOT / "HIVEMIND.md",
+        settings_source=SETTINGS_JSON if provider.name == "claude" else None,
+    )
+    for label, status_msg in results:
+        console.print(f"  [success]✓[/success] {label}: {status_msg}")
 
-    _setup_symlink(AGENTS_DIR, CLAUDE_DIR / "agents", "agents/")
-    _setup_symlink(COMMANDS_DIR, CLAUDE_DIR / "commands", "commands/")
-    _setup_symlink(CLAUDE_MD, CLAUDE_DIR / "CLAUDE.md", "CLAUDE.md")
-    _setup_symlink(SETTINGS_JSON, CLAUDE_DIR / "settings.json", "settings.json")
     _ensure_repos_link()
     console.print(f"  [success]✓[/success] repos/ → {REPOS_DIR}")
     _ensure_external_docs_link()
     console.print(f"  [success]✓[/success] external_docs/ → {EXTERNAL_DOCS_DIR}")
-
-    # Create experts directory (no migration logic - use scripts/migrate_experts_symlinks.py)
-    experts_dir = CLAUDE_DIR / "experts"
-    experts_dir.mkdir(parents=True, exist_ok=True)
 
     config = _load_config()
     repos = _load_repos()
@@ -220,27 +241,37 @@ def init() -> None:
     console.print()
     for name in config["enabled"]:
         _clone_repo_cli(name, repos)
-        _link_agent_cli(name)
-        _link_expert_cli(name)
+        _deploy_agent_cli(name)
+        _deploy_expert_cli(name)
 
     _update_librarian_cli()
 
-    # Remove stale agent symlinks
+    # Mark provider as enabled in config
+    provider_name = provider.name
+    if not config.get("providers", {}).get(provider_name, {}).get("enabled"):
+        config.setdefault("providers", {}).setdefault(provider_name, {})["enabled"] = (
+            True
+        )
+        _save_config(config)
+
+    # Remove stale agent files
     for f in AGENTS_DIR.glob("expert-*.md"):
         expert_name = f.name.removeprefix("expert-").removesuffix(".md")
         if expert_name not in config["enabled"]:
             f.unlink()
             console.print(f"  [error]✗[/error] Removed stale: {f.name}")
 
-    # Clean up stale expert symlinks
-    if experts_dir.is_dir():
-        for link in experts_dir.iterdir():
+    # Clean up stale expert symlinks in provider dir
+    provider_experts = provider.home_dir / "experts"
+    if provider_experts.is_dir():
+        for link in provider_experts.iterdir():
             expert_name = link.name
             if expert_name not in config["enabled"]:
                 if link.is_symlink():
                     link.unlink()
                 elif link.is_dir():
                     import shutil
+
                     shutil.rmtree(link)
                 console.print(f"  [error]✗[/error] Removed stale expert: {expert_name}")
 
@@ -257,7 +288,9 @@ def list_experts() -> None:
     experts = _expert_names()
 
     if not experts:
-        console.print("No experts found. Use [heading]hivemind add <url>[/heading] to add one.")
+        console.print(
+            "No experts found. Use [heading]hivemind add <url>[/heading] to add one."
+        )
         return
 
     # Separate into public and private
@@ -269,7 +302,9 @@ def list_experts() -> None:
         if not expert_names:
             return None
 
-        table = Table(title=title, show_header=True, header_style="bold", box=box.ROUNDED)
+        table = Table(
+            title=title, show_header=True, header_style="bold", box=box.ROUNDED
+        )
         table.add_column("Name", style="bold")
         table.add_column("Status")
         table.add_column("HEAD")
@@ -290,7 +325,11 @@ def list_experts() -> None:
             # HEAD commit
             expert_dir = _get_expert_dir(name)
             head_commit = _get_head_commit(expert_dir)
-            head_display = f"[commit]{head_commit[:12]}[/commit]" if head_commit else "[dim]none[/dim]"
+            head_display = (
+                f"[commit]{head_commit[:12]}[/commit]"
+                if head_commit
+                else "[dim]none[/dim]"
+            )
 
             # Version count
             version_count = _count_versions(expert_dir)
@@ -326,8 +365,12 @@ def list_experts() -> None:
 @app.command()
 def add(
     url: str = typer.Argument(help="Git remote URL"),
-    ref: typing.Optional[str] = typer.Option(None, "--ref", help="Tag, branch, or commit"),
-    private: bool = typer.Option(False, "--private", help="Mark as private (won't be committed to git)"),
+    ref: typing.Optional[str] = typer.Option(
+        None, "--ref", help="Tag, branch, or commit"
+    ),
+    private: bool = typer.Option(
+        False, "--private", help="Mark as private (won't be committed to git)"
+    ),
 ) -> None:
     """Register a new repo expert, clone, analyze, and create agent."""
     # Derive name from URL
@@ -336,7 +379,9 @@ def add(
     console.print(f"[heading]Adding expert: {name}[/heading]")
     console.print(f"  URL: {url}")
     if private:
-        console.print(f"  [warning]Mode: PRIVATE (will not be committed to git)[/warning]")
+        console.print(
+            f"  [warning]Mode: PRIVATE (will not be committed to git)[/warning]"
+        )
 
     # Error out early if expert already exists (check both public and private)
     public_expert_dir = EXPERTS_DIR / name
@@ -391,8 +436,13 @@ def add(
         elif ref_name:
             subprocess.run(
                 [
-                    "git", "clone", "--progress", "--branch", ref_name,
-                    url, str(tmp_repo),
+                    "git",
+                    "clone",
+                    "--progress",
+                    "--branch",
+                    ref_name,
+                    url,
+                    str(tmp_repo),
                 ],
                 check=True,
             )
@@ -418,10 +468,14 @@ def add(
         # Create versioned directory in temp expert dir
         tmp_commit_dir = tmp_expert / commit
         tmp_commit_dir.mkdir(parents=True, exist_ok=True)
-        console.print(f"  [success]✓[/success] Created staging experts/{name}/{commit[:12]}/")
+        console.print(
+            f"  [success]✓[/success] Created staging experts/{name}/{commit[:12]}/"
+        )
 
         # Run AI analysis — writes into temp dirs
-        with console.status(f"[heading]Running AI analysis of {name}...[/heading]", spinner="dots"):
+        with console.status(
+            f"[heading]Running AI analysis of {name}...[/heading]", spinner="dots"
+        ):
             success = _analyze_repo(name, commit, tmp_repo, tmp_expert)
         if not success:
             console.print(f"[error]Error: AI analysis failed for {name}[/error]")
@@ -443,7 +497,9 @@ def add(
             expert_dir = PRIVATE_EXPERTS_DIR / name
             PRIVATE_EXPERTS_DIR.mkdir(parents=True, exist_ok=True)
             shutil.move(str(tmp_expert), str(expert_dir))
-            console.print(f"  [success]✓[/success] Expert installed to private-experts/{name}/")
+            console.print(
+                f"  [success]✓[/success] Expert installed to private-experts/{name}/"
+            )
         else:
             expert_dir = EXPERTS_DIR / name
             EXPERTS_DIR.mkdir(parents=True, exist_ok=True)
@@ -480,9 +536,9 @@ def add(
         _save_config(config)
         console.print("  [success]✓[/success] Enabled in config.json")
 
-        # Create agent symlink
-        _link_agent_cli(name)
-        _link_expert(name)
+        # Deploy agent and expert
+        _deploy_agent_cli(name)
+        _deploy_expert_cli(name)
         _update_librarian_cli()
 
         summary_lines = [
@@ -491,18 +547,24 @@ def add(
             f"[success]✓[/success] Agent: [heading]expert-{name}[/heading]",
         ]
         console.print()
-        console.print(Panel(
-            "\n".join(summary_lines),
-            title="[bold success]Expert created successfully[/bold success]",
-            border_style="green",
-        ))
+        console.print(
+            Panel(
+                "\n".join(summary_lines),
+                title="[bold success]Expert created successfully[/bold success]",
+                border_style="green",
+            )
+        )
 
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
 
 
 @app.command()
-def enable(name: str = typer.Argument(help="Expert name to enable", autocompletion=_complete_expert)) -> None:
+def enable(
+    name: str = typer.Argument(
+        help="Expert name to enable", autocompletion=_complete_expert
+    ),
+) -> None:
     """Enable an expert (clones repo if needed, creates agent symlink)."""
     result = core_enable_expert(name)
 
@@ -512,16 +574,22 @@ def enable(name: str = typer.Argument(help="Expert name to enable", autocompleti
 
     repos = _load_repos()
     _clone_repo_cli(name, repos)
-    _link_agent_cli(name)
+    _deploy_agent_cli(name)
 
     if result["already_enabled"]:
-        console.print(f"[success]✓[/success] {name}: already enabled, ensured repo and agent link")
+        console.print(
+            f"[success]✓[/success] {name}: already enabled, ensured repo and agent link"
+        )
     else:
         console.print(f"[success]✓[/success] Enabled: {name}")
 
 
 @app.command()
-def disable(name: str = typer.Argument(help="Expert name to disable", autocompletion=_complete_expert)) -> None:
+def disable(
+    name: str = typer.Argument(
+        help="Expert name to disable", autocompletion=_complete_expert
+    ),
+) -> None:
     """Disable an expert (removes agent symlink)."""
     result = core_disable_expert(name)
 
@@ -529,18 +597,23 @@ def disable(name: str = typer.Argument(help="Expert name to disable", autocomple
         console.print(f"[error]Error: {result['error']}[/error]")
         raise typer.Exit(1)
 
-    _unlink_agent_cli(name)
+    _undeploy_agent_cli(name)
 
     if result["already_disabled"]:
-        console.print(f"[warning]✓[/warning] {name}: already disabled, ensured agent link removed")
+        console.print(
+            f"[warning]✓[/warning] {name}: already disabled, ensured agent link removed"
+        )
     else:
         console.print(f"[warning]✓[/warning] Disabled: {name}")
 
 
-
 @app.command()
 def update(
-    name: typing.Optional[str] = typer.Argument(None, help="Expert name (or omit for all enabled)", autocompletion=_complete_expert),
+    name: typing.Optional[str] = typer.Argument(
+        None,
+        help="Expert name (or omit for all enabled)",
+        autocompletion=_complete_expert,
+    ),
 ) -> None:
     """Fetch latest commits and re-analyze with AI."""
     config = _load_config()
@@ -576,10 +649,14 @@ def update(
         if not result["success"]:
             console.print(f"  [error]✗[/error] {result['error']}")
         elif result.get("already_up_to_date"):
-            console.print(f"  [success]✓[/success] Already up to date ({result['new_commit'][:12]})")
+            console.print(
+                f"  [success]✓[/success] Already up to date ({result['new_commit'][:12]})"
+            )
         else:
             old_display = result["old_commit"][:12] if result["old_commit"] else "none"
-            console.print(f"  [success]✓[/success] Updated from {old_display} to {result['new_commit'][:12]}")
+            console.print(
+                f"  [success]✓[/success] Updated from {old_display} to {result['new_commit'][:12]}"
+            )
             experts_to_update.append(expert_name)
 
     # Regenerate librarian if any experts were updated
@@ -597,19 +674,179 @@ def query(
     """Ask the librarian which expert(s) can help with a question."""
     librarian = AGENTS_DIR / "librarian.md"
     if not librarian.exists():
-        console.print("[error]Error: librarian.md not found. Run [bold]hivemind init[/bold] first.[/error]")
+        console.print(
+            "[error]Error: librarian.md not found. Run [bold]hivemind init[/bold] first.[/error]"
+        )
         raise typer.Exit(1)
 
+    provider = _get_provider()
     system_prompt = librarian.read_text()
+    cmd = provider.build_query_command()
+
     with console.status("Asking the librarian...", spinner="dots"):
         result = subprocess.run(
-            ["claude", "-p", "--model", "sonnet"],
+            cmd,
             input=f"{system_prompt}\n\n{question}",
             text=True,
             capture_output=True,
         )
     if result.stdout:
         console.print(result.stdout.rstrip())
+
+
+# --- Provider subcommands ---
+
+provider_app = typer.Typer(
+    name="provider",
+    help="Manage AI coding platform providers.",
+    no_args_is_help=True,
+)
+app.add_typer(provider_app, name="provider")
+
+
+@provider_app.command(name="list")
+def provider_list() -> None:
+    """List available providers and their status."""
+    from hivemind_cli.providers import PROVIDER_CLASSES
+
+    config = _load_config()
+    active = config.get("active_provider", "claude")
+    providers = config.get("providers", {})
+
+    table = Table(
+        title="Providers", show_header=True, header_style="bold", box=box.ROUNDED
+    )
+    table.add_column("Name", style="bold")
+    table.add_column("Status")
+    table.add_column("Engine")
+    table.add_column("Home Directory")
+    table.add_column("Model")
+
+    for name in sorted(PROVIDER_CLASSES):
+        prov_config = providers.get(name, {})
+        is_active = name == active
+        enabled = prov_config.get("enabled", False)
+
+        if is_active:
+            status_str = "[success]active[/success]"
+        elif enabled:
+            status_str = "[info]enabled[/info]"
+        else:
+            status_str = "[dim]disabled[/dim]"
+
+        engine = prov_config.get("engine", "[dim]not configured[/dim]")
+        home_dir = prov_config.get("home_dir", "[dim]not configured[/dim]")
+        model = prov_config.get("settings", {}).get("model", "[dim]default[/dim]")
+
+        table.add_row(name, status_str, engine, home_dir, model)
+
+    console.print(table)
+
+
+@provider_app.command(name="switch")
+def provider_switch(
+    name: str = typer.Argument(
+        help="Provider name to switch to", autocompletion=_complete_provider
+    ),
+) -> None:
+    """Switch active provider (regenerates all agent files)."""
+    result = switch_provider(name)
+
+    if not result["success"]:
+        console.print(f"[error]Error: {result['error']}[/error]")
+        raise typer.Exit(1)
+
+    console.print(f"[success]Switched to provider: [heading]{name}[/heading][/success]")
+    console.print(
+        "[info]Run [bold]hivemind redeploy[/bold] to regenerate agent files "
+        "for the new provider.[/info]"
+    )
+
+
+@provider_app.command(name="show")
+def provider_show(
+    name: typing.Optional[str] = typer.Argument(
+        None,
+        help="Provider name (default: active provider)",
+        autocompletion=_complete_provider,
+    ),
+) -> None:
+    """Show detailed configuration for a provider."""
+    config = _load_config()
+    active = config.get("active_provider", "claude")
+    target = name or active
+    providers = config.get("providers", {})
+
+    if target not in providers:
+        console.print(f"[error]Error: provider '{target}' not found in config[/error]")
+        raise typer.Exit(1)
+
+    prov_config = providers[target]
+    is_active = target == active
+
+    lines: list[str] = []
+    lines.append(f"[heading]Provider: {target}[/heading]")
+    lines.append(
+        f"Active: {'[success]yes[/success]' if is_active else '[dim]no[/dim]'}"
+    )
+    lines.append(
+        f"Enabled: {'[success]yes[/success]' if prov_config.get('enabled') else '[dim]no[/dim]'}"
+    )
+    lines.append(f"Engine: {prov_config.get('engine', 'not set')}")
+    lines.append(f"Home directory: {prov_config.get('home_dir', 'not set')}")
+
+    settings = prov_config.get("settings", {})
+    if settings:
+        lines.append("")
+        lines.append("[heading]Settings:[/heading]")
+        for key, value in sorted(settings.items()):
+            if isinstance(value, list):
+                lines.append(f"  {key}: {', '.join(str(v) for v in value)}")
+            elif isinstance(value, dict):
+                lines.append(f"  {key}:")
+                for k, v in sorted(value.items()):
+                    lines.append(f"    {k}: {v}")
+            else:
+                lines.append(f"  {key}: {value}")
+
+    console.print(Panel("\n".join(lines), border_style="blue"))
+
+
+# --- Redeploy command ---
+
+
+@app.command()
+def redeploy() -> None:
+    """Regenerate all agent files for the active provider.
+
+    Use after changing provider settings in config.json
+    (model, tools, temperature) or after switching providers.
+    """
+    provider = _get_provider()
+    console.print(
+        f"[heading]Redeploying all agents (provider: {provider.name})...[/heading]\n"
+    )
+
+    result = redeploy_all_agents()
+
+    if not result["success"]:
+        console.print(f"[error]Error: {result['error']}[/error]")
+        raise typer.Exit(1)
+
+    deployed = result.get("deployed", [])
+    failed = result.get("failed", [])
+
+    for name in deployed:
+        console.print(f"  [success]✓[/success] {name}: redeployed")
+    for name in failed:
+        console.print(f"  [warning]![/warning] {name}: failed to redeploy")
+
+    if result.get("librarian_updated"):
+        console.print(f"  [success]✓[/success] Librarian updated")
+
+    console.print(
+        f"\n[bold success]Redeployed {len(deployed)} agent(s).[/bold success]"
+    )
 
 
 @app.command()
@@ -624,9 +861,17 @@ def tui() -> None:
 @app.command()
 def crawl(
     url: str = typer.Argument(..., help="Starting URL to crawl"),
-    agent: str = typer.Argument(..., help="Agent name for output directory", autocompletion=_complete_expert),
-    max_pages: int | None = typer.Option(None, "--max-pages", "-n", help="Maximum pages to crawl (default: no limit)"),
-    raw_markdown: bool = typer.Option(False, "--raw-markdown", help="Force raw markdown fetching (.md endpoints only, no browser fallback)"),
+    agent: str = typer.Argument(
+        ..., help="Agent name for output directory", autocompletion=_complete_expert
+    ),
+    max_pages: int | None = typer.Option(
+        None, "--max-pages", "-n", help="Maximum pages to crawl (default: no limit)"
+    ),
+    raw_markdown: bool = typer.Option(
+        False,
+        "--raw-markdown",
+        help="Force raw markdown fetching (.md endpoints only, no browser fallback)",
+    ),
 ) -> None:
     """Crawl a website and save documentation for an expert agent.
 
@@ -646,7 +891,9 @@ def crawl(
             for expert in experts:
                 console.print(f"  - {expert}")
         else:
-            console.print("  [dim]No experts configured. Use [bold]hivemind add <url>[/bold] to add one.[/dim]")
+            console.print(
+                "  [dim]No experts configured. Use [bold]hivemind add <url>[/bold] to add one.[/dim]"
+            )
         raise typer.Exit(1)
 
     from hivemind_cli.crawler import (
@@ -670,7 +917,9 @@ def crawl(
     if is_sitemap_url(url):
         console.print("[info]🗺️  Detected sitemap URL, discovering pages...[/info]")
         try:
-            discovered_urls = asyncio.run(preview_sitemap(sitemap_url=url, max_pages=max_pages))
+            discovered_urls = asyncio.run(
+                preview_sitemap(sitemap_url=url, max_pages=max_pages)
+            )
         except Exception as e:
             console.print(f"[error]✗ Failed to fetch sitemap: {e}[/error]")
             raise typer.Exit(1)
@@ -791,7 +1040,9 @@ def crawl(
     console.print()
 
     if result.successful_pages > 0:
-        console.print(f"[success]✓ Successfully crawled {result.successful_pages} pages[/success]")
+        console.print(
+            f"[success]✓ Successfully crawled {result.successful_pages} pages[/success]"
+        )
         console.print(f"\n[info]Documentation saved to:[/info] {output_dir}")
         console.print(f"[info]Expert agents can now access these docs[/info]")
     else:
@@ -802,16 +1053,28 @@ def crawl(
 @app.command()
 def status() -> None:
     """Show a dashboard of hivemind status."""
+    provider = _get_provider()
+    home_dir = provider.home_dir
+
+    # Build provider-specific symlink checks
+    symlink_checks = provider.status_symlinks(
+        agents_dir=AGENTS_DIR,
+        commands_dir=COMMANDS_DIR,
+        rules_source=HIVEMIND_ROOT / "HIVEMIND.md",
+        settings_source=SETTINGS_JSON,
+    )
+
+    # Add internal symlinks (not provider-specific)
+    symlink_checks.extend(
+        [
+            ("repos/", REPOS_DIR, REPOS_LINK),
+            ("external_docs/", EXTERNAL_DOCS_DIR, EXTERNAL_DOCS_LINK),
+        ]
+    )
+
     # Symlinks section
     symlink_lines: list[str] = []
-    for display_name, target, link in [
-        ("~/.claude/agents/", AGENTS_DIR, CLAUDE_DIR / "agents"),
-        ("~/.claude/commands/", COMMANDS_DIR, CLAUDE_DIR / "commands"),
-        ("~/.claude/CLAUDE.md", CLAUDE_MD, CLAUDE_DIR / "CLAUDE.md"),
-        ("~/.claude/settings.json", SETTINGS_JSON, CLAUDE_DIR / "settings.json"),
-        ("repos/", REPOS_DIR, REPOS_LINK),
-        ("external_docs/", EXTERNAL_DOCS_DIR, EXTERNAL_DOCS_LINK),
-    ]:
+    for display_name, target, link in symlink_checks:
         if link.is_symlink():
             actual = link.resolve()
             if actual == target.resolve():
@@ -828,24 +1091,28 @@ def status() -> None:
             )
 
     # Check experts directory (now a real directory with per-expert symlinks)
-    claude_experts = CLAUDE_DIR / "experts"
-    if claude_experts.is_dir() and not claude_experts.is_symlink():
-        expert_count = sum(1 for _ in claude_experts.iterdir())
+    provider_experts = home_dir / "experts"
+    if provider_experts.is_dir() and not provider_experts.is_symlink():
+        expert_count = sum(1 for _ in provider_experts.iterdir())
         symlink_lines.append(
-            f"[success]✓[/success] ~/.claude/experts/ (directory with {expert_count} expert symlinks)"
+            f"[success]✓[/success] {home_dir}/experts/ (directory with {expert_count} expert symlinks)"
         )
-    elif claude_experts.is_symlink():
+    elif provider_experts.is_symlink():
         symlink_lines.append(
-            f"[warning]![/warning] ~/.claude/experts/ is a symlink (expected directory, run: hivemind init)"
+            f"[warning]![/warning] {home_dir}/experts/ is a symlink (expected directory, run: hivemind init)"
         )
     else:
         symlink_lines.append(
-            f"[error]✗[/error] ~/.claude/experts/ does not exist (run: hivemind init)"
+            f"[error]✗[/error] {home_dir}/experts/ does not exist (run: hivemind init)"
         )
 
-    console.print(
-        Panel("\n".join(symlink_lines), title="Symlinks", border_style="blue")
-    )
+    # Show active provider info
+    config = _load_config()
+    provider_info = f"Active provider: [heading]{provider.name}[/heading]"
+    symlink_lines.insert(0, provider_info)
+    symlink_lines.insert(1, "")
+
+    console.print(Panel("\n".join(symlink_lines), title="Status", border_style="blue"))
 
     # Repos section (combine public and private)
     repos = _load_repos()

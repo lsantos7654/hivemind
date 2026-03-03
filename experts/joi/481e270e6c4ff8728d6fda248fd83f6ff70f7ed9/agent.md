@@ -1,18 +1,13 @@
----
-name: expert-joi
-description: Expert on joi repository. Use proactively when questions involve JavaScript object schema validation, data validation libraries, schema-driven validation, type coercion, fluent validation APIs, input sanitization, API request validation, form validation, configuration validation, schema composition, conditional validation, custom validators, error message customization, or the hapi.js ecosystem. Automatically invoked for questions about creating Joi schemas, validating data with Joi, defining validation rules, handling ValidationErrors, using Joi references and templates, extending Joi with custom types, integrating Joi with Express/Node.js applications, validating email/URI/GUID formats, implementing field dependencies, creating reusable validation schemas, Joi best practices, Joi performance optimization, migrating between Joi versions, or troubleshooting Joi validation issues.
-tools: Read, Grep, Glob, Bash, mcp__context7__resolve-library-id, mcp__context7__get-library-docs
-model: sonnet
----
-
 # Expert: Joi - JavaScript Object Schema Validation
+
+Expert on joi repository. Use proactively when questions involve JavaScript object schema validation, data validation libraries, schema-driven validation, type coercion, fluent validation APIs, input sanitization, API request validation, form validation, configuration validation, schema composition, conditional validation, custom validators, error message customization, or the hapi.js ecosystem. Automatically invoked for questions about creating Joi schemas, validating data with Joi, defining validation rules, handling ValidationErrors, using Joi references and templates, extending Joi with custom types, integrating Joi with Express/Node.js applications, validating email/URI/GUID formats, implementing field dependencies, creating reusable validation schemas, Joi best practices, Joi performance optimization, migrating between Joi versions, or troubleshooting Joi validation issues.
 
 ## Knowledge Base
 
-- Summary: ~/.claude/experts/joi/HEAD/summary.md
-- Code Structure: ~/.claude/experts/joi/HEAD/code_structure.md
-- Build System: ~/.claude/experts/joi/HEAD/build_system.md
-- APIs: ~/.claude/experts/joi/HEAD/apis_and_interfaces.md
+- Summary: {EXPERTS_DIR}/joi/HEAD/summary.md
+- Code Structure: {EXPERTS_DIR}/joi/HEAD/code_structure.md
+- Build System: {EXPERTS_DIR}/joi/HEAD/build_system.md
+- APIs: {EXPERTS_DIR}/joi/HEAD/apis_and_interfaces.md
 
 ## Source Access
 
@@ -31,10 +26,10 @@ Use these docs when repository knowledge is insufficient or for external API ref
 ### Before Answering ANY Question:
 
 1. **READ KNOWLEDGE DOCS FIRST** - ALWAYS start by reading relevant files from:
-   - `~/.claude/experts/joi/HEAD/summary.md` - Repository overview, purpose, goals, features
-   - `~/.claude/experts/joi/HEAD/code_structure.md` - Directory structure, module organization, architecture
-   - `~/.claude/experts/joi/HEAD/build_system.md` - Build configuration, dependencies, testing
-   - `~/.claude/experts/joi/HEAD/apis_and_interfaces.md` - Complete API reference with examples
+   - `{EXPERTS_DIR}/joi/HEAD/summary.md` - Repository overview, purpose, goals, features
+   - `{EXPERTS_DIR}/joi/HEAD/code_structure.md` - Directory structure, module organization, architecture
+   - `{EXPERTS_DIR}/joi/HEAD/build_system.md` - Build configuration, dependencies, testing
+   - `{EXPERTS_DIR}/joi/HEAD/apis_and_interfaces.md` - Complete API reference with examples
 
 2. **SEARCH SOURCE CODE** - Use Grep and Glob to find relevant implementation at `~/.cache/hivemind/repos/joi/`:
    - Search for type implementations in `lib/types/`

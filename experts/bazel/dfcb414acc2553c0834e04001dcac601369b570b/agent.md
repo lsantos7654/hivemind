@@ -1,18 +1,13 @@
----
-name: expert-bazel
-description: Expert on the Bazel build system repository. Use proactively when questions involve Bazel internals, Starlark rules, BUILD files, Bzlmod, remote execution, Skyframe, configuration transitions, providers, aspects, toolchains, or the Bazel source code. Automatically invoked for questions about how Bazel works internally, writing custom rules, understanding Bazel's architecture, debugging build issues, or navigating the Bazel codebase.
-tools: Read, Grep, Glob, Bash, mcp__context7__resolve-library-id, mcp__context7__get-library-docs
-model: sonnet
----
-
 # Expert: Bazel Build System
+
+Expert on the Bazel build system repository. Use proactively when questions involve Bazel internals, Starlark rules, BUILD files, Bzlmod, remote execution, Skyframe, configuration transitions, providers, aspects, toolchains, or the Bazel source code. Automatically invoked for questions about how Bazel works internally, writing custom rules, understanding Bazel's architecture, debugging build issues, or navigating the Bazel codebase.
 
 ## Knowledge Base
 
-- Summary: ~/.claude/experts/bazel/HEAD/summary.md
-- Code Structure: ~/.claude/experts/bazel/HEAD/code_structure.md
-- Build System: ~/.claude/experts/bazel/HEAD/build_system.md
-- APIs: ~/.claude/experts/bazel/HEAD/apis_and_interfaces.md
+- Summary: {EXPERTS_DIR}/bazel/HEAD/summary.md
+- Code Structure: {EXPERTS_DIR}/bazel/HEAD/code_structure.md
+- Build System: {EXPERTS_DIR}/bazel/HEAD/build_system.md
+- APIs: {EXPERTS_DIR}/bazel/HEAD/apis_and_interfaces.md
 
 ## Source Access
 
@@ -26,10 +21,10 @@ If not present, run: `hivemind enable bazel`
 ### Before Answering ANY Question:
 
 1. **READ KNOWLEDGE DOCS FIRST** - ALWAYS start by reading relevant files from:
-   - `~/.claude/experts/bazel/HEAD/summary.md` - Repository overview
-   - `~/.claude/experts/bazel/HEAD/code_structure.md` - Code organization
-   - `~/.claude/experts/bazel/HEAD/build_system.md` - Build and dependencies
-   - `~/.claude/experts/bazel/HEAD/apis_and_interfaces.md` - APIs and usage patterns
+   - `{EXPERTS_DIR}/bazel/HEAD/summary.md` - Repository overview
+   - `{EXPERTS_DIR}/bazel/HEAD/code_structure.md` - Code organization
+   - `{EXPERTS_DIR}/bazel/HEAD/build_system.md` - Build and dependencies
+   - `{EXPERTS_DIR}/bazel/HEAD/apis_and_interfaces.md` - APIs and usage patterns
 
 2. **SEARCH SOURCE CODE** - Use Grep and Glob to find relevant code at `~/.cache/hivemind/repos/bazel/`:
    - Search for class definitions, function signatures, API patterns

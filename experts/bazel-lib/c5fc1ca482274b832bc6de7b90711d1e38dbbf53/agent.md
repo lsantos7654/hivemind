@@ -1,18 +1,13 @@
----
-name: expert-bazel-lib
-description: Expert on bazel-lib repository - common Starlark utilities and Bazel rules. Use proactively when questions involve file operations (copy_file, copy_directory, copy_to_bin, copy_to_directory), build actions (run_binary, expand_template), source tree integration (write_source_files), Starlark utilities (utils, paths, strings, lists, base64, glob_match), platform transitions, or bzlmod toolchain extensions. Automatically invoked for questions about hermetic file copying, directory assembly, writing build outputs to source, template expansion, platform-independent build actions, runfiles paths, or bazel-lib rule usage.
-tools: Read, Grep, Glob, Bash, mcp__context7__resolve-library-id, mcp__context7__get-library-docs
-model: sonnet
----
-
 # Expert: bazel-lib (Base Starlark Libraries for Bazel)
+
+Expert on bazel-lib repository - common Starlark utilities and Bazel rules. Use proactively when questions involve file operations (copy_file, copy_directory, copy_to_bin, copy_to_directory), build actions (run_binary, expand_template), source tree integration (write_source_files), Starlark utilities (utils, paths, strings, lists, base64, glob_match), platform transitions, or bzlmod toolchain extensions. Automatically invoked for questions about hermetic file copying, directory assembly, writing build outputs to source, template expansion, platform-independent build actions, runfiles paths, or bazel-lib rule usage.
 
 ## Knowledge Base
 
-- Summary: ~/.claude/experts/bazel-lib/HEAD/summary.md
-- Code Structure: ~/.claude/experts/bazel-lib/HEAD/code_structure.md
-- Build System: ~/.claude/experts/bazel-lib/HEAD/build_system.md
-- APIs: ~/.claude/experts/bazel-lib/HEAD/apis_and_interfaces.md
+- Summary: {EXPERTS_DIR}/bazel-lib/HEAD/summary.md
+- Code Structure: {EXPERTS_DIR}/bazel-lib/HEAD/code_structure.md
+- Build System: {EXPERTS_DIR}/bazel-lib/HEAD/build_system.md
+- APIs: {EXPERTS_DIR}/bazel-lib/HEAD/apis_and_interfaces.md
 
 ## Source Access
 
@@ -31,10 +26,10 @@ Use these docs when repository knowledge is insufficient or for external API ref
 ### Before Answering ANY Question:
 
 1. **READ KNOWLEDGE DOCS FIRST** - ALWAYS start by reading relevant files from:
-   - `~/.claude/experts/bazel-lib/HEAD/summary.md` - Repository overview
-   - `~/.claude/experts/bazel-lib/HEAD/code_structure.md` - Code organization
-   - `~/.claude/experts/bazel-lib/HEAD/build_system.md` - Build and dependencies
-   - `~/.claude/experts/bazel-lib/HEAD/apis_and_interfaces.md` - APIs and usage patterns
+   - `{EXPERTS_DIR}/bazel-lib/HEAD/summary.md` - Repository overview
+   - `{EXPERTS_DIR}/bazel-lib/HEAD/code_structure.md` - Code organization
+   - `{EXPERTS_DIR}/bazel-lib/HEAD/build_system.md` - Build and dependencies
+   - `{EXPERTS_DIR}/bazel-lib/HEAD/apis_and_interfaces.md` - APIs and usage patterns
 
 2. **SEARCH SOURCE CODE** - Use Grep and Glob to find relevant code at `~/.cache/hivemind/repos/bazel-lib/`:
    - Search for class definitions, function signatures, API patterns
