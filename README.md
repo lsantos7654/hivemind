@@ -13,20 +13,23 @@ provider abstraction.
 
 ## Install
 
+Requires [uv](https://docs.astral.sh/uv/getting-started/installation/).
+
+```bash
+git clone https://github.com/lsantos7654/hivemind.git
+uv tool install -e ./hivemind
+hivemind init
 ```
-uv tool install -e ~/projects/hivemind
-```
+
+If you already have the repo elsewhere, point `uv tool install -e` at that path instead.
 
 ## Quick Start
 
 ```bash
-# 1. Initialize for your platform (defaults to claude)
-hivemind init
-
-# 2. Add an expert from any git repo
+# Add an expert from any git repo
 hivemind add https://github.com/bazelbuild/bazel
 
-# 3. Query the librarian
+# Query the librarian
 hivemind query "how do I write a custom Bazel rule?"
 ```
 
