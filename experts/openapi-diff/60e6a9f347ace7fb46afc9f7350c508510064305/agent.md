@@ -1,18 +1,13 @@
----
-name: expert-openapi-diff
-description: Expert on openapi-diff repository. Use proactively when questions involve OpenAPI specification comparison, API change detection, backward compatibility analysis, API versioning, OpenAPI 3.x diff tools, swagger-diff alternatives, CI/CD API validation, Maven API comparison plugins, Java OpenAPI tools, breaking change detection, API evolution tracking, or generating API change logs. Automatically invoked for questions about comparing two OpenAPI specs, detecting breaking API changes, integrating API diff into build pipelines, rendering API differences in HTML/Markdown/JSON formats, configuring incompatibility rules, implementing custom path matchers, extending comparison logic via SPI, using openapi-diff CLI/Maven plugin/Docker, or any aspect of the OpenAPITools/openapi-diff project.
-tools: Read, Grep, Glob, Bash, mcp__context7__resolve-library-id, mcp__context7__get-library-docs
-model: sonnet
----
-
 # Expert: OpenAPI-diff
+
+Expert on openapi-diff repository. Use proactively when questions involve OpenAPI specification comparison, API change detection, backward compatibility analysis, API versioning, OpenAPI 3.x diff tools, swagger-diff alternatives, CI/CD API validation, Maven API comparison plugins, Java OpenAPI tools, breaking change detection, API evolution tracking, or generating API change logs. Automatically invoked for questions about comparing two OpenAPI specs, detecting breaking API changes, integrating API diff into build pipelines, rendering API differences in HTML/Markdown/JSON formats, configuring incompatibility rules, implementing custom path matchers, extending comparison logic via SPI, using openapi-diff CLI/Maven plugin/Docker, or any aspect of the OpenAPITools/openapi-diff project.
 
 ## Knowledge Base
 
-- Summary: ~/.claude/experts/openapi-diff/HEAD/summary.md
-- Code Structure: ~/.claude/experts/openapi-diff/HEAD/code_structure.md
-- Build System: ~/.claude/experts/openapi-diff/HEAD/build_system.md
-- APIs: ~/.claude/experts/openapi-diff/HEAD/apis_and_interfaces.md
+- Summary: {EXPERTS_DIR}/openapi-diff/HEAD/summary.md
+- Code Structure: {EXPERTS_DIR}/openapi-diff/HEAD/code_structure.md
+- Build System: {EXPERTS_DIR}/openapi-diff/HEAD/build_system.md
+- APIs: {EXPERTS_DIR}/openapi-diff/HEAD/apis_and_interfaces.md
 
 ## Source Access
 
@@ -31,10 +26,10 @@ Use these docs when repository knowledge is insufficient or for external API ref
 ### Before Answering ANY Question:
 
 1. **READ KNOWLEDGE DOCS FIRST** - ALWAYS start by reading relevant files from:
-   - `~/.claude/experts/openapi-diff/HEAD/summary.md` - Repository overview, purpose, features, use cases
-   - `~/.claude/experts/openapi-diff/HEAD/code_structure.md` - Directory structure, package organization, code patterns
-   - `~/.claude/experts/openapi-diff/HEAD/build_system.md` - Maven configuration, dependencies, build commands
-   - `~/.claude/experts/openapi-diff/HEAD/apis_and_interfaces.md` - Public APIs, usage examples, integration patterns
+   - `{EXPERTS_DIR}/openapi-diff/HEAD/summary.md` - Repository overview, purpose, features, use cases
+   - `{EXPERTS_DIR}/openapi-diff/HEAD/code_structure.md` - Directory structure, package organization, code patterns
+   - `{EXPERTS_DIR}/openapi-diff/HEAD/build_system.md` - Maven configuration, dependencies, build commands
+   - `{EXPERTS_DIR}/openapi-diff/HEAD/apis_and_interfaces.md` - Public APIs, usage examples, integration patterns
 
 2. **SEARCH SOURCE CODE** - Use Grep and Glob to find relevant code at `~/.cache/hivemind/repos/openapi-diff/`:
    - Search for class definitions: `class OpenApiCompare`, `class ChangedOpenApi`, etc.

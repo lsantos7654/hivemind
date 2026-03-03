@@ -16,6 +16,14 @@ from enum import Enum
 from pathlib import Path
 from typing import Callable
 
+from hivemind_cli.providers import (
+    Provider,
+    get_active_provider,
+    extract_description,
+    strip_frontmatter,
+    DEFAULT_CLAUDE_CONFIG,
+    DEFAULT_OPENCODE_CONFIG,
+)
 from hivemind_cli.templates import update_expert_prompt
 
 
@@ -55,7 +63,6 @@ ProgressCallback = Callable[[ProgressInfo], None]
 
 # Allow override for testing, otherwise use the same paths as cli.py
 HIVEMIND_ROOT = Path(__file__).resolve().parent.parent
-CLAUDE_DIR = Path.home() / ".claude"
 CACHE_DIR = Path.home() / ".cache" / "hivemind"
 REPOS_DIR = CACHE_DIR / "repos"
 REPOS_LINK = HIVEMIND_ROOT / "repos"
@@ -66,7 +73,6 @@ CONFIG_JSON = HIVEMIND_ROOT / "config.json"
 AGENTS_DIR = HIVEMIND_ROOT / "agents"
 EXPERTS_DIR = HIVEMIND_ROOT / "experts"
 COMMANDS_DIR = HIVEMIND_ROOT / "commands"
-CLAUDE_MD = HIVEMIND_ROOT / "CLAUDE.md"
 SETTINGS_JSON = HIVEMIND_ROOT / "settings.json"
 PRIVATE_EXPERTS_DIR = HIVEMIND_ROOT / "private-experts"
 PRIVATE_REPOS_JSON = HIVEMIND_ROOT / "private-repos.json"
@@ -92,11 +98,24 @@ def _load_config() -> dict:
     data = _load_json(CONFIG_JSON)
     data.setdefault("enabled", [])
     data.setdefault("disabled", [])
+    data.setdefault("active_provider", "claude")
+    data.setdefault("providers", {})
+    # Seed default provider configs if missing
+    if "claude" not in data["providers"]:
+        data["providers"]["claude"] = DEFAULT_CLAUDE_CONFIG
+    if "opencode" not in data["providers"]:
+        data["providers"]["opencode"] = DEFAULT_OPENCODE_CONFIG
     return data
 
 
 def _save_config(config: dict) -> None:
     _save_json(CONFIG_JSON, config)
+
+
+def _get_provider() -> Provider:
+    """Get the active provider instance from config."""
+    config = _load_config()
+    return get_active_provider(config)
 
 
 def _load_repos() -> dict:
@@ -209,8 +228,12 @@ def _ensure_external_docs_link() -> None:
     EXTERNAL_DOCS_LINK.symlink_to(EXTERNAL_DOCS_DIR)
 
 
-def _link_agent(name: str) -> bool:
-    """Create agents/expert-<name>.md → ../experts/<name>/HEAD/agent.md.
+def _deploy_agent(name: str) -> bool:
+    """Generate and deploy agent file with provider-specific frontmatter.
+
+    Reads the canonical body from experts/{name}/HEAD/agent.md, strips any
+    existing frontmatter, extracts the description, and generates a new file
+    with the active provider's frontmatter and path transformations.
 
     Returns False if HEAD/agent.md doesn't exist.
     """
@@ -221,69 +244,45 @@ def _link_agent(name: str) -> bool:
     if not head_agent.exists():
         return False
 
-    agent_link = AGENTS_DIR / f"expert-{name}.md"
-    # Determine correct link target based on private/public
-    if _is_private_expert(name):
-        link_target = Path("..") / "private-experts" / name / "HEAD" / "agent.md"
-    else:
-        link_target = Path("..") / "experts" / name / "HEAD" / "agent.md"
+    provider = _get_provider()
 
-    if agent_link.is_symlink():
-        if os.readlink(agent_link) == str(link_target):
-            return True  # Already correct
-        agent_link.unlink()
-    elif agent_link.exists():
-        agent_link.unlink()
+    # Read canonical body and strip any frontmatter
+    raw_content = head_agent.read_text()
+    body = strip_frontmatter(raw_content)
+    description = extract_description(body)
 
-    agent_link.symlink_to(link_target)
+    # Generate provider-specific content
+    content = provider.format_agent_md(name, description, body)
+
+    # Deploy to agents/ directory
+    provider.deploy_agent(name, content, agents_dir=AGENTS_DIR)
     return True
 
 
-def _unlink_agent(name: str) -> None:
+def _undeploy_agent(name: str) -> None:
     """Remove agents/expert-<name>.md if it exists."""
-    agent_link = AGENTS_DIR / f"expert-{name}.md"
-    if agent_link.is_symlink() or agent_link.exists():
-        agent_link.unlink()
+    provider = _get_provider()
+    provider.undeploy_agent(name, agents_dir=AGENTS_DIR)
 
 
-def _link_expert(name: str) -> bool:
-    """Create ~/.claude/experts/<name> → {experts,private-experts}/<name>/.
+def _deploy_expert(name: str) -> bool:
+    """Deploy expert directory to active provider's expert location.
 
-    Returns True if symlink was created/updated, False if expert doesn't exist.
+    Returns True if deployed, False if expert doesn't exist.
     """
-    CLAUDE_EXPERTS_DIR = CLAUDE_DIR / "experts"
-    CLAUDE_EXPERTS_DIR.mkdir(parents=True, exist_ok=True)
-
     source_dir = _get_expert_dir(name)
     if not source_dir.exists():
         return False
 
-    expert_link = CLAUDE_EXPERTS_DIR / name
-
-    # Check if already correct
-    if expert_link.is_symlink():
-        if expert_link.resolve() == source_dir.resolve():
-            return True  # Already correct
-        expert_link.unlink()
-    elif expert_link.exists():
-        # Remove non-symlink file/directory
-        if expert_link.is_dir():
-            shutil.rmtree(expert_link)
-        else:
-            expert_link.unlink()
-
-    expert_link.symlink_to(source_dir)
+    provider = _get_provider()
+    provider.deploy_expert(name, source_dir)
     return True
 
 
-def _unlink_expert(name: str) -> None:
-    """Remove ~/.claude/experts/<name> if it exists."""
-    expert_link = CLAUDE_DIR / "experts" / name
-    if expert_link.is_symlink() or expert_link.exists():
-        if expert_link.is_dir() and not expert_link.is_symlink():
-            shutil.rmtree(expert_link)
-        else:
-            expert_link.unlink()
+def _undeploy_expert(name: str) -> None:
+    """Remove expert from active provider's expert location."""
+    provider = _get_provider()
+    provider.undeploy_expert(name)
 
 
 def _clone_repo(name: str, repos: dict, *, silent: bool = False) -> bool:
@@ -314,7 +313,13 @@ def _clone_repo(name: str, repos: dict, *, silent: bool = False) -> bool:
     # Determine clone command
     if commit:
         subprocess.run(
-            ["git", "clone", "--progress" if not silent else "--quiet", remote, str(repo_dir)],
+            [
+                "git",
+                "clone",
+                "--progress" if not silent else "--quiet",
+                remote,
+                str(repo_dir),
+            ],
             check=True,
             stdout=subprocess.DEVNULL if silent else None,
             stderr=subprocess.DEVNULL if silent else None,
@@ -341,7 +346,13 @@ def _clone_repo(name: str, repos: dict, *, silent: bool = False) -> bool:
         )
     else:
         subprocess.run(
-            ["git", "clone", "--progress" if not silent else "--quiet", remote, str(repo_dir)],
+            [
+                "git",
+                "clone",
+                "--progress" if not silent else "--quiet",
+                remote,
+                str(repo_dir),
+            ],
             check=True,
             stdout=subprocess.DEVNULL if silent else None,
             stderr=subprocess.DEVNULL if silent else None,
@@ -359,7 +370,7 @@ def _analyze_repo(
     is_update: bool = False,
     background: bool = False,
 ) -> subprocess.Popen | tuple[subprocess.Popen, Path, Path, object, object] | bool:
-    """Run AI analysis on a repo via `claude -p`.
+    """Run AI analysis on a repo via the active provider's engine.
 
     For create (is_update=False): generates 5 files (4 knowledge + agent.md).
     For update (is_update=True): regenerates 4 knowledge files, preserves agent.md.
@@ -377,34 +388,24 @@ def _analyze_repo(
 
         prompt = create_expert_prompt(name, commit, repo_dir, commit_dir)
 
-    cmd = [
-        "claude",
-        "-p",
-        "--verbose",
-        "--allowedTools",
-        "Read,Grep,Glob,Bash,Write",
-        "--model",
-        "sonnet",
-        "--add-dir",
-        str(repo_dir),
-        "--add-dir",
-        str(expert_dir),
-        "--dangerously-skip-permissions",
-    ]
+    provider = _get_provider()
+    cmd = provider.build_analysis_command(
+        extra_dirs=[repo_dir, expert_dir],
+    )
 
     if background:
         # Create temp files for stderr and stdout - use NamedTemporaryFile
         stderr_file = tempfile.NamedTemporaryFile(
-            mode='w',
+            mode="w",
             prefix=f"hivemind-{name}-stderr-",
             suffix=".log",
-            delete=False  # Don't auto-delete, we'll read it later
+            delete=False,  # Don't auto-delete, we'll read it later
         )
         stdout_file = tempfile.NamedTemporaryFile(
-            mode='w',
+            mode="w",
             prefix=f"hivemind-{name}-stdout-",
             suffix=".log",
-            delete=False  # Don't auto-delete, we'll read it later
+            delete=False,  # Don't auto-delete, we'll read it later
         )
         stderr_path = Path(stderr_file.name)
         stdout_path = Path(stdout_file.name)
@@ -435,8 +436,6 @@ def _analyze_repo(
 
 def _update_librarian() -> None:
     """Regenerate agents/librarian.md from enabled experts with valid HEAD/agent.md."""
-    from hivemind_cli.templates import librarian_template
-
     # Load config to get enabled experts
     config = _load_config()
     enabled_experts = set(config.get("enabled", []))
@@ -460,16 +459,12 @@ def _update_librarian() -> None:
             if not agent_md.exists():
                 continue
 
-            # Parse description from frontmatter
+            # Extract description from body (not frontmatter)
             description = ""
             try:
                 text = agent_md.read_text()
-                parts = text.split("---", 2)
-                if len(parts) >= 3:
-                    for line in parts[1].splitlines():
-                        if line.startswith("description:"):
-                            description = line[len("description:") :].strip()
-                            break
+                body = strip_frontmatter(text)
+                description = extract_description(body)
             except OSError:
                 pass
 
@@ -486,10 +481,28 @@ def _update_librarian() -> None:
             entries.append(entry)
 
     # Generate catalog even if empty, so librarian reflects current state
-    catalog = "\n\n---\n\n".join(entries) if entries else "No experts are currently enabled."
+    catalog = (
+        "\n\n---\n\n".join(entries) if entries else "No experts are currently enabled."
+    )
 
-    # Use centralized librarian template
-    content = librarian_template(catalog)
+    # Build librarian body
+    librarian_body = (
+        "# Hivemind Librarian\n\n"
+        "You are the hivemind librarian. You know every registered expert and what "
+        "they specialize in. When asked a question, identify which expert(s) are best "
+        "suited and recommend them by name.\n\n"
+        "## Expert Catalog\n\n"
+        f"{catalog}\n\n"
+        "## Instructions\n\n"
+        "1. Identify the most relevant expert(s) from the catalog\n"
+        "2. Respond with expert name(s) and why they're the right fit\n"
+        "3. If multiple experts are relevant, rank by relevance\n"
+        "4. If no expert matches, say so clearly\n"
+    )
+
+    # Format with provider-specific frontmatter
+    provider = _get_provider()
+    content = provider.format_librarian_md(librarian_body)
 
     AGENTS_DIR.mkdir(parents=True, exist_ok=True)
     (AGENTS_DIR / "librarian.md").write_text(content)
@@ -522,7 +535,9 @@ def update_expert(
     repo_dir = REPOS_DIR / name
 
     if on_progress:
-        on_progress(ProgressInfo(name, UpdatePhase.FETCHING, "Fetching latest commits..."))
+        on_progress(
+            ProgressInfo(name, UpdatePhase.FETCHING, "Fetching latest commits...")
+        )
 
     try:
         subprocess.run(
@@ -612,7 +627,9 @@ def update_expert(
             )
 
         # Start analysis process
-        proc, stderr_path, stdout_path, stderr_file, stdout_file = _analyze_repo(name, new_commit, repo_dir, tmp_expert, is_update=True, background=True)
+        proc, stderr_path, stdout_path, stderr_file, stdout_file = _analyze_repo(
+            name, new_commit, repo_dir, tmp_expert, is_update=True, background=True
+        )
 
         # Poll until complete (for progress updates)
         while proc.poll() is None:
@@ -682,7 +699,9 @@ def update_expert(
 
         # Phase 4: Commit results
         if on_progress:
-            on_progress(ProgressInfo(name, UpdatePhase.COMMITTING, "Committing changes..."))
+            on_progress(
+                ProgressInfo(name, UpdatePhase.COMMITTING, "Committing changes...")
+            )
 
         # Move staged files to final location
         final_commit_dir = expert_dir / new_commit
@@ -694,7 +713,11 @@ def update_expert(
 
         # Update HEAD symlink
         if on_progress:
-            on_progress(ProgressInfo(name, UpdatePhase.UPDATING_HEAD, "Updating HEAD symlink..."))
+            on_progress(
+                ProgressInfo(
+                    name, UpdatePhase.UPDATING_HEAD, "Updating HEAD symlink..."
+                )
+            )
 
         head_link = expert_dir / "HEAD"
         if head_link.is_symlink():
@@ -764,7 +787,9 @@ async def update_expert_async_internal(
         # Phase 1: Clone/fetch
         _check_cancellation(UpdatePhase.CLONING)
         if on_progress:
-            on_progress(ProgressInfo(name, UpdatePhase.CLONING, "Cloning repository..."))
+            on_progress(
+                ProgressInfo(name, UpdatePhase.CLONING, "Cloning repository...")
+            )
 
         if not _clone_repo(name, repos, silent=True):
             return {"success": False, "error": "Failed to clone repository"}
@@ -773,7 +798,9 @@ async def update_expert_async_internal(
 
         _check_cancellation(UpdatePhase.FETCHING)
         if on_progress:
-            on_progress(ProgressInfo(name, UpdatePhase.FETCHING, "Fetching latest commits..."))
+            on_progress(
+                ProgressInfo(name, UpdatePhase.FETCHING, "Fetching latest commits...")
+            )
 
         try:
             subprocess.run(
@@ -788,7 +815,9 @@ async def update_expert_async_internal(
         # Get latest commit
         _check_cancellation(UpdatePhase.CHECKING)
         if on_progress:
-            on_progress(ProgressInfo(name, UpdatePhase.CHECKING, "Checking for updates..."))
+            on_progress(
+                ProgressInfo(name, UpdatePhase.CHECKING, "Checking for updates...")
+            )
 
         new_commit = None
         for ref in ["origin/HEAD", "origin/main", "origin/master"]:
@@ -869,13 +898,13 @@ async def update_expert_async_internal(
 
         # Create temp files for stderr and stdout (binary mode for subprocess)
         stderr_file = tempfile.NamedTemporaryFile(
-            mode='wb',
+            mode="wb",
             prefix=f"hivemind-{name}-stderr-",
             suffix=".log",
             delete=False,
         )
         stdout_file = tempfile.NamedTemporaryFile(
-            mode='wb',
+            mode="wb",
             prefix=f"hivemind-{name}-stdout-",
             suffix=".log",
             delete=False,
@@ -883,20 +912,10 @@ async def update_expert_async_internal(
         stderr_path = Path(stderr_file.name)
         stdout_path = Path(stdout_file.name)
 
-        cmd = [
-            "claude",
-            "-p",
-            "--verbose",
-            "--allowedTools",
-            "Read,Grep,Glob,Bash,Write",
-            "--model",
-            "sonnet",
-            "--add-dir",
-            str(repo_dir),
-            "--add-dir",
-            str(staged_path),
-            "--dangerously-skip-permissions",
-        ]
+        provider = _get_provider()
+        cmd = provider.build_analysis_command(
+            extra_dirs=[repo_dir, staged_path],
+        )
 
         # Start async subprocess
         proc = await asyncio.create_subprocess_exec(
@@ -998,7 +1017,9 @@ async def update_expert_async_internal(
 
         # Phase 4: Commit results (risky - let it complete)
         if on_progress:
-            on_progress(ProgressInfo(name, UpdatePhase.COMMITTING, "Committing changes..."))
+            on_progress(
+                ProgressInfo(name, UpdatePhase.COMMITTING, "Committing changes...")
+            )
 
         # Move staged files to final location
         final_commit_dir = expert_dir / new_commit
@@ -1010,7 +1031,11 @@ async def update_expert_async_internal(
 
         # Update HEAD symlink (risky - let it complete)
         if on_progress:
-            on_progress(ProgressInfo(name, UpdatePhase.UPDATING_HEAD, "Updating HEAD symlink..."))
+            on_progress(
+                ProgressInfo(
+                    name, UpdatePhase.UPDATING_HEAD, "Updating HEAD symlink..."
+                )
+            )
 
         head_link = expert_dir / "HEAD"
         if head_link.is_symlink():
@@ -1111,17 +1136,22 @@ def get_git_versions(name: str, expert_dir: Path) -> list:
 
         # Query git tags
         result = subprocess.run(
-            ["git", "tag", "-l", "--format=%(refname:short)|%(creatordate:short)|%(objectname)"],
+            [
+                "git",
+                "tag",
+                "-l",
+                "--format=%(refname:short)|%(creatordate:short)|%(objectname)",
+            ],
             cwd=str(repo_dir),
             capture_output=True,
             text=True,
         )
 
         if result.returncode == 0 and result.stdout.strip():
-            for line in result.stdout.strip().split('\n'):
+            for line in result.stdout.strip().split("\n"):
                 if not line:
                     continue
-                parts = line.split('|')
+                parts = line.split("|")
                 if len(parts) >= 3:
                     tag_name, date, tag_commit = parts[0], parts[1], parts[2]
 
@@ -1155,10 +1185,10 @@ def get_git_versions(name: str, expert_dir: Path) -> list:
         )
 
         if result.returncode == 0 and result.stdout.strip():
-            for line in result.stdout.strip().split('\n'):
+            for line in result.stdout.strip().split("\n"):
                 if not line:
                     continue
-                parts = line.split('|', 2)
+                parts = line.split("|", 2)
                 if len(parts) >= 3:
                     commit, date, message = parts[0], parts[1], parts[2]
 
@@ -1283,7 +1313,10 @@ async def switch_version_async(
 
         # Check if target commit exists
         if not commit_exists_in_repo(name, target_commit):
-            return {"success": False, "error": f"Commit {target_commit[:12]} not found in repository"}
+            return {
+                "success": False,
+                "error": f"Commit {target_commit[:12]} not found in repository",
+            }
 
         target_dir = expert_dir / target_commit
 
@@ -1351,13 +1384,13 @@ async def switch_version_async(
 
             # Create temp files for stderr and stdout (binary mode for subprocess)
             stderr_file = tempfile.NamedTemporaryFile(
-                mode='wb',
+                mode="wb",
                 prefix=f"hivemind-{name}-stderr-",
                 suffix=".log",
                 delete=False,
             )
             stdout_file = tempfile.NamedTemporaryFile(
-                mode='wb',
+                mode="wb",
                 prefix=f"hivemind-{name}-stdout-",
                 suffix=".log",
                 delete=False,
@@ -1365,20 +1398,10 @@ async def switch_version_async(
             stderr_path = Path(stderr_file.name)
             stdout_path = Path(stdout_file.name)
 
-            cmd = [
-                "claude",
-                "-p",
-                "--verbose",
-                "--allowedTools",
-                "Read,Grep,Glob,Bash,Write",
-                "--model",
-                "sonnet",
-                "--add-dir",
-                str(repo_dir),
-                "--add-dir",
-                str(staged_path),
-                "--dangerously-skip-permissions",
-            ]
+            provider = _get_provider()
+            cmd = provider.build_analysis_command(
+                extra_dirs=[repo_dir, staged_path],
+            )
 
             # Start async subprocess
             proc = await asyncio.create_subprocess_exec(
@@ -1505,7 +1528,10 @@ async def switch_version_async(
                 check=True,
             )
         except subprocess.CalledProcessError as e:
-            return {"success": False, "error": f"Failed to checkout commit in repo: {e}"}
+            return {
+                "success": False,
+                "error": f"Failed to checkout commit in repo: {e}",
+            }
 
         # Update HEAD symlink (risky - let it complete)
         if on_progress:
@@ -1524,8 +1550,8 @@ async def switch_version_async(
             head_link.unlink()
         head_link.symlink_to(target_commit)
 
-        # Update agent symlink
-        _link_agent(name)
+        # Redeploy agent file with updated content
+        _deploy_agent(name)
 
         # Update repos.json or private-repos.json
         repos[name]["commit"] = target_commit
@@ -1603,8 +1629,8 @@ def enable_expert(name: str) -> dict:
     if not _clone_repo(name, repos, silent=True):
         return {"success": False, "error": "Failed to clone repository"}
 
-    _link_agent(name)
-    _link_expert(name)
+    _deploy_agent(name)
+    _deploy_expert(name)
 
     # Update librarian to reflect enabled experts
     _update_librarian()
@@ -1632,10 +1658,76 @@ def disable_expert(name: str) -> dict:
             config["disabled"].append(name)
         _save_config(config)
 
-    _unlink_agent(name)
-    _unlink_expert(name)
+    _undeploy_agent(name)
+    _undeploy_expert(name)
 
     # Update librarian to reflect enabled experts
     _update_librarian()
 
     return {"success": True, "already_disabled": already_disabled}
+
+
+def redeploy_all_agents() -> dict:
+    """Regenerate all enabled agent files with current provider settings.
+
+    Used after changing provider config (tools, model, etc.) to apply changes
+    to all deployed agent files without re-running AI analysis.
+
+    Returns:
+        dict with keys: success (bool), deployed (list[str]), failed (list[str])
+    """
+    config = _load_config()
+    enabled = config.get("enabled", [])
+
+    deployed: list[str] = []
+    failed: list[str] = []
+
+    for name in enabled:
+        if _deploy_agent(name):
+            deployed.append(name)
+        else:
+            failed.append(name)
+
+    # Regenerate librarian too
+    _update_librarian()
+
+    return {"success": True, "deployed": deployed, "failed": failed}
+
+
+def switch_provider(provider_name: str) -> dict:
+    """Switch active provider.
+
+    Args:
+        provider_name: Name of provider to switch to (e.g. "claude", "opencode")
+
+    Returns:
+        dict with keys: success (bool), error (str | None), old_provider (str), new_provider (str)
+    """
+    from hivemind_cli.providers import PROVIDER_CLASSES
+
+    if provider_name not in PROVIDER_CLASSES:
+        available = ", ".join(PROVIDER_CLASSES)
+        return {
+            "success": False,
+            "error": f"Unknown provider '{provider_name}'. Available: {available}",
+        }
+
+    config = _load_config()
+    old_provider = config.get("active_provider", "claude")
+
+    if old_provider == provider_name:
+        return {
+            "success": True,
+            "old_provider": old_provider,
+            "new_provider": provider_name,
+            "already_active": True,
+        }
+
+    config["active_provider"] = provider_name
+    _save_config(config)
+
+    return {
+        "success": True,
+        "old_provider": old_provider,
+        "new_provider": provider_name,
+    }

@@ -1,18 +1,13 @@
----
-name: expert-rules_python
-description: Expert on rules_python repository. Use proactively when questions involve Bazel Python rules (py_library, py_binary, py_test, py_runtime), PyPI/pip integration in Bazel, Python toolchain configuration, hermetic Python interpreters, wheel building (py_wheel, py_package), Bzlmod python/pip extensions, requirements.txt parsing, Python dependency management in Bazel, Gazelle Python plugin, console script binaries, Python precompilation, multi-platform Python builds, or rules_python API extension. Automatically invoked for questions about building Python projects with Bazel, configuring Python toolchains for Bazel, installing pip packages in Bazel, creating Python wheels with Bazel, generating BUILD files for Python, using py_library/py_binary/py_test rules, pip.parse() or pip_parse() configuration, MODULE.bazel Python setup, WORKSPACE Python configuration, python.toolchain() registration, cross-platform Python dependencies, PyInfo providers, extending rules_python, or troubleshooting rules_python issues.
-tools: Read, Grep, Glob, Bash, mcp__context7__resolve-library-id, mcp__context7__get-library-docs
-model: sonnet
----
-
 # Expert: rules_python (Bazel Python Rules)
+
+Expert on rules_python repository. Use proactively when questions involve Bazel Python rules (py_library, py_binary, py_test, py_runtime), PyPI/pip integration in Bazel, Python toolchain configuration, hermetic Python interpreters, wheel building (py_wheel, py_package), Bzlmod python/pip extensions, requirements.txt parsing, Python dependency management in Bazel, Gazelle Python plugin, console script binaries, Python precompilation, multi-platform Python builds, or rules_python API extension. Automatically invoked for questions about building Python projects with Bazel, configuring Python toolchains for Bazel, installing pip packages in Bazel, creating Python wheels with Bazel, generating BUILD files for Python, using py_library/py_binary/py_test rules, pip.parse() or pip_parse() configuration, MODULE.bazel Python setup, WORKSPACE Python configuration, python.toolchain() registration, cross-platform Python dependencies, PyInfo providers, extending rules_python, or troubleshooting rules_python issues.
 
 ## Knowledge Base
 
-- Summary: ~/.claude/experts/rules_python/HEAD/summary.md
-- Code Structure: ~/.claude/experts/rules_python/HEAD/code_structure.md
-- Build System: ~/.claude/experts/rules_python/HEAD/build_system.md
-- APIs: ~/.claude/experts/rules_python/HEAD/apis_and_interfaces.md
+- Summary: {EXPERTS_DIR}/rules_python/HEAD/summary.md
+- Code Structure: {EXPERTS_DIR}/rules_python/HEAD/code_structure.md
+- Build System: {EXPERTS_DIR}/rules_python/HEAD/build_system.md
+- APIs: {EXPERTS_DIR}/rules_python/HEAD/apis_and_interfaces.md
 
 ## Source Access
 
@@ -31,10 +26,10 @@ Use these docs when repository knowledge is insufficient or for external API ref
 ### Before Answering ANY Question:
 
 1. **READ KNOWLEDGE DOCS FIRST** - ALWAYS start by reading relevant files from:
-   - `~/.claude/experts/rules_python/HEAD/summary.md` - Repository overview
-   - `~/.claude/experts/rules_python/HEAD/code_structure.md` - Code organization
-   - `~/.claude/experts/rules_python/HEAD/build_system.md` - Build and dependencies
-   - `~/.claude/experts/rules_python/HEAD/apis_and_interfaces.md` - APIs and usage patterns
+   - `{EXPERTS_DIR}/rules_python/HEAD/summary.md` - Repository overview
+   - `{EXPERTS_DIR}/rules_python/HEAD/code_structure.md` - Code organization
+   - `{EXPERTS_DIR}/rules_python/HEAD/build_system.md` - Build and dependencies
+   - `{EXPERTS_DIR}/rules_python/HEAD/apis_and_interfaces.md` - APIs and usage patterns
 
 2. **SEARCH SOURCE CODE** - Use Grep and Glob to find relevant code at `~/.cache/hivemind/repos/rules_python/`:
    - Search for class definitions, function signatures, API patterns
