@@ -610,7 +610,7 @@ class OpenCodeProvider(Provider):
         cmd = shlex.split(self._engine)
 
         # Add model
-        model = self._settings.get("model", "anthropic/claude-sonnet-4-20250514")
+        model = self._settings.get("model", "github-copilot/claude-sonnet-4")
         cmd.extend(["--model", model])
 
         return cmd
@@ -618,7 +618,7 @@ class OpenCodeProvider(Provider):
     def build_query_command(self) -> list[str]:
         """Build opencode run command for librarian queries."""
         cmd = shlex.split(self._engine)
-        model = self._settings.get("model", "anthropic/claude-sonnet-4-20250514")
+        model = self._settings.get("model", "github-copilot/claude-sonnet-4")
         cmd.extend(["--model", model])
         return cmd
 

@@ -393,6 +393,11 @@ def _analyze_repo(
         extra_dirs=[repo_dir, expert_dir],
     )
 
+    # Run from common parent so the engine has filesystem access to both
+    # the repo and expert directories (matches async callers which already
+    # set cwd=staged_path)
+    cwd = Path(os.path.commonpath([repo_dir.resolve(), expert_dir.resolve()]))
+
     if background:
         # Create temp files for stderr and stdout - use NamedTemporaryFile
         stderr_file = tempfile.NamedTemporaryFile(
@@ -415,6 +420,7 @@ def _analyze_repo(
             stdin=subprocess.PIPE,
             stdout=stdout_file,
             stderr=stderr_file,
+            cwd=str(cwd),
         )
         proc.stdin.write(prompt.encode())
         proc.stdin.close()
@@ -426,12 +432,32 @@ def _analyze_repo(
             stdin=subprocess.PIPE,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.PIPE,
+            cwd=str(cwd),
         )
         _, stderr = proc.communicate(input=prompt.encode())
         if proc.returncode != 0 and stderr:
-            # Print stderr for debugging
-            print(f"Claude analysis error: {stderr.decode()}", file=sys.stderr)
-        return proc.returncode == 0
+            print(f"Analysis error: {stderr.decode()}", file=sys.stderr)
+            return False
+
+        # Validate expected output files exist (engine may exit 0 despite
+        # failing to write, e.g. OpenCode rejecting external directory access)
+        expected = [
+            "summary.md",
+            "code_structure.md",
+            "build_system.md",
+            "apis_and_interfaces.md",
+        ]
+        if not is_update:
+            expected.append("agent.md")
+        missing = [f for f in expected if not (commit_dir / f).exists()]
+        if missing:
+            print(
+                f"Analysis produced no output — missing: {', '.join(missing)}",
+                file=sys.stderr,
+            )
+            return False
+
+        return True
 
 
 def _update_librarian() -> None:
