@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(~/.cache/hivemind/**)",
+      "Grep(~/.cache/hivemind/**)",
+      "Glob(~/.cache/hivemind/**)"
+    ]
+  }
+}

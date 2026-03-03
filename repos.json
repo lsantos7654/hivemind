@@ -98,5 +98,15 @@
     "remote": "https://github.com/alibaba/formily.git",
     "commit": "d9a46442a575aa5f0fc1bd945e34d9a85d191d0e",
     "ref_name": ""
+  },
+  "joi": {
+    "remote": "https://github.com/hapijs/joi.git",
+    "commit": "481e270e6c4ff8728d6fda248fd83f6ff70f7ed9",
+    "ref_name": ""
+  },
+  "openapi-diff": {
+    "remote": "https://github.com/OpenAPITools/openapi-diff.git",
+    "commit": "60e6a9f347ace7fb46afc9f7350c508510064305",
+    "ref_name": ""
   }
 }
