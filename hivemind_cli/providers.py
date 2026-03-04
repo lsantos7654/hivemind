@@ -30,30 +30,44 @@ def extract_description(body: str) -> str:
         <blank line>
         ## Next Section
 
+    Falls back to the first paragraph under an '## Overview' section if no
+    paragraph is found directly under the h1 heading.
+
     Returns:
         Description string, or empty string if not found.
     """
     lines = body.strip().splitlines()
-    # Skip heading line(s)
-    found_heading = False
-    description_lines: list[str] = []
 
-    for line in lines:
-        if not found_heading:
-            if line.startswith("# "):
-                found_heading = True
-            continue
+    def _first_paragraph(start_idx: int) -> str:
+        """Return the first non-empty paragraph starting from start_idx."""
+        paragraph_lines: list[str] = []
+        for line in lines[start_idx:]:
+            stripped = line.strip()
+            if not stripped and not paragraph_lines:
+                continue
+            if stripped.startswith("#") or (not stripped and paragraph_lines):
+                break
+            paragraph_lines.append(stripped)
+        return " ".join(paragraph_lines)
 
-        stripped = line.strip()
-        # Skip blank lines between heading and description
-        if not stripped and not description_lines:
-            continue
-        # Stop at next section heading or blank line after description
-        if stripped.startswith("#") or (not stripped and description_lines):
-            break
-        description_lines.append(stripped)
+    # Find h1 heading index
+    h1_idx = next((i for i, l in enumerate(lines) if l.startswith("# ")), None)
+    if h1_idx is None:
+        return ""
 
-    return " ".join(description_lines)
+    # Try direct paragraph under h1
+    result = _first_paragraph(h1_idx + 1)
+    if result:
+        return result
+
+    # Fallback: first paragraph under ## Overview
+    for i, line in enumerate(lines):
+        if line.strip().lower() == "## overview":
+            result = _first_paragraph(i + 1)
+            if result:
+                return result
+
+    return ""
 
 
 def strip_frontmatter(content: str) -> str:

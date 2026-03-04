@@ -27,7 +27,7 @@ def agent_md_template(name: str, commit: str) -> str:
     return f"""\
 # Expert: [Full Repository Name]
 
-[One paragraph description: what this repository is, what it's used for, and when this expert should be invoked. This paragraph is extracted as the agent's description.]
+[REPLACE THIS WITH ONE PARAGRAPH — no section heading above it. Describe what this repository is, what it does, and list the specific topics/scenarios when this expert should be invoked. This text is extracted verbatim as the agent description. Example: "Expert on the Foo library. Use proactively when questions involve X, Y, Z. Automatically invoked for questions about A, B, C."]
 
 ## Knowledge Base
 
@@ -173,7 +173,7 @@ Generate these 5 files:
 
 Replace the bracketed sections with specific content from your analysis:
 - The `[Full Repository Name]` heading should be the actual project name
-- The description paragraph after the heading should list concrete topics and scenarios for when this expert should be invoked
+- The description paragraph MUST come directly after the `# Expert:` heading — do NOT add `## Overview` or any other section heading between them. This paragraph is extracted by parsing the first text block after the h1 heading; any `##` heading will cut off extraction and produce a blank description.
 - The `[Generate detailed list...]` in Expertise should be comprehensive (100-150+ lines)
 
 **IMPORTANT for Instructions Section:** The Instructions section MUST be comprehensive and mandate that the expert:
