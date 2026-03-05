@@ -430,13 +430,20 @@ def _analyze_repo(
         proc = subprocess.Popen(
             cmd,
             stdin=subprocess.PIPE,
-            stdout=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             cwd=str(cwd),
         )
-        _, stderr = proc.communicate(input=prompt.encode())
-        if proc.returncode != 0 and stderr:
-            print(f"Analysis error: {stderr.decode()}", file=sys.stderr)
+        stdout, stderr = proc.communicate(input=prompt.encode())
+        if proc.returncode != 0:
+            err_output = (stderr or stdout or b"").decode().strip()
+            if err_output:
+                print(f"Analysis error: {err_output}", file=sys.stderr)
+            else:
+                print(
+                    f"Analysis failed with exit code {proc.returncode}",
+                    file=sys.stderr,
+                )
             return False
 
         # Validate expected output files exist (engine may exit 0 despite
