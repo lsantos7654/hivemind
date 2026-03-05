@@ -133,5 +133,10 @@
     "remote": "https://github.com/nix-community/plasma-manager.git",
     "commit": "a4b33606111c9c5dcd10009042bb710307174f51",
     "ref_name": ""
+  },
+  "opencode": {
+    "remote": "https://github.com/anomalyco/opencode.git",
+    "commit": "9507b0eace17522f518963f7d9f651fd6e541137",
+    "ref_name": ""
   }
 }
