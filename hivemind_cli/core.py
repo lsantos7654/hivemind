@@ -547,6 +547,8 @@ def _update_librarian() -> None:
 def update_expert(
     name: str,
     on_progress: ProgressCallback | None = None,
+    *,
+    skip_analysis: bool = False,
 ) -> dict:
     """Update a single expert with progress reporting.
 
@@ -646,89 +648,101 @@ def update_expert(
             check=True,
         )
 
-        # Phase 3: AI Analysis (long-running, need to poll)
-        if on_progress:
-            on_progress(
-                ProgressInfo(
-                    name,
-                    UpdatePhase.ANALYZING,
-                    f"Analyzing {new_commit[:12]} (this may take 2-5 minutes)...",
-                    progress_percent=0,
-                    new_commit=new_commit,
-                    old_commit=old_commit,
-                )
-            )
-
-        # Start analysis process
-        proc, stderr_path, stdout_path, stderr_file, stdout_file = _analyze_repo(
-            name, new_commit, repo_dir, tmp_expert, is_update=True, background=True
-        )
-
-        # Poll until complete (for progress updates)
-        while proc.poll() is None:
-            time.sleep(1)  # Check every second
+        # Phase 3: AI Analysis (skip if requested)
+        if not skip_analysis:
             if on_progress:
-                # Continue showing analyzing message
                 on_progress(
                     ProgressInfo(
                         name,
                         UpdatePhase.ANALYZING,
-                        f"Analyzing {new_commit[:12]}...",
+                        f"Analyzing {new_commit[:12]} (this may take 2-5 minutes)...",
+                        progress_percent=0,
                         new_commit=new_commit,
                         old_commit=old_commit,
                     )
                 )
 
-        # Close files now that process is done
-        stderr_file.close()
-        stdout_file.close()
+            # Start analysis process
+            proc, stderr_path, stdout_path, stderr_file, stdout_file = _analyze_repo(
+                name, new_commit, repo_dir, tmp_expert, is_update=True, background=True
+            )
 
-        if proc.returncode != 0:
-            # Analysis failed - read error from stderr and stdout files
-            error_msg = f"AI analysis failed (exit code {proc.returncode})"
-            try:
-                stderr_content = stderr_path.read_text()
-                stdout_content = stdout_path.read_text()
+            # Poll until complete (for progress updates)
+            while proc.poll() is None:
+                time.sleep(1)  # Check every second
+                if on_progress:
+                    # Continue showing analyzing message
+                    on_progress(
+                        ProgressInfo(
+                            name,
+                            UpdatePhase.ANALYZING,
+                            f"Analyzing {new_commit[:12]}...",
+                            new_commit=new_commit,
+                            old_commit=old_commit,
+                        )
+                    )
 
-                if stderr_content.strip():
-                    # Include last 500 chars of stderr
-                    error_msg += f"\nStderr: {stderr_content[-500:]}"
-                if stdout_content.strip():
-                    # Include last 500 chars of stdout
-                    error_msg += f"\nStdout: {stdout_content[-500:]}"
+            # Close files now that process is done
+            stderr_file.close()
+            stdout_file.close()
 
-                if not stderr_content.strip() and not stdout_content.strip():
-                    error_msg += f"\nNo output captured."
-            except Exception as e:
-                error_msg += f"\nCould not read output: {e}"
-            finally:
-                # Clean up log files
+            if proc.returncode != 0:
+                # Analysis failed - read error from stderr and stdout files
+                error_msg = f"AI analysis failed (exit code {proc.returncode})"
                 try:
-                    stderr_path.unlink()
-                    stdout_path.unlink()
-                except Exception:
-                    pass
+                    stderr_content = stderr_path.read_text()
+                    stdout_content = stdout_path.read_text()
 
-            # Revert checkout
-            if old_commit:
-                subprocess.run(
-                    ["git", "checkout", "--quiet", old_commit],
-                    cwd=str(repo_dir),
-                    capture_output=True,
+                    if stderr_content.strip():
+                        # Include last 500 chars of stderr
+                        error_msg += f"\nStderr: {stderr_content[-500:]}"
+                    if stdout_content.strip():
+                        # Include last 500 chars of stdout
+                        error_msg += f"\nStdout: {stdout_content[-500:]}"
+
+                    if not stderr_content.strip() and not stdout_content.strip():
+                        error_msg += f"\nNo output captured."
+                except Exception as e:
+                    error_msg += f"\nCould not read output: {e}"
+                finally:
+                    # Clean up log files
+                    try:
+                        stderr_path.unlink()
+                        stdout_path.unlink()
+                    except Exception:
+                        pass
+
+                # Revert checkout
+                if old_commit:
+                    subprocess.run(
+                        ["git", "checkout", "--quiet", old_commit],
+                        cwd=str(repo_dir),
+                        capture_output=True,
+                    )
+                return {
+                    "success": False,
+                    "error": error_msg,
+                    "new_commit": new_commit,
+                    "old_commit": old_commit,
+                }
+
+            # Clean up log files on success
+            try:
+                stderr_path.unlink()
+                stdout_path.unlink()
+            except Exception:
+                pass
+        else:
+            if on_progress:
+                on_progress(
+                    ProgressInfo(
+                        name,
+                        UpdatePhase.ANALYZING,
+                        "Skipping analysis (reusing existing docs)...",
+                        new_commit=new_commit,
+                        old_commit=old_commit,
+                    )
                 )
-            return {
-                "success": False,
-                "error": error_msg,
-                "new_commit": new_commit,
-                "old_commit": old_commit,
-            }
-
-        # Clean up log files on success
-        try:
-            stderr_path.unlink()
-            stdout_path.unlink()
-        except Exception:
-            pass
 
         # Phase 4: Commit results
         if on_progress:

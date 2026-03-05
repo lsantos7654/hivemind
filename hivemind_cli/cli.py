@@ -614,6 +614,11 @@ def update(
         help="Expert name (or omit for all enabled)",
         autocompletion=_complete_expert,
     ),
+    skip_analysis: bool = typer.Option(
+        False,
+        "--skip-analysis",
+        help="Pull latest repo changes without re-running AI analysis",
+    ),
 ) -> None:
     """Fetch latest commits and re-analyze with AI."""
     config = _load_config()
@@ -644,7 +649,9 @@ def update(
             elif info.phase not in [UpdatePhase.CLONING, UpdatePhase.FETCHING]:
                 console.print(f"  [success]✓[/success] {info.message}")
 
-        result = update_expert(expert_name, on_progress=on_progress)
+        result = update_expert(
+            expert_name, on_progress=on_progress, skip_analysis=skip_analysis
+        )
 
         if not result["success"]:
             console.print(f"  [error]✗[/error] {result['error']}")
