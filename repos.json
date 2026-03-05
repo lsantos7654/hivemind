@@ -128,5 +128,10 @@
     "remote": "https://github.com/NixOS/nixpkgs.git",
     "commit": "75b4bddadce323c869c39e5020373c26e599cc8d",
     "ref_name": ""
+  },
+  "plasma-manager": {
+    "remote": "https://github.com/nix-community/plasma-manager.git",
+    "commit": "a4b33606111c9c5dcd10009042bb710307174f51",
+    "ref_name": ""
   }
 }
