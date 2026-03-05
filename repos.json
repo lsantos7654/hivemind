@@ -108,5 +108,25 @@
     "remote": "https://github.com/OpenAPITools/openapi-diff.git",
     "commit": "60e6a9f347ace7fb46afc9f7350c508510064305",
     "ref_name": ""
+  },
+  "nix.dev": {
+    "remote": "https://github.com/NixOS/nix.dev.git",
+    "commit": "6a71db5c070ef55cf576ed582d2d85235629d241",
+    "ref_name": ""
+  },
+  "home-manager": {
+    "remote": "https://github.com/nix-community/home-manager.git",
+    "commit": "5a75730e6f21ee624cbf86f4915c6e7489c74acc",
+    "ref_name": ""
+  },
+  "nixvim": {
+    "remote": "https://github.com/nix-community/nixvim.git",
+    "commit": "21ae25e13b01d3b4cdc750b5f9e7bad68b150c10",
+    "ref_name": ""
+  },
+  "nixpkgs": {
+    "remote": "https://github.com/NixOS/nixpkgs.git",
+    "commit": "75b4bddadce323c869c39e5020373c26e599cc8d",
+    "ref_name": ""
   }
 }
