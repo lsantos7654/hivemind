@@ -576,6 +576,13 @@ class OpenCodeProvider(Provider):
             for tool_name, enabled in sorted(tools.items()):
                 lines.append(f"  {tool_name}: {str(enabled).lower()}")
 
+        # External directory permissions for repo, docs, and expert knowledge
+        lines.append("permission:")
+        lines.append("  external_directory:")
+        lines.append(f'    "~/.cache/hivemind/repos/{name}/**": allow')
+        lines.append(f'    "~/.cache/hivemind/external_docs/{name}/**": allow')
+        lines.append(f'    "{self.experts_base_path}/{name}/**": allow')
+
         lines.append("---")
         lines.append("")
         lines.append("")
