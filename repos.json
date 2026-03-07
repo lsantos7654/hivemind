@@ -138,5 +138,25 @@
     "remote": "https://github.com/anomalyco/opencode.git",
     "commit": "9507b0eace17522f518963f7d9f651fd6e541137",
     "ref_name": ""
+  },
+  "Krohnkite": {
+    "remote": "https://codeberg.org/anametologin/Krohnkite.git",
+    "commit": "2e7f71d263c6b35db116315823867ebc64299638",
+    "ref_name": ""
+  },
+  "dendritic": {
+    "remote": "https://github.com/mightyiam/dendritic.git",
+    "commit": "c48c223e253acf15d8dbc8847e70158b0e593626",
+    "ref_name": ""
+  },
+  "flake-parts": {
+    "remote": "https://github.com/hercules-ci/flake-parts.git",
+    "commit": "f20dc5d9b8027381c474144ecabc9034d6a839a3",
+    "ref_name": ""
+  },
+  "import-tree": {
+    "remote": "https://github.com/vic/import-tree.git",
+    "commit": "10fda59eee7d7970ec443b925f32a1bc7526648c",
+    "ref_name": ""
   }
 }
