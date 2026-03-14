@@ -29,7 +29,7 @@ class HivemindApp(App):
         self.private_experts_dir = self.hivemind_root / "private-experts"
         self.agents_dir = self.hivemind_root / "agents"
         self.config_json = self.hivemind_root / "config.json"
-        self.repos_json = self.hivemind_root / "repos.json"
+        self.hivemind_json = self.hivemind_root / "hivemind.json"
 
     def on_mount(self) -> None:
         """Load data and show main screen when app mounts."""
@@ -122,11 +122,15 @@ class HivemindApp(App):
         data.setdefault("disabled", [])
         return data
 
-    def _load_repos(self) -> dict:
-        """Load repos.json."""
-        if not self.repos_json.exists():
+    def _load_hivemind(self) -> dict:
+        """Load hivemind.json (shared project config)."""
+        if not self.hivemind_json.exists():
             return {}
-        return json.loads(self.repos_json.read_text())
+        return json.loads(self.hivemind_json.read_text())
+
+    def _load_repos(self) -> dict:
+        """Load repos from hivemind.json."""
+        return self._load_hivemind().get("repos", {})
 
     def _load_private_repos(self) -> dict:
         """Load private-repos.json."""

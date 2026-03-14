@@ -24,7 +24,8 @@ hivemind provider show     # Show detailed provider configuration
 Hivemind supports multiple AI coding platforms via a provider abstraction. The active
 provider determines where agents are deployed and how analysis commands are built.
 
-- Provider config: `config.json` → `active_provider` + `providers.<name>.settings`
+- Shared config: `hivemind.json` → `providers.<name>.settings` + `repos`
+- Local state: `config.json` → `enabled`, `disabled`, `active_provider`
 - Expert definitions: `experts/<name>/HEAD/agent.md` (platform-neutral body, no frontmatter)
 - Versioned knowledge: `experts/<name>/<commit>/` (HEAD symlink points to active version)
 - Agent files: Generated at deploy time with provider-specific frontmatter

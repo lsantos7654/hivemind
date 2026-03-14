@@ -29,6 +29,8 @@ from hivemind_cli.core import (
     _save_json,
     _load_config,
     _save_config,
+    _load_hivemind,
+    _save_hivemind,
     _load_repos,
     _save_repos,
     _load_private_repos,
@@ -61,14 +63,12 @@ from hivemind_cli.core import (
     REPOS_LINK,
     EXTERNAL_DOCS_DIR,
     EXTERNAL_DOCS_LINK,
-    REPOS_JSON,
+    HIVEMIND_JSON,
     CONFIG_JSON,
     AGENTS_DIR,
     EXPERTS_DIR,
     PRIVATE_EXPERTS_DIR,
-    PRIVATE_REPOS_JSON,
     COMMANDS_DIR,
-    SETTINGS_JSON,
 )
 
 THEME = Theme(
@@ -169,7 +169,7 @@ def _clone_repo_cli(name: str, repos: dict) -> bool:
     """Wrapper for _clone_repo that adds console output."""
     if name not in repos:
         console.print(
-            f"  [warning]![/warning] {name}: not in repos.json, skipping clone"
+            f"  [warning]![/warning] {name}: not in hivemind.json repos, skipping clone"
         )
         return False
 
@@ -225,7 +225,7 @@ def init() -> None:
         agents_dir=AGENTS_DIR,
         commands_dir=COMMANDS_DIR,
         rules_source=HIVEMIND_ROOT / "HIVEMIND.md",
-        settings_source=SETTINGS_JSON if provider.name == "claude" else None,
+        permissions=provider.permissions,
     )
     for label, status_msg in results:
         console.print(f"  [success]✓[/success] {label}: {status_msg}")
@@ -246,13 +246,13 @@ def init() -> None:
 
     _update_librarian_cli()
 
-    # Mark provider as enabled in config
-    provider_name = provider.name
-    if not config.get("providers", {}).get(provider_name, {}).get("enabled"):
-        config.setdefault("providers", {}).setdefault(provider_name, {})["enabled"] = (
+    # Mark provider as enabled in hivemind.json
+    if not provider.enabled:
+        hivemind = _load_hivemind()
+        hivemind.setdefault("providers", {}).setdefault(provider.name, {})["enabled"] = (
             True
         )
-        _save_config(config)
+        _save_hivemind(hivemind)
 
     # Remove stale agent files
     for f in AGENTS_DIR.glob("expert-*.md"):
@@ -516,12 +516,12 @@ def add(
             repos = _load_private_repos()
             repos[name] = {"remote": url, "commit": commit, "ref_name": ref_name}
             _save_private_repos(repos)
-            console.print("  [success]✓[/success] Added to private-repos.json")
+            console.print("  [success]✓[/success] Added to hivemind.json (private)")
         else:
             repos = _load_repos()
             repos[name] = {"remote": url, "commit": commit, "ref_name": ref_name}
             _save_repos(repos)
-            console.print("  [success]✓[/success] Added to repos.json")
+            console.print("  [success]✓[/success] Added to hivemind.json")
 
         # Enable in config and mark as private if needed
         config = _load_config()
@@ -627,7 +627,7 @@ def update(
     if name:
         names = [name]
         if name not in repos:
-            console.print(f"[error]Error: '{name}' not found in repos.json[/error]")
+            console.print(f"[error]Error: '{name}' not found in hivemind.json repos[/error]")
             raise typer.Exit(1)
     else:
         names = config["enabled"]
@@ -717,8 +717,9 @@ def provider_list() -> None:
     from hivemind_cli.providers import PROVIDER_CLASSES
 
     config = _load_config()
-    active = config.get("active_provider", "claude")
-    providers = config.get("providers", {})
+    hivemind = _load_hivemind()
+    active = config.get("active_provider", "")
+    providers = hivemind.get("providers", {})
 
     table = Table(
         title="Providers", show_header=True, header_style="bold", box=box.ROUNDED
@@ -780,9 +781,10 @@ def provider_show(
 ) -> None:
     """Show detailed configuration for a provider."""
     config = _load_config()
-    active = config.get("active_provider", "claude")
+    hivemind = _load_hivemind()
+    active = config.get("active_provider", "")
     target = name or active
-    providers = config.get("providers", {})
+    providers = hivemind.get("providers", {})
 
     if target not in providers:
         console.print(f"[error]Error: provider '{target}' not found in config[/error]")
@@ -826,7 +828,7 @@ def provider_show(
 def redeploy() -> None:
     """Regenerate all agent files for the active provider.
 
-    Use after changing provider settings in config.json
+    Use after changing provider settings in hivemind.json
     (model, tools, temperature) or after switching providers.
     """
     provider = _get_provider()
@@ -1068,7 +1070,6 @@ def status() -> None:
         agents_dir=AGENTS_DIR,
         commands_dir=COMMANDS_DIR,
         rules_source=HIVEMIND_ROOT / "HIVEMIND.md",
-        settings_source=SETTINGS_JSON,
     )
 
     # Add internal symlinks (not provider-specific)

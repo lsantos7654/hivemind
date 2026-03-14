@@ -95,42 +95,6 @@ def replace_expert_paths(body: str, *, old_base: str, new_base: str) -> str:
     return body.replace(old_base, new_base)
 
 
-# --- Default provider configs ---
-
-
-DEFAULT_CLAUDE_CONFIG: dict = {
-    "enabled": True,
-    "engine": "claude -p --verbose --dangerously-skip-permissions",
-    "home_dir": "~/.claude",
-    "settings": {
-        "model": "sonnet",
-        "tools": [
-            "Read",
-            "Grep",
-            "Glob",
-            "Bash",
-            "mcp__context7__resolve-library-id",
-            "mcp__context7__get-library-docs",
-        ],
-    },
-}
-
-DEFAULT_OPENCODE_CONFIG: dict = {
-    "enabled": False,
-    "engine": "opencode run",
-    "home_dir": "~/.config/opencode",
-    "settings": {
-        "model": "github-copilot/claude-sonnet-4",
-        "temperature": 0.1,
-        "tools": {
-            "read": True,
-            "grep": True,
-            "glob": True,
-            "bash": True,
-        },
-    },
-}
-
 
 # --- Provider Base Class ---
 
@@ -181,6 +145,11 @@ class Provider(ABC):
     def enabled(self) -> bool:
         """Whether this provider is enabled."""
         return self._config.get("enabled", False)
+
+    @property
+    def permissions(self) -> dict | None:
+        """Provider permissions config (e.g. for settings.json generation)."""
+        return self._config.get("permissions")
 
     @property
     def experts_base_path(self) -> str:
@@ -288,7 +257,7 @@ class Provider(ABC):
         agents_dir: Path,
         commands_dir: Path,
         rules_source: Path,
-        settings_source: Path | None = None,
+        permissions: dict | None = None,
     ) -> list[tuple[str, str]]:
         """Initialize provider directory structure and deploy symlinks.
 
@@ -296,7 +265,7 @@ class Provider(ABC):
             agents_dir: Hivemind's agents/ directory
             commands_dir: Hivemind's commands/ directory
             rules_source: Path to HIVEMIND.md rules file in hivemind root
-            settings_source: Path to settings.json in hivemind (Claude only)
+            permissions: Permissions dict to write as settings.json (Claude only)
 
         Returns:
             List of (label, status_message) tuples for display
@@ -309,7 +278,6 @@ class Provider(ABC):
         agents_dir: Path,
         commands_dir: Path,
         rules_source: Path,
-        settings_source: Path | None = None,
     ) -> list[tuple[str, Path, Path]]:
         """Return symlink checks for the status dashboard.
 
@@ -319,7 +287,6 @@ class Provider(ABC):
             agents_dir: Hivemind's agents/ directory
             commands_dir: Hivemind's commands/ directory
             rules_source: Path to HIVEMIND.md rules file in hivemind root
-            settings_source: Path to settings.json in hivemind (Claude only)
 
         Returns:
             List of (display_name, expected_target, link_path) tuples
@@ -475,9 +442,11 @@ class ClaudeProvider(Provider):
         agents_dir: Path,
         commands_dir: Path,
         rules_source: Path,
-        settings_source: Path | None = None,
+        permissions: dict | None = None,
     ) -> list[tuple[str, str]]:
         """Initialize ~/.claude directory structure with symlinks."""
+        import json as _json
+
         results: list[tuple[str, str]] = []
 
         self._home_dir.mkdir(parents=True, exist_ok=True)
@@ -494,12 +463,15 @@ class ClaudeProvider(Provider):
         rules_link = self._home_dir / self.rules_file_name
         results.append(_setup_symlink(rules_source, rules_link, self.rules_file_name))
 
-        # settings.json symlink
-        if settings_source and settings_source.exists():
-            settings_link = self._home_dir / "settings.json"
-            results.append(
-                _setup_symlink(settings_source, settings_link, "settings.json")
-            )
+        # Generate settings.json from permissions config
+        if permissions:
+            settings_path = self._home_dir / "settings.json"
+            # Remove old symlink if present
+            if settings_path.is_symlink():
+                settings_path.unlink()
+            settings_data = {"permissions": permissions}
+            settings_path.write_text(_json.dumps(settings_data, indent=2) + "\n")
+            results.append(("settings.json", "generated from hivemind.json"))
 
         # experts/ directory (real dir, not symlink)
         experts_dir = self._home_dir / "experts"
@@ -514,10 +486,9 @@ class ClaudeProvider(Provider):
         agents_dir: Path,
         commands_dir: Path,
         rules_source: Path,
-        settings_source: Path | None = None,
     ) -> list[tuple[str, Path, Path]]:
         """Return symlink checks for Claude Code provider."""
-        checks = [
+        return [
             (f"{self._home_dir}/agents/", agents_dir, self._home_dir / "agents"),
             (f"{self._home_dir}/commands/", commands_dir, self._home_dir / "commands"),
             (
@@ -526,15 +497,6 @@ class ClaudeProvider(Provider):
                 self._home_dir / self.rules_file_name,
             ),
         ]
-        if settings_source:
-            checks.append(
-                (
-                    f"{self._home_dir}/settings.json",
-                    settings_source,
-                    self._home_dir / "settings.json",
-                )
-            )
-        return checks
 
 
 # --- OpenCode Provider ---
@@ -694,7 +656,7 @@ class OpenCodeProvider(Provider):
         agents_dir: Path,
         commands_dir: Path,
         rules_source: Path,
-        settings_source: Path | None = None,
+        permissions: dict | None = None,
     ) -> list[tuple[str, str]]:
         """Initialize ~/.config/opencode directory structure."""
         results: list[tuple[str, str]] = []
@@ -726,7 +688,6 @@ class OpenCodeProvider(Provider):
         agents_dir: Path,
         commands_dir: Path,
         rules_source: Path,
-        settings_source: Path | None = None,
     ) -> list[tuple[str, Path, Path]]:
         """Return symlink checks for OpenCode provider."""
         return [
@@ -746,11 +707,6 @@ class OpenCodeProvider(Provider):
 PROVIDER_CLASSES: dict[str, type[Provider]] = {
     "claude": ClaudeProvider,
     "opencode": OpenCodeProvider,
-}
-
-DEFAULT_CONFIGS: dict[str, dict] = {
-    "claude": DEFAULT_CLAUDE_CONFIG,
-    "opencode": DEFAULT_OPENCODE_CONFIG,
 }
 
 
@@ -774,20 +730,6 @@ def get_provider(name: str, provider_config: dict) -> Provider:
         )
     return cls(provider_config)
 
-
-def get_active_provider(config: dict) -> Provider:
-    """Get the active provider from full config.
-
-    Args:
-        config: Full config.json dict
-
-    Returns:
-        Active provider instance
-    """
-    active = config.get("active_provider", "claude")
-    providers = config.get("providers", {})
-    provider_config = providers.get(active, DEFAULT_CONFIGS.get(active, {}))
-    return get_provider(active, provider_config)
 
 
 # --- Internal Helpers ---

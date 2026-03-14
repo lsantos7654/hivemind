@@ -18,11 +18,9 @@ from typing import Callable
 
 from hivemind_cli.providers import (
     Provider,
-    get_active_provider,
+    get_provider,
     extract_description,
     strip_frontmatter,
-    DEFAULT_CLAUDE_CONFIG,
-    DEFAULT_OPENCODE_CONFIG,
 )
 from hivemind_cli.templates import update_expert_prompt
 
@@ -68,14 +66,13 @@ REPOS_DIR = CACHE_DIR / "repos"
 REPOS_LINK = HIVEMIND_ROOT / "repos"
 EXTERNAL_DOCS_DIR = CACHE_DIR / "external_docs"
 EXTERNAL_DOCS_LINK = HIVEMIND_ROOT / "external_docs"
-REPOS_JSON = HIVEMIND_ROOT / "repos.json"
+HIVEMIND_JSON = HIVEMIND_ROOT / "hivemind.json"
 CONFIG_JSON = HIVEMIND_ROOT / "config.json"
+PRIVATE_REPOS_JSON = HIVEMIND_ROOT / "private-repos.json"
 AGENTS_DIR = HIVEMIND_ROOT / "agents"
 EXPERTS_DIR = HIVEMIND_ROOT / "experts"
 COMMANDS_DIR = HIVEMIND_ROOT / "commands"
-SETTINGS_JSON = HIVEMIND_ROOT / "settings.json"
 PRIVATE_EXPERTS_DIR = HIVEMIND_ROOT / "private-experts"
-PRIVATE_REPOS_JSON = HIVEMIND_ROOT / "private-repos.json"
 
 
 # --- Helper Functions ---
@@ -92,19 +89,13 @@ def _save_json(path: Path, data: dict) -> None:
 
 
 def _load_config() -> dict:
+    """Load config.json (local user state: enabled/disabled, active_provider)."""
     default = {"enabled": [], "disabled": []}
     if not CONFIG_JSON.exists():
         return default
     data = _load_json(CONFIG_JSON)
     data.setdefault("enabled", [])
     data.setdefault("disabled", [])
-    data.setdefault("active_provider", "claude")
-    data.setdefault("providers", {})
-    # Seed default provider configs if missing
-    if "claude" not in data["providers"]:
-        data["providers"]["claude"] = DEFAULT_CLAUDE_CONFIG
-    if "opencode" not in data["providers"]:
-        data["providers"]["opencode"] = DEFAULT_OPENCODE_CONFIG
     return data
 
 
@@ -112,22 +103,43 @@ def _save_config(config: dict) -> None:
     _save_json(CONFIG_JSON, config)
 
 
+def _load_hivemind() -> dict:
+    """Load hivemind.json (shared project config: providers, repos)."""
+    data = _load_json(HIVEMIND_JSON)
+    data.setdefault("providers", {})
+    data.setdefault("repos", {})
+    return data
+
+
+def _save_hivemind(data: dict) -> None:
+    _save_json(HIVEMIND_JSON, data)
+
+
 def _get_provider() -> Provider:
     """Get the active provider instance from config."""
     config = _load_config()
-    return get_active_provider(config)
+    active = config.get("active_provider")
+    if not active:
+        raise RuntimeError(
+            "No active_provider set in config.json. Run 'hivemind init' first."
+        )
+    hivemind = _load_hivemind()
+    provider_config = hivemind.get("providers", {}).get(active, {})
+    return get_provider(active, provider_config)
 
 
 def _load_repos() -> dict:
-    return _load_json(REPOS_JSON)
+    return _load_hivemind().get("repos", {})
 
 
 def _save_repos(repos: dict) -> None:
-    _save_json(REPOS_JSON, repos)
+    hm = _load_hivemind()
+    hm["repos"] = repos
+    _save_hivemind(hm)
 
 
 def _load_private_repos() -> dict:
-    """Load private-repos.json."""
+    """Load private-repos.json (gitignored, never committed)."""
     if not PRIVATE_REPOS_JSON.exists():
         return {}
     try:
@@ -1760,7 +1772,7 @@ def switch_provider(provider_name: str) -> dict:
         }
 
     config = _load_config()
-    old_provider = config.get("active_provider", "claude")
+    old_provider = config.get("active_provider", "")
 
     if old_provider == provider_name:
         return {
