@@ -107,6 +107,13 @@ Before implementing any feature in this project:
 
 The project lead maintains the architecture map and tracks objectives. The tui-dev team lead owns all implementation in `hivemind_cli/tui/`.
 
+### Agent execution rules
+
+- **Always run lead agents in the background** (`run_in_background: true`) — project-lead, team-lead, and expert agents should never block the conversation.
+- **Maximize parallel agents** — launch as many independent agents as possible in a single message.
+- The orchestrator stays conversational with the user while leads and experts work asynchronously.
+- Only use foreground agents when the result is required before responding to the user.
+
 ### Current objectives (priority order)
 
 1. **Modern TUI redesign** — remove Header widget, add floating search overlay (`/` opens, `Esc` closes), clean minimal CSS
@@ -119,3 +126,22 @@ TUI entry point: `hivemind_cli/tui/app.py` → `HivemindApp`
 Screens inherit `BaseScreen` (`screens/base_screen.py`)
 All tables inherit `VimDataTable` (`widgets/vim_data_table.py`) for consistent vim navigation
 Active screens: `MainScreen` (expert list), `VersionDetailScreen` (commit history)
+
+### Key implementation notes
+
+**Objective 1 — TUI redesign:**
+- Remove `Header(show_clock=True)` from `MainScreen.compose()` (`screens/main_screen.py` line 43)
+- `SearchBar` widget (`widgets/search_bar.py`) becomes a floating CSS-layer overlay (hidden by default, shown on `/`, hidden on `Esc`)
+- `BaseScreen.action_focus_search` already handles the `/` binding; add show/hide toggling to it
+- Clean up `styles.tcss` to remove any header-related spacing
+
+**Objective 2 — Delete expert:**
+- `core.py` needs `delete_expert(name: str) -> dict` — removes from config, deletes agent file, deletes expert dir, removes from hivemind.json repos, regenerates librarian
+- CLI: add `hivemind delete <name>` command (with confirmation prompt)
+- TUI: add `D` binding to `MainScreen` with a confirmation `ModalScreen` before calling `delete_expert_sync(screen, name)` in `operations.py`
+
+**Objective 3 — Teams/Projects TUI:**
+- New screens: `screens/teams_screen.py` (TeamsScreen), `screens/projects_screen.py` (ProjectsScreen)
+- Both inherit `BaseScreen`, both use `VimDataTable` for their lists
+- `HivemindApp` gains `TabbedContent` wrapping all three screens; tab switching via 1/2/3 keys
+- `app.py` needs `load_teams()` and `load_projects()` analogous to `load_experts()`
