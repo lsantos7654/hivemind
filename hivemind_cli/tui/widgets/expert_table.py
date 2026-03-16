@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 from textual.app import ComposeResult
-from textual.widgets import DataTable
 from textual.reactive import reactive
 
 from hivemind_cli.tui.models import ExpertRow, ExpertStatus, OperationStatus
+from hivemind_cli.tui.widgets.vim_data_table import VimDataTable
 
 
-class ExpertTable(DataTable):
+class ExpertTable(VimDataTable):
     """DataTable for displaying experts with multi-select support."""
 
     selected_rows: reactive[set[str]] = reactive(set(), init=False)

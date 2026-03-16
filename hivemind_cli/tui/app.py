@@ -18,6 +18,8 @@ class HivemindApp(App):
 
     CSS_PATH = "styles.tcss"
     TITLE = "Hivemind Expert Manager"
+    COMMANDS = set()
+    COMMAND_PALETTE_BINDING = ""  # disable command palette, frees ctrl-p
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)

@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
+import time
+
 from textual.app import ComposeResult
 from textual.containers import Container
-from textual.screen import Screen
 from textual.widgets import Header, Static, DataTable
 from textual.binding import Binding
 
-from hivemind_cli.tui.models import ExpertRow, OperationStatus
+from hivemind_cli.tui.models import ExpertRow, ExpertStatus, OperationStatus
+from hivemind_cli.tui.screens.base_screen import BaseScreen
 from hivemind_cli.tui.widgets import ExpertTable, SearchBar
 from hivemind_cli.tui.operations import (
     update_expert_async,
@@ -17,13 +19,11 @@ from hivemind_cli.tui.operations import (
 )
 
 
-class MainScreen(Screen):
+class MainScreen(BaseScreen):
     """Main screen for expert management."""
 
-    _last_g_press: float = 0.0
-
     BINDINGS = [
-        Binding("slash", "focus_search", "Search"),
+        *BaseScreen.BINDINGS,
         Binding("enter", "show_details", "Details"),
         Binding("space", "toggle_select", "Select"),
         Binding("e", "enable", "Enable"),
@@ -31,20 +31,12 @@ class MainScreen(Screen):
         Binding("u", "update", "Update"),
         Binding("U", "update_all", "Update Enabled"),
         Binding("x", "cancel_update", "Cancel", show=False),
-        Binding("escape", "clear_search", "Clear"),
-        Binding("j", "cursor_down", "Down", show=False),
-        Binding("k", "cursor_up", "Up", show=False),
-        Binding("g", "goto_top", "Top", show=False),
-        Binding("G", "goto_bottom", "Bottom", show=False),
-        Binding("ctrl+d", "page_down", "Page Down", show=False),
-        Binding("ctrl+u", "page_up", "Page Up", show=False),
     ]
 
     def __init__(self, experts: list[ExpertRow], **kwargs):
         super().__init__(**kwargs)
         self.experts = experts
-        self._active_workers: dict[str, dict] = {}
-        # Maps expert_name -> {"token": CancellationToken, "pid": int | None}
+        self._last_escape_press: float = 0.0
 
     def compose(self) -> ComposeResult:
         """Compose the main screen."""
@@ -81,23 +73,41 @@ class MainScreen(Screen):
         table = self.query_one("#expert-table", ExpertTable)
         table.update_experts(self.experts)
 
-    def register_worker(self, expert_name: str, token: "CancellationToken") -> None:
-        """Register active worker for an expert."""
-        from hivemind_cli.tui.operations import CancellationToken
-        self._active_workers[expert_name] = {"token": token, "pid": None}
+    def action_go_back(self) -> None:
+        """On main screen, ctrl-o exits the app."""
+        self.app.exit()
 
-    def register_subprocess_pid(self, expert_name: str, pid: int) -> None:
-        """Register subprocess PID for cancellation."""
-        if expert_name in self._active_workers:
-            self._active_workers[expert_name]["pid"] = pid
+    def action_handle_escape(self) -> None:
+        """Clear search, deselect all, and focus table. Double-press exits."""
+        table = self.query_one("#expert-table", ExpertTable)
+        search_input = self.query_one("#search-input")
 
-    def unregister_worker(self, expert_name: str) -> None:
-        """Remove worker from registry."""
-        self._active_workers.pop(expert_name, None)
+        # If in search input, just exit back to table
+        if search_input.has_focus:
+            table.focus()
+            self._last_escape_press = 0.0
+            return
 
-    def get_worker_info(self, expert_name: str) -> dict | None:
-        """Get worker info for an expert."""
-        return self._active_workers.get(expert_name)
+        # If in table with selections, clear selections first
+        if table.get_selected_experts():
+            table.clear_selection()
+            self._last_escape_press = 0.0
+            return
+
+        # If there's a search filter, clear it
+        search_bar = self.query_one(SearchBar)
+        if search_bar.query:
+            search_bar.clear()
+            table.focus()
+            self._last_escape_press = 0.0
+            return
+
+        # Nothing to clear — double-press exits
+        now = time.monotonic()
+        if now - self._last_escape_press < 0.5:
+            self.app.exit()
+        else:
+            self._last_escape_press = now
 
     def action_toggle_select(self) -> None:
         """Toggle selection of current row."""
@@ -121,31 +131,6 @@ class MainScreen(Screen):
 
         # Push version detail screen
         self.app.push_screen(VersionDetailScreen(current))
-
-    def action_focus_search(self) -> None:
-        """Focus the search input."""
-        search_input = self.query_one("#search-input")
-        search_input.focus()
-
-    def action_clear_search(self) -> None:
-        """Clear search, deselect all, and focus table."""
-        table = self.query_one("#expert-table", ExpertTable)
-        search_input = self.query_one("#search-input")
-
-        # If in search input, just exit back to table
-        if search_input.has_focus:
-            table.focus()
-            return
-
-        # If in table with selections, clear selections first
-        if table.get_selected_experts():
-            table.clear_selection()
-            return
-
-        # Otherwise clear the search filter
-        search_bar = self.query_one(SearchBar)
-        search_bar.clear()
-        table.focus()
 
     def action_enable(self) -> None:
         """Enable selected or current expert."""
@@ -208,8 +193,6 @@ class MainScreen(Screen):
 
     def action_update_all(self) -> None:
         """Update all enabled experts."""
-        # Get all enabled experts
-        from hivemind_cli.tui.models import ExpertStatus
         enabled = [e.name for e in self.experts if e.status == ExpertStatus.ENABLED]
         if enabled:
             self.notify(f"Updating {len(enabled)} enabled expert(s)...", severity="information")
@@ -219,57 +202,6 @@ class MainScreen(Screen):
                 self.run_worker(self._update_expert_wrapper(name), exclusive=False)
         else:
             self.notify("No enabled experts to update", severity="warning")
-
-    def action_cursor_down(self) -> None:
-        """Move cursor down in the table."""
-        table = self.query_one("#expert-table", ExpertTable)
-        table.action_cursor_down()
-
-    def action_cursor_up(self) -> None:
-        """Move cursor up in the table."""
-        table = self.query_one("#expert-table", ExpertTable)
-        table.action_cursor_up()
-
-    def action_goto_top(self) -> None:
-        """Handle 'g' key press - go to top if pressed twice (gg)."""
-        import time
-        current_time = time.time()
-
-        # Check if 'g' was pressed within the last 0.5 seconds
-        if current_time - self._last_g_press < 0.5:
-            # Double 'g' pressed - go to top
-            table = self.query_one("#expert-table", ExpertTable)
-            table.move_cursor(row=0)
-            self._last_g_press = 0.0
-        else:
-            # First 'g' press - record the time
-            self._last_g_press = current_time
-
-    def action_goto_bottom(self) -> None:
-        """Go to bottom of table (G/Shift+g)."""
-        table = self.query_one("#expert-table", ExpertTable)
-        if table.row_count > 0:
-            table.move_cursor(row=table.row_count - 1)
-
-    def action_page_down(self) -> None:
-        """Move down half a page (Ctrl+d)."""
-        table = self.query_one("#expert-table", ExpertTable)
-        # Calculate half page based on visible height
-        half_page = max(1, table.size.height // 2)
-        new_row = min(table.cursor_row + half_page, table.row_count - 1)
-        table.move_cursor(row=new_row)
-
-    def action_page_up(self) -> None:
-        """Move up half a page (Ctrl+u)."""
-        table = self.query_one("#expert-table", ExpertTable)
-        # Calculate half page based on visible height
-        half_page = max(1, table.size.height // 2)
-        new_row = max(0, table.cursor_row - half_page)
-        table.move_cursor(row=new_row)
-
-    def action_quit(self) -> None:
-        """Quit the application."""
-        self.app.exit()
 
     def action_cancel_update(self) -> None:
         """Cancel currently running update for selected expert."""
