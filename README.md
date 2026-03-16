@@ -85,8 +85,8 @@ hivemind provider list        # List available providers
 hivemind provider switch <n>  # Switch active provider
 hivemind provider show [n]    # Show provider configuration
 hivemind crawl <url> <agent>  # Crawl a website and save docs for an expert
-hivemind tui                  # Interactive terminal UI
 hivemind init                 # Set up directory structure and deploy agents
+hivemind                      # Launch interactive TUI
 ```
 
 ## How It Works

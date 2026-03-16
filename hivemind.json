@@ -218,6 +218,21 @@
       "remote": "https://github.com/666ghj/MiroFish.git",
       "commit": "985f89f49acbb44ee14d9d680682c741a44eeebe",
       "ref_name": ""
+    },
+    "trogon": {
+      "remote": "https://github.com/Textualize/trogon",
+      "commit": "eaa9e68c403cae6aff0a80957d8876b284fd76b0",
+      "ref_name": ""
+    },
+    "toolong": {
+      "remote": "https://github.com/Textualize/toolong",
+      "commit": "5aa22ee878026f46d4d265905c4e1df4d37842ae",
+      "ref_name": ""
+    },
+    "posting": {
+      "remote": "https://github.com/darrenburns/posting",
+      "commit": "e56508f71b01353220902cf8bba96aad1188b07f",
+      "ref_name": ""
     }
   },
   "teams": {
@@ -228,6 +243,18 @@
         "home-manager",
         "nixvim",
         "plasma-manager"
+      ],
+      "max_roster": 8
+    },
+    "tui-dev": {
+      "description": "Python TUI development with Textual and Rich",
+      "experts": [
+        "textual",
+        "rich",
+        "rich-cli",
+        "trogon",
+        "posting",
+        "toolong"
       ],
       "max_roster": 8
     }
@@ -246,6 +273,24 @@
       "objectives": [
         "Declarative KDE config",
         "Reproducible dev environments"
+      ]
+    },
+    "hivemind": {
+      "description": "Hivemind CLI and TUI development",
+      "teams": [
+        "tui-dev"
+      ],
+      "repos": [
+        "textual",
+        "rich",
+        "trogon",
+        "posting",
+        "toolong"
+      ],
+      "objectives": [
+        "Vim-like motion across all TUI screens",
+        "Consistent keybinding framework",
+        "Teams and projects TUI views"
       ]
     }
   }

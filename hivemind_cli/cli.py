@@ -101,10 +101,20 @@ THEME = Theme(
 app = typer.Typer(
     name="hivemind",
     help="Manage expert agents for AI coding platforms.",
-    no_args_is_help=True,
+    invoke_without_command=True,
 )
 console = Console(theme=THEME)
 install_traceback(show_locals=True, console=console)
+
+
+@app.callback()
+def main(ctx: typer.Context) -> None:
+    """Manage expert agents for AI coding platforms."""
+    if ctx.invoked_subcommand is None:
+        from hivemind_cli.tui import HivemindApp
+
+        app_instance = HivemindApp()
+        app_instance.run()
 
 # Paths imported from core module
 
@@ -1316,14 +1326,6 @@ def redeploy() -> None:
     total = len(deployed) + len(teams_deployed) + len(projects_deployed)
     console.print(f"\n[bold success]Redeployed {total} agent(s).[/bold success]")
 
-
-@app.command()
-def tui() -> None:
-    """Launch interactive TUI for managing experts."""
-    from hivemind_cli.tui import HivemindApp
-
-    app_instance = HivemindApp()
-    app_instance.run()
 
 
 @app.command()

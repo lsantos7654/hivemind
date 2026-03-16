@@ -94,7 +94,7 @@ to regenerate deployed agent files with the correct provider frontmatter.
 ALWAYS USE `builtin cd` INSTEAD OF `cd` TO AVOID ZOXIDE INTERFERENCE!!!!
 ONLY USE `builtin` FOR `cd` only and no other command
 
-## Active Project: desktop-config
+## Active Project: hivemind
 
-Project lead: `project-lead-desktop-config`
+Project lead: `project-lead-hivemind`
 
