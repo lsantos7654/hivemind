@@ -40,7 +40,7 @@ source code.
 
 ## Commands
 
-### Core Workflow
+### Experts
 
 ```
 hivemind add <url>            # Clone, analyze, and create an expert
@@ -48,27 +48,42 @@ hivemind update [name]        # Fetch latest commits and re-analyze
 hivemind enable <name>        # Enable a disabled expert
 hivemind disable <name>       # Disable an expert
 hivemind list                 # Show all experts and their status
-hivemind status               # Full dashboard (symlinks, repos, experts)
-```
-
-### Querying
-
-```
 hivemind query <question>     # Ask the librarian which expert(s) to use
 ```
 
-### Provider Management
+### Teams
 
 ```
-hivemind provider list        # List available providers and their status
-hivemind provider switch <n>  # Switch active provider
-hivemind provider show [n]    # Show detailed provider configuration
+hivemind team create <name>               # Create a team with AI-generated lead
+hivemind team list                        # List all teams
+hivemind team show <name>                 # Show team details and roster
+hivemind team add-expert <team> <expert>  # Add an expert to a team
+hivemind team remove-expert <team> <ex>   # Remove an expert from a team
+hivemind team delete <name>               # Delete a team
+```
+
+### Projects
+
+```
+hivemind project create <name>                # Create a project with AI-generated lead
+hivemind project list                         # List all projects
+hivemind project show <name>                  # Show project details
+hivemind project set <name>                   # Set active project (updates HIVEMIND.md)
+hivemind project clear                        # Clear active project
+hivemind project add-team <project> <team>    # Assign a team to a project
+hivemind project remove-team <project> <team> # Remove a team from a project
+hivemind project add-repo <project> <repo>    # Associate a repo with a project
+hivemind project delete <name>                # Delete a project
+```
+
+### System
+
+```
+hivemind status               # Full dashboard
 hivemind redeploy             # Regenerate all agent files for active provider
-```
-
-### Other
-
-```
+hivemind provider list        # List available providers
+hivemind provider switch <n>  # Switch active provider
+hivemind provider show [n]    # Show provider configuration
 hivemind crawl <url> <agent>  # Crawl a website and save docs for an expert
 hivemind tui                  # Interactive terminal UI
 hivemind init                 # Set up directory structure and deploy agents
@@ -104,13 +119,58 @@ which is symlinked into the provider's home:
 
 ```
 agents/
-  expert-bazel.md                  # generated file with provider frontmatter
-  librarian.md                     # auto-generated catalog of all experts
+  expert-bazel.md                  # standalone expert
+  expert-bazel_build-team.md       # team-scoped expert copy (with team context appended)
+  team-lead-build-team.md          # team lead agent
+  project-lead-my-project.md       # project lead agent
+  librarian.md                     # auto-generated catalog of all experts, teams, projects
 
 ~/.cache/hivemind/
   repos/bazel/                     # cloned repository
   external_docs/bazel/             # crawled documentation (optional)
 ```
+
+### Teams
+
+A team groups related experts under a team lead. The team lead coordinates
+work across its experts and maintains team context:
+
+```
+teams/
+  build-team/
+    lead.md          # team lead agent body (AI-generated, self-managed)
+    general.md       # shared context — appended to all team expert copies
+    private.md       # team lead's private notes
+    experts/
+      bazel.md       # per-expert context — appended only to this expert's team copy
+```
+
+When a team is created, each expert on the roster gets a **team-scoped copy**
+deployed as `expert-{name}_{team}.md`. This copy has the original expert body
+plus team context (general.md + per-expert overrides) appended. The original
+standalone expert remains deployed alongside it.
+
+The team lead is a self-managing agent — it can update its own `lead.md`,
+manage context files, and request roster changes via the CLI.
+
+### Projects
+
+A project groups teams and tracks high-level objectives. The project lead
+maintains the big picture and delegates to team leads.
+
+```
+projects/
+  my-project/
+    lead.md          # project lead agent body (AI-generated, self-managed)
+    overview.md      # high-level architecture map
+    context.md       # project notes, todos, decisions
+    project.md       # appended to HIVEMIND.md when this project is active
+```
+
+**Projects are stateful.** Running `hivemind project set my-project` writes
+the active project into `HIVEMIND.md` (symlinked to `~/.claude/CLAUDE.md`),
+so every Claude session automatically knows the current project and its lead.
+Run `hivemind project clear` to deactivate.
 
 ### Providers
 
@@ -130,37 +190,36 @@ hivemind redeploy
 
 ### Configuration
 
-Provider settings live in `config.json` (not tracked by git):
+Hivemind uses two config files:
 
-```json
-{
-  "active_provider": "claude",
-  "providers": {
-    "claude": {
-      "enabled": true,
-      "engine": "claude -p --verbose --dangerously-skip-permissions",
-      "home_dir": "~/.claude",
-      "settings": {
-        "model": "sonnet",
-        "tools": ["Read", "Grep", "Glob", "Bash"]
-      }
-    },
-    "opencode": {
-      "enabled": true,
-      "engine": "opencode run",
-      "home_dir": "~/.config/opencode",
-      "settings": {
-        "model": "github-copilot/claude-sonnet-4",
-        "temperature": 0.1,
-        "tools": {"read": true, "grep": true, "glob": true, "bash": true}
-      }
-    }
-  }
-}
+- **`hivemind.json`** (tracked) — shared config: providers, repos, teams, projects
+- **`config.json`** (gitignored) — local state: enabled/disabled experts, active provider, active project
+
+After editing provider settings in `hivemind.json`, run `hivemind redeploy`
+to regenerate agent files.
+
+### Workspace Workflow
+
+The main branch is the hivemind tool itself — code, expert knowledge, and
+shared repos. Teams and projects are gitignored on main because they're
+user-specific.
+
+To track your own teams and projects, create a personal branch:
+
+```bash
+git checkout -b santos        # your workspace branch
+# remove teams/ and projects/ from .gitignore
+# commit your teams, projects, and config
 ```
 
-Settings are global -- all agents share the same model and tools. After
-editing `config.json`, run `hivemind redeploy` to regenerate agent files.
+Periodically merge main to get code and expert updates:
+
+```bash
+git merge main
+```
+
+This keeps main clean as a starting point while your branch holds your
+workspace state (teams, projects, active project, etc.).
 
 ### The Librarian
 

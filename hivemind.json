@@ -219,5 +219,34 @@
       "commit": "985f89f49acbb44ee14d9d680682c741a44eeebe",
       "ref_name": ""
     }
+  },
+  "teams": {
+    "nix-infra": {
+      "description": "NixOS infrastructure and configuration",
+      "experts": [
+        "nixpkgs",
+        "home-manager",
+        "nixvim",
+        "plasma-manager"
+      ],
+      "max_roster": 8
+    }
+  },
+  "projects": {
+    "desktop-config": {
+      "description": "Reproducible KDE Plasma desktop",
+      "teams": [
+        "nix-infra"
+      ],
+      "repos": [
+        "nixpkgs",
+        "home-manager",
+        "plasma-manager"
+      ],
+      "objectives": [
+        "Declarative KDE config",
+        "Reproducible dev environments"
+      ]
+    }
   }
 }

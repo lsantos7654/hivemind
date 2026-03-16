@@ -19,17 +19,44 @@ hivemind provider switch   # Switch active provider
 hivemind provider show     # Show detailed provider configuration
 ```
 
+## Managing Teams
+
+```
+hivemind team list                          # List all teams
+hivemind team create <name>                 # Create a team with AI-generated lead
+hivemind team show <name>                   # Show team details and roster
+hivemind team add-expert <team> <expert>    # Add an expert to a team
+hivemind team remove-expert <team> <expert> # Remove an expert from a team
+hivemind team delete <name>                 # Delete a team
+```
+
+## Managing Projects
+
+```
+hivemind project list                       # List all projects
+hivemind project create <name>              # Create a project with AI-generated lead
+hivemind project show <name>                # Show project details
+hivemind project set <name>                 # Set the active project (updates HIVEMIND.md)
+hivemind project clear                      # Clear the active project
+hivemind project add-team <project> <team>  # Assign a team to a project
+hivemind project remove-team <project> <team> # Remove a team from a project
+hivemind project add-repo <project> <repo>  # Associate a repo with a project
+hivemind project delete <name>              # Delete a project
+```
+
 ## Architecture
 
 Hivemind supports multiple AI coding platforms via a provider abstraction. The active
 provider determines where agents are deployed and how analysis commands are built.
 
-- Shared config: `hivemind.json` → `providers.<name>.settings` + `repos`
-- Local state: `config.json` → `enabled`, `disabled`, `active_provider`
+- Shared config: `hivemind.json` → `providers.<name>.settings` + `repos` + `teams` + `projects`
+- Local state: `config.json` → `enabled`, `disabled`, `active_provider`, `active_project`
 - Expert definitions: `experts/<name>/HEAD/agent.md` (platform-neutral body, no frontmatter)
 - Versioned knowledge: `experts/<name>/<commit>/` (HEAD symlink points to active version)
 - Agent files: Generated at deploy time with provider-specific frontmatter
-- Librarian: `agents/librarian.md` — auto-generated catalog of all experts
+- Librarian: `agents/librarian.md` — auto-generated catalog of all experts, teams, and projects
+- Team context: `teams/<team>/` — general.md, private.md, experts/*.md (managed by team lead)
+- Project context: `projects/<project>/` — overview.md, context.md, project.md
 - Slash commands: `commands/`
 - Fetched repos: `~/.cache/hivemind/repos/<name>`
 
@@ -66,3 +93,8 @@ to regenerate deployed agent files with the correct provider frontmatter.
 
 ALWAYS USE `builtin cd` INSTEAD OF `cd` TO AVOID ZOXIDE INTERFERENCE!!!!
 ONLY USE `builtin` FOR `cd` only and no other command
+
+## Active Project: desktop-config
+
+Project lead: `project-lead-desktop-config`
+

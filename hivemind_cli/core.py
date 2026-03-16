@@ -73,6 +73,9 @@ AGENTS_DIR = HIVEMIND_ROOT / "agents"
 EXPERTS_DIR = HIVEMIND_ROOT / "experts"
 COMMANDS_DIR = HIVEMIND_ROOT / "commands"
 PRIVATE_EXPERTS_DIR = HIVEMIND_ROOT / "private-experts"
+TEAMS_DIR = HIVEMIND_ROOT / "teams"
+PROJECTS_DIR = HIVEMIND_ROOT / "projects"
+HIVEMIND_MD = HIVEMIND_ROOT / "HIVEMIND.md"
 
 
 # --- Helper Functions ---
@@ -113,6 +116,30 @@ def _load_hivemind() -> dict:
 
 def _save_hivemind(data: dict) -> None:
     _save_json(HIVEMIND_JSON, data)
+
+
+def _load_teams() -> dict:
+    """Load teams from hivemind.json."""
+    return _load_hivemind().get("teams", {})
+
+
+def _save_teams(teams: dict) -> None:
+    """Save teams to hivemind.json."""
+    data = _load_hivemind()
+    data["teams"] = teams
+    _save_hivemind(data)
+
+
+def _load_projects() -> dict:
+    """Load projects from hivemind.json."""
+    return _load_hivemind().get("projects", {})
+
+
+def _save_projects(projects: dict) -> None:
+    """Save projects to hivemind.json."""
+    data = _load_hivemind()
+    data["projects"] = projects
+    _save_hivemind(data)
 
 
 def _get_provider() -> Provider:
@@ -530,19 +557,56 @@ def _update_librarian() -> None:
         "\n\n---\n\n".join(entries) if entries else "No experts are currently enabled."
     )
 
+    # Build team catalog
+    teams = _load_teams()
+    team_entries: list[str] = []
+    for team_name, team_data in sorted(teams.items()):
+        desc = team_data.get("description", "")
+        roster = ", ".join(team_data.get("experts", []))
+        team_entries.append(
+            f"### team-lead-{team_name}\n"
+            f"Team lead for {desc}. Roster: {roster}."
+        )
+    team_catalog = (
+        "\n\n---\n\n".join(team_entries) if team_entries else "No teams configured."
+    )
+
+    # Build project catalog
+    projects = _load_projects()
+    project_entries: list[str] = []
+    for proj_name, proj_data in sorted(projects.items()):
+        desc = proj_data.get("description", "")
+        proj_teams = ", ".join(proj_data.get("teams", []))
+        project_entries.append(
+            f"### project-lead-{proj_name}\n"
+            f"Project lead for {desc}. Teams: {proj_teams}."
+        )
+    project_catalog = (
+        "\n\n---\n\n".join(project_entries)
+        if project_entries
+        else "No projects configured."
+    )
+
     # Build librarian body
     librarian_body = (
         "# Hivemind Librarian\n\n"
-        "You are the hivemind librarian. You know every registered expert and what "
-        "they specialize in. When asked a question, identify which expert(s) are best "
-        "suited and recommend them by name.\n\n"
+        "You are the hivemind librarian. You know every registered expert, team, and "
+        "project and what they specialize in. When asked a question, identify which "
+        "expert(s), team lead(s), or project lead(s) are best suited and recommend "
+        "them by name.\n\n"
         "## Expert Catalog\n\n"
         f"{catalog}\n\n"
+        "## Team Catalog\n\n"
+        f"{team_catalog}\n\n"
+        "## Project Catalog\n\n"
+        f"{project_catalog}\n\n"
         "## Instructions\n\n"
-        "1. Identify the most relevant expert(s) from the catalog\n"
-        "2. Respond with expert name(s) and why they're the right fit\n"
-        "3. If multiple experts are relevant, rank by relevance\n"
-        "4. If no expert matches, say so clearly\n"
+        "1. For project-scoped questions, recommend the project lead\n"
+        "2. For cross-expert coordination, recommend the team lead\n"
+        "3. For domain-specific questions, recommend the expert directly\n"
+        "4. Respond with agent name(s) and why they're the right fit\n"
+        "5. If multiple agents are relevant, rank by relevance\n"
+        "6. If no match, say so clearly\n"
     )
 
     # Format with provider-specific frontmatter
@@ -1733,7 +1797,8 @@ def redeploy_all_agents() -> dict:
     to all deployed agent files without re-running AI analysis.
 
     Returns:
-        dict with keys: success (bool), deployed (list[str]), failed (list[str])
+        dict with keys: success (bool), deployed (list[str]), failed (list[str]),
+        teams_deployed (list[str]), projects_deployed (list[str])
     """
     config = _load_config()
     enabled = config.get("enabled", [])
@@ -1747,10 +1812,700 @@ def redeploy_all_agents() -> dict:
         else:
             failed.append(name)
 
-    # Regenerate librarian too
+    # Redeploy team leads and team-scoped experts
+    teams_deployed: list[str] = []
+    teams = _load_teams()
+    for team_name in teams:
+        if _deploy_team_lead(team_name):
+            teams_deployed.append(f"team-lead-{team_name}")
+        _deploy_team_experts(team_name)
+
+    # Redeploy project leads
+    projects_deployed: list[str] = []
+    projects = _load_projects()
+    for project_name in projects:
+        if _deploy_project_lead(project_name):
+            projects_deployed.append(f"project-lead-{project_name}")
+
+    # Regenerate librarian and HIVEMIND.md
+    _update_librarian()
+    _regenerate_hivemind_md()
+
+    return {
+        "success": True,
+        "deployed": deployed,
+        "failed": failed,
+        "teams_deployed": teams_deployed,
+        "projects_deployed": projects_deployed,
+    }
+
+
+# --- HIVEMIND.md Generation ---
+
+
+def _regenerate_hivemind_md() -> None:
+    """Regenerate HIVEMIND.md from base template + active project appendix."""
+    from hivemind_cli.templates import hivemind_md_base
+
+    content = hivemind_md_base()
+
+    # Check for active project
+    config = _load_config()
+    active_project = config.get("active_project")
+
+    if active_project:
+        projects = _load_projects()
+        if active_project in projects:
+            project_info = projects[active_project]
+            project_md_path = PROJECTS_DIR / active_project / "project.md"
+
+            content += f"\n## Active Project: {active_project}\n\n"
+            content += f"Project lead: `project-lead-{active_project}`\n\n"
+
+            # Append project.md content if it exists
+            if project_md_path.exists():
+                project_content = project_md_path.read_text().strip()
+                if project_content:
+                    content += project_content + "\n"
+            else:
+                desc = project_info.get("description", "")
+                objectives = project_info.get("objectives", [])
+                if desc:
+                    content += f"{desc}\n\n"
+                if objectives:
+                    content += "### Objectives\n\n"
+                    for obj in objectives:
+                        content += f"- {obj}\n"
+                    content += "\n"
+
+    HIVEMIND_MD.write_text(content)
+
+
+# --- Team Operations ---
+
+
+def _deploy_team_lead(team_name: str) -> bool:
+    """Deploy team lead agent file with provider-specific frontmatter.
+
+    Reads teams/{team_name}/lead.md, applies frontmatter, writes to
+    agents/team-lead-{team_name}.md.
+
+    Returns False if lead.md doesn't exist.
+    """
+    lead_md = TEAMS_DIR / team_name / "lead.md"
+    if not lead_md.exists():
+        return False
+
+    provider = _get_provider()
+    body = strip_frontmatter(lead_md.read_text())
+    description = extract_description(body)
+
+    content = provider.format_lead_md(f"team-lead-{team_name}", description, body)
+
+    AGENTS_DIR.mkdir(parents=True, exist_ok=True)
+    agent_file = AGENTS_DIR / f"team-lead-{team_name}.md"
+    if agent_file.is_symlink():
+        agent_file.unlink()
+    agent_file.write_text(content)
+    return True
+
+
+def _undeploy_team_lead(team_name: str) -> None:
+    """Remove agents/team-lead-{team_name}.md if it exists."""
+    agent_file = AGENTS_DIR / f"team-lead-{team_name}.md"
+    if agent_file.is_symlink() or agent_file.exists():
+        agent_file.unlink()
+
+
+def _deploy_team_expert(team_name: str, expert_name: str) -> bool:
+    """Deploy a team-scoped expert copy.
+
+    Reads original expert body, appends team general.md + per-expert context,
+    writes to agents/expert-{expert_name}_{team_name}.md.
+
+    Returns False if original expert agent.md doesn't exist.
+    """
+    expert_dir = _get_expert_dir(expert_name)
+    head_agent = expert_dir / "HEAD" / "agent.md"
+
+    if not head_agent.exists():
+        return False
+
+    provider = _get_provider()
+    body = strip_frontmatter(head_agent.read_text())
+
+    # Append team context
+    team_context_parts: list[str] = []
+
+    # General team context (shared across all experts on the team)
+    general_md = TEAMS_DIR / team_name / "general.md"
+    if general_md.exists():
+        general_content = general_md.read_text().strip()
+        if general_content:
+            team_context_parts.append(general_content)
+
+    # Per-expert team context
+    expert_override = TEAMS_DIR / team_name / "experts" / f"{expert_name}.md"
+    if expert_override.exists():
+        override_content = expert_override.read_text().strip()
+        if override_content:
+            team_context_parts.append(override_content)
+
+    if team_context_parts:
+        body += f"\n\n## Team Context: {team_name}\n\n"
+        body += "\n\n".join(team_context_parts)
+        body += "\n"
+
+    description = extract_description(body)
+    agent_name = f"{expert_name}_{team_name}"
+    content = provider.format_agent_md(agent_name, description, body)
+
+    AGENTS_DIR.mkdir(parents=True, exist_ok=True)
+    agent_file = AGENTS_DIR / f"expert-{agent_name}.md"
+    if agent_file.is_symlink():
+        agent_file.unlink()
+    agent_file.write_text(content)
+    return True
+
+
+def _undeploy_team_expert(team_name: str, expert_name: str) -> None:
+    """Remove agents/expert-{expert_name}_{team_name}.md if it exists."""
+    agent_file = AGENTS_DIR / f"expert-{expert_name}_{team_name}.md"
+    if agent_file.is_symlink() or agent_file.exists():
+        agent_file.unlink()
+
+
+def _deploy_team_experts(team_name: str) -> list[str]:
+    """Deploy all team-scoped expert copies for a team.
+
+    Returns list of successfully deployed expert names.
+    """
+    teams = _load_teams()
+    if team_name not in teams:
+        return []
+
+    deployed = []
+    for expert_name in teams[team_name].get("experts", []):
+        if _deploy_team_expert(team_name, expert_name):
+            deployed.append(expert_name)
+    return deployed
+
+
+def _undeploy_team_experts(team_name: str) -> None:
+    """Remove all team-scoped expert copies for a team."""
+    teams = _load_teams()
+    if team_name not in teams:
+        return
+    for expert_name in teams[team_name].get("experts", []):
+        _undeploy_team_expert(team_name, expert_name)
+
+
+def _generate_team_lead(
+    team_name: str,
+    description: str,
+    roster: list[dict[str, str]],
+) -> bool:
+    """AI-generate a team lead agent definition.
+
+    Runs the provider's analysis engine to create teams/{team_name}/lead.md.
+
+    Returns True on success.
+    """
+    from hivemind_cli.templates import team_lead_prompt
+
+    team_dir = TEAMS_DIR / team_name
+    prompt = team_lead_prompt(team_name, description, roster, team_dir)
+
+    provider = _get_provider()
+    cmd = provider.build_analysis_command(extra_dirs=[team_dir])
+
+    proc = subprocess.run(
+        cmd,
+        input=prompt,
+        text=True,
+        capture_output=True,
+    )
+
+    lead_path = team_dir / "lead.md"
+    return lead_path.exists() and lead_path.stat().st_size > 0
+
+
+def create_team(
+    name: str,
+    description: str,
+    experts: list[str],
+    max_roster: int | None = None,
+    skip_analysis: bool = False,
+) -> dict:
+    """Create a new team.
+
+    Args:
+        name: Team name
+        description: Team description
+        experts: List of expert names for the roster
+        max_roster: Optional roster size limit
+        skip_analysis: Skip AI generation of team lead (use template directly)
+
+    Returns:
+        dict with keys: success (bool), error (str | None)
+    """
+    teams = _load_teams()
+    if name in teams:
+        return {"success": False, "error": f"Team '{name}' already exists"}
+
+    # Validate experts exist
+    config = _load_config()
+    enabled = set(config.get("enabled", []))
+    all_experts = set(_expert_names())
+    for expert in experts:
+        if expert not in all_experts:
+            return {"success": False, "error": f"Expert '{expert}' does not exist"}
+
+    # Check roster limit
+    defaults = config.get("defaults", {})
+    limit = max_roster or defaults.get("team_max_roster", 8)
+    if len(experts) > limit:
+        return {
+            "success": False,
+            "error": f"Roster size {len(experts)} exceeds limit {limit}",
+        }
+
+    # Create team directory
+    team_dir = TEAMS_DIR / name
+    team_dir.mkdir(parents=True, exist_ok=True)
+    (team_dir / "experts").mkdir(exist_ok=True)
+    (team_dir / "general.md").write_text("")
+    (team_dir / "private.md").write_text("")
+
+    # Build roster info
+    roster = []
+    for expert_name in experts:
+        expert_dir = _get_expert_dir(expert_name)
+        head_agent = expert_dir / "HEAD" / "agent.md"
+        desc = ""
+        if head_agent.exists():
+            desc = extract_description(strip_frontmatter(head_agent.read_text()))
+        roster.append({"name": expert_name, "description": desc})
+
+    # Generate or template the lead
+    if skip_analysis:
+        from hivemind_cli.templates import team_lead_template
+
+        lead_body = team_lead_template(name, description, roster)
+        (team_dir / "lead.md").write_text(lead_body)
+    else:
+        _generate_team_lead(name, description, roster)
+
+    # Fallback: if AI generation didn't produce lead.md, use template
+    if not (team_dir / "lead.md").exists():
+        from hivemind_cli.templates import team_lead_template
+
+        lead_body = team_lead_template(name, description, roster)
+        (team_dir / "lead.md").write_text(lead_body)
+
+    # Save to hivemind.json
+    team_data: dict = {
+        "description": description,
+        "experts": experts,
+        "max_roster": limit,
+    }
+    teams[name] = team_data
+    _save_teams(teams)
+
+    # Deploy
+    _deploy_team_lead(name)
+    _deploy_team_experts(name)
     _update_librarian()
 
-    return {"success": True, "deployed": deployed, "failed": failed}
+    return {"success": True}
+
+
+def delete_team(name: str) -> dict:
+    """Delete a team and all its deployed agents.
+
+    Returns:
+        dict with keys: success (bool), error (str | None)
+    """
+    teams = _load_teams()
+    if name not in teams:
+        return {"success": False, "error": f"Team '{name}' does not exist"}
+
+    # Undeploy
+    _undeploy_team_lead(name)
+    _undeploy_team_experts(name)
+
+    # Remove from projects that reference this team
+    projects = _load_projects()
+    for proj_name, proj in projects.items():
+        if name in proj.get("teams", []):
+            proj["teams"].remove(name)
+    _save_projects(projects)
+
+    # Remove team directory
+    team_dir = TEAMS_DIR / name
+    if team_dir.exists():
+        import shutil
+
+        shutil.rmtree(team_dir)
+
+    # Remove from hivemind.json
+    del teams[name]
+    _save_teams(teams)
+
+    _update_librarian()
+    return {"success": True}
+
+
+def add_expert_to_team(team_name: str, expert_name: str) -> dict:
+    """Add an expert to a team's roster.
+
+    Returns:
+        dict with keys: success (bool), error (str | None)
+    """
+    teams = _load_teams()
+    if team_name not in teams:
+        return {"success": False, "error": f"Team '{team_name}' does not exist"}
+
+    team = teams[team_name]
+    experts = team.get("experts", [])
+
+    if expert_name in experts:
+        return {"success": False, "error": f"Expert '{expert_name}' already on team"}
+
+    # Validate expert exists
+    all_experts = set(_expert_names())
+    if expert_name not in all_experts:
+        return {"success": False, "error": f"Expert '{expert_name}' does not exist"}
+
+    # Check roster limit
+    limit = team.get("max_roster", 8)
+    if len(experts) >= limit:
+        return {
+            "success": False,
+            "error": f"Roster full ({len(experts)}/{limit})",
+        }
+
+    experts.append(expert_name)
+    team["experts"] = experts
+    _save_teams(teams)
+
+    # Deploy team-scoped copy
+    _deploy_team_expert(team_name, expert_name)
+    _update_librarian()
+
+    return {"success": True}
+
+
+def remove_expert_from_team(team_name: str, expert_name: str) -> dict:
+    """Remove an expert from a team's roster.
+
+    Returns:
+        dict with keys: success (bool), error (str | None)
+    """
+    teams = _load_teams()
+    if team_name not in teams:
+        return {"success": False, "error": f"Team '{team_name}' does not exist"}
+
+    team = teams[team_name]
+    experts = team.get("experts", [])
+
+    if expert_name not in experts:
+        return {"success": False, "error": f"Expert '{expert_name}' not on team"}
+
+    experts.remove(expert_name)
+    team["experts"] = experts
+    _save_teams(teams)
+
+    # Undeploy team-scoped copy
+    _undeploy_team_expert(team_name, expert_name)
+
+    # Remove per-expert context file if it exists
+    expert_override = TEAMS_DIR / team_name / "experts" / f"{expert_name}.md"
+    if expert_override.exists():
+        expert_override.unlink()
+
+    _update_librarian()
+    return {"success": True}
+
+
+# --- Project Operations ---
+
+
+def _deploy_project_lead(project_name: str) -> bool:
+    """Deploy project lead agent file with provider-specific frontmatter.
+
+    Reads projects/{project_name}/lead.md, applies frontmatter, writes to
+    agents/project-lead-{project_name}.md.
+
+    Returns False if lead.md doesn't exist.
+    """
+    lead_md = PROJECTS_DIR / project_name / "lead.md"
+    if not lead_md.exists():
+        return False
+
+    provider = _get_provider()
+    body = strip_frontmatter(lead_md.read_text())
+    description = extract_description(body)
+
+    content = provider.format_lead_md(
+        f"project-lead-{project_name}", description, body
+    )
+
+    AGENTS_DIR.mkdir(parents=True, exist_ok=True)
+    agent_file = AGENTS_DIR / f"project-lead-{project_name}.md"
+    if agent_file.is_symlink():
+        agent_file.unlink()
+    agent_file.write_text(content)
+    return True
+
+
+def _undeploy_project_lead(project_name: str) -> None:
+    """Remove agents/project-lead-{project_name}.md if it exists."""
+    agent_file = AGENTS_DIR / f"project-lead-{project_name}.md"
+    if agent_file.is_symlink() or agent_file.exists():
+        agent_file.unlink()
+
+
+def _generate_project_lead(
+    project_name: str,
+    description: str,
+    teams: list[dict[str, str]],
+    repos: list[str],
+    objectives: list[str],
+) -> bool:
+    """AI-generate a project lead agent definition.
+
+    Returns True on success.
+    """
+    from hivemind_cli.templates import project_lead_prompt
+
+    project_dir = PROJECTS_DIR / project_name
+    prompt = project_lead_prompt(
+        project_name, description, teams, repos, objectives, project_dir
+    )
+
+    provider = _get_provider()
+    cmd = provider.build_analysis_command(extra_dirs=[project_dir])
+
+    proc = subprocess.run(
+        cmd,
+        input=prompt,
+        text=True,
+        capture_output=True,
+    )
+
+    lead_path = project_dir / "lead.md"
+    return lead_path.exists() and lead_path.stat().st_size > 0
+
+
+def create_project(
+    name: str,
+    description: str,
+    teams_list: list[str],
+    repos: list[str],
+    objectives: list[str],
+    skip_analysis: bool = False,
+) -> dict:
+    """Create a new project.
+
+    Returns:
+        dict with keys: success (bool), error (str | None)
+    """
+    projects = _load_projects()
+    if name in projects:
+        return {"success": False, "error": f"Project '{name}' already exists"}
+
+    # Validate teams exist
+    all_teams = _load_teams()
+    for team_name in teams_list:
+        if team_name not in all_teams:
+            return {"success": False, "error": f"Team '{team_name}' does not exist"}
+
+    # Create project directory
+    project_dir = PROJECTS_DIR / name
+    project_dir.mkdir(parents=True, exist_ok=True)
+    (project_dir / "overview.md").write_text("")
+    (project_dir / "context.md").write_text("")
+    (project_dir / "project.md").write_text("")
+
+    # Build teams info
+    teams_info = []
+    for team_name in teams_list:
+        team_desc = all_teams[team_name].get("description", "")
+        teams_info.append({"name": team_name, "description": team_desc})
+
+    # Generate or template the lead
+    if skip_analysis:
+        from hivemind_cli.templates import project_lead_template
+
+        lead_body = project_lead_template(
+            name, description, teams_info, repos, objectives
+        )
+        (project_dir / "lead.md").write_text(lead_body)
+    else:
+        _generate_project_lead(name, description, teams_info, repos, objectives)
+
+    # Fallback
+    if not (project_dir / "lead.md").exists():
+        from hivemind_cli.templates import project_lead_template
+
+        lead_body = project_lead_template(
+            name, description, teams_info, repos, objectives
+        )
+        (project_dir / "lead.md").write_text(lead_body)
+
+    # Save to hivemind.json
+    project_data: dict = {
+        "description": description,
+        "teams": teams_list,
+        "repos": repos,
+        "objectives": objectives,
+    }
+    projects[name] = project_data
+    _save_projects(projects)
+
+    # Deploy
+    _deploy_project_lead(name)
+    _update_librarian()
+
+    return {"success": True}
+
+
+def delete_project(name: str) -> dict:
+    """Delete a project.
+
+    Returns:
+        dict with keys: success (bool), error (str | None)
+    """
+    projects = _load_projects()
+    if name not in projects:
+        return {"success": False, "error": f"Project '{name}' does not exist"}
+
+    # Clear active project if this is it
+    config = _load_config()
+    if config.get("active_project") == name:
+        config["active_project"] = None
+        _save_config(config)
+
+    _undeploy_project_lead(name)
+
+    # Remove project directory
+    project_dir = PROJECTS_DIR / name
+    if project_dir.exists():
+        import shutil
+
+        shutil.rmtree(project_dir)
+
+    del projects[name]
+    _save_projects(projects)
+
+    _update_librarian()
+    _regenerate_hivemind_md()
+    return {"success": True}
+
+
+def add_team_to_project(project_name: str, team_name: str) -> dict:
+    """Add a team to a project.
+
+    Returns:
+        dict with keys: success (bool), error (str | None)
+    """
+    projects = _load_projects()
+    if project_name not in projects:
+        return {"success": False, "error": f"Project '{project_name}' does not exist"}
+
+    teams = _load_teams()
+    if team_name not in teams:
+        return {"success": False, "error": f"Team '{team_name}' does not exist"}
+
+    project = projects[project_name]
+    project_teams = project.get("teams", [])
+    if team_name in project_teams:
+        return {"success": False, "error": f"Team '{team_name}' already on project"}
+
+    project_teams.append(team_name)
+    project["teams"] = project_teams
+    _save_projects(projects)
+
+    _update_librarian()
+    return {"success": True}
+
+
+def remove_team_from_project(project_name: str, team_name: str) -> dict:
+    """Remove a team from a project.
+
+    Returns:
+        dict with keys: success (bool), error (str | None)
+    """
+    projects = _load_projects()
+    if project_name not in projects:
+        return {"success": False, "error": f"Project '{project_name}' does not exist"}
+
+    project = projects[project_name]
+    project_teams = project.get("teams", [])
+    if team_name not in project_teams:
+        return {"success": False, "error": f"Team '{team_name}' not on project"}
+
+    project_teams.remove(team_name)
+    project["teams"] = project_teams
+    _save_projects(projects)
+
+    _update_librarian()
+    return {"success": True}
+
+
+def add_repo_to_project(project_name: str, repo_name: str) -> dict:
+    """Add a repo to a project.
+
+    Returns:
+        dict with keys: success (bool), error (str | None)
+    """
+    projects = _load_projects()
+    if project_name not in projects:
+        return {"success": False, "error": f"Project '{project_name}' does not exist"}
+
+    project = projects[project_name]
+    project_repos = project.get("repos", [])
+    if repo_name in project_repos:
+        return {"success": False, "error": f"Repo '{repo_name}' already on project"}
+
+    project_repos.append(repo_name)
+    project["repos"] = project_repos
+    _save_projects(projects)
+
+    return {"success": True}
+
+
+def set_active_project(name: str) -> dict:
+    """Set the active project and regenerate HIVEMIND.md.
+
+    Returns:
+        dict with keys: success (bool), error (str | None)
+    """
+    projects = _load_projects()
+    if name not in projects:
+        return {"success": False, "error": f"Project '{name}' does not exist"}
+
+    config = _load_config()
+    config["active_project"] = name
+    _save_config(config)
+
+    _regenerate_hivemind_md()
+    return {"success": True}
+
+
+def clear_active_project() -> dict:
+    """Clear the active project and regenerate HIVEMIND.md.
+
+    Returns:
+        dict with keys: success (bool)
+    """
+    config = _load_config()
+    config["active_project"] = None
+    _save_config(config)
+
+    _regenerate_hivemind_md()
+    return {"success": True}
 
 
 def switch_provider(provider_name: str) -> dict:

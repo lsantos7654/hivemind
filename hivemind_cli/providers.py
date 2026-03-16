@@ -176,6 +176,31 @@ class Provider(ABC):
             Complete agent.md content with provider frontmatter + transformed body
         """
 
+    def format_lead_md(self, agent_name: str, description: str, body: str) -> str:
+        """Wrap lead agent body with provider-specific frontmatter.
+
+        Generic method for team leads and project leads. Uses the same
+        formatting as format_agent_md but with a custom agent name
+        (no 'expert-' prefix).
+
+        Args:
+            agent_name: Full agent name (e.g. "team-lead-nix-infra", "project-lead-foo")
+            description: Agent description for frontmatter
+            body: Platform-neutral markdown body (no frontmatter)
+
+        Returns:
+            Complete agent content with provider frontmatter + transformed body
+        """
+        # Default implementation delegates to _format_agent_md_internal
+        # Subclasses can override if needed
+        return self._format_agent_md_internal(agent_name, description, body)
+
+    def _format_agent_md_internal(
+        self, agent_name: str, description: str, body: str
+    ) -> str:
+        """Internal formatting — override in subclasses."""
+        raise NotImplementedError
+
     @abstractmethod
     def format_librarian_md(self, body: str) -> str:
         """Wrap librarian body with provider-specific frontmatter.
@@ -311,24 +336,24 @@ class ClaudeProvider(Provider):
     def experts_base_path(self) -> str:
         return "~/.claude/experts"
 
-    def format_agent_md(self, name: str, description: str, body: str) -> str:
-        """Format agent.md with Claude Code YAML frontmatter."""
+    def _format_agent_md_internal(
+        self, agent_name: str, description: str, body: str
+    ) -> str:
+        """Internal Claude Code agent formatting with custom name."""
         tools = self._settings.get("tools", [])
         model = self._settings.get("model", "sonnet")
 
-        # Tools is a list of strings, joined with commas
         tools_str = ", ".join(tools) if isinstance(tools, list) else str(tools)
 
         frontmatter = (
             f"---\n"
-            f"name: expert-{name}\n"
+            f"name: {agent_name}\n"
             f"description: {description}\n"
             f"tools: {tools_str}\n"
             f"model: {model}\n"
             f"---\n\n"
         )
 
-        # Replace expert paths in body to match this provider
         transformed = replace_expert_paths(
             body,
             old_base="{EXPERTS_DIR}",
@@ -336,6 +361,10 @@ class ClaudeProvider(Provider):
         )
 
         return frontmatter + transformed
+
+    def format_agent_md(self, name: str, description: str, body: str) -> str:
+        """Format agent.md with Claude Code YAML frontmatter."""
+        return self._format_agent_md_internal(f"expert-{name}", description, body)
 
     def format_librarian_md(self, body: str) -> str:
         """Format librarian.md with Claude Code YAML frontmatter."""
@@ -517,13 +546,14 @@ class OpenCodeProvider(Provider):
     def experts_base_path(self) -> str:
         return "~/.config/opencode/experts"
 
-    def format_agent_md(self, name: str, description: str, body: str) -> str:
-        """Format agent.md with OpenCode YAML frontmatter."""
+    def _format_agent_md_internal(
+        self, agent_name: str, description: str, body: str
+    ) -> str:
+        """Internal OpenCode agent formatting with custom name."""
         model = self._settings.get("model", "anthropic/claude-sonnet-4-20250514")
         temperature = self._settings.get("temperature", 0.1)
         tools = self._settings.get("tools", {})
 
-        # Build YAML frontmatter
         lines = [
             "---",
             f"description: {description}",
@@ -532,18 +562,16 @@ class OpenCodeProvider(Provider):
             f"temperature: {temperature}",
         ]
 
-        # Tools as YAML map
         if isinstance(tools, dict) and tools:
             lines.append("tools:")
             for tool_name, enabled in sorted(tools.items()):
                 lines.append(f"  {tool_name}: {str(enabled).lower()}")
 
-        # External directory permissions for repo, docs, and expert knowledge
+        # Generic permissions for hivemind paths
         lines.append("permission:")
         lines.append("  external_directory:")
-        lines.append(f'    "~/.cache/hivemind/repos/{name}/**": allow')
-        lines.append(f'    "~/.cache/hivemind/external_docs/{name}/**": allow')
-        lines.append(f'    "{self.experts_base_path}/{name}/**": allow')
+        lines.append(f'    "~/.cache/hivemind/**": allow')
+        lines.append(f'    "{self.experts_base_path}/**": allow')
 
         lines.append("---")
         lines.append("")
@@ -551,7 +579,6 @@ class OpenCodeProvider(Provider):
 
         frontmatter = "\n".join(lines)
 
-        # Replace expert paths in body to match this provider
         transformed = replace_expert_paths(
             body,
             old_base="{EXPERTS_DIR}",
@@ -559,6 +586,10 @@ class OpenCodeProvider(Provider):
         )
 
         return frontmatter + transformed
+
+    def format_agent_md(self, name: str, description: str, body: str) -> str:
+        """Format agent.md with OpenCode YAML frontmatter."""
+        return self._format_agent_md_internal(f"expert-{name}", description, body)
 
     def format_librarian_md(self, body: str) -> str:
         """Format librarian.md with OpenCode YAML frontmatter."""

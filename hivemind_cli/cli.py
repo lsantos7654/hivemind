@@ -35,6 +35,8 @@ from hivemind_cli.core import (
     _save_repos,
     _load_private_repos,
     _save_private_repos,
+    _load_teams,
+    _load_projects,
     _is_private_expert,
     _get_expert_dir,
     _get_provider,
@@ -50,11 +52,23 @@ from hivemind_cli.core import (
     _clone_repo,
     _analyze_repo,
     _update_librarian,
+    _regenerate_hivemind_md,
     update_expert,
     enable_expert as core_enable_expert,
     disable_expert as core_disable_expert,
     redeploy_all_agents,
     switch_provider,
+    create_team as core_create_team,
+    delete_team as core_delete_team,
+    add_expert_to_team as core_add_expert_to_team,
+    remove_expert_from_team as core_remove_expert_from_team,
+    create_project as core_create_project,
+    delete_project as core_delete_project,
+    add_team_to_project as core_add_team_to_project,
+    remove_team_from_project as core_remove_team_from_project,
+    add_repo_to_project as core_add_repo_to_project,
+    set_active_project as core_set_active_project,
+    clear_active_project as core_clear_active_project,
     UpdatePhase,
     ProgressInfo,
     HIVEMIND_ROOT,
@@ -69,6 +83,8 @@ from hivemind_cli.core import (
     EXPERTS_DIR,
     PRIVATE_EXPERTS_DIR,
     COMMANDS_DIR,
+    TEAMS_DIR,
+    PROJECTS_DIR,
 )
 
 THEME = Theme(
@@ -821,6 +837,444 @@ def provider_show(
     console.print(Panel("\n".join(lines), border_style="blue"))
 
 
+# --- Team subcommands ---
+
+team_app = typer.Typer(
+    name="team",
+    help="Manage expert teams.",
+    no_args_is_help=True,
+)
+app.add_typer(team_app, name="team")
+
+
+def _complete_team(incomplete: str) -> list[str]:
+    """Shell completion for team names."""
+    return [n for n in _load_teams() if n.startswith(incomplete)]
+
+
+@team_app.command(name="list")
+def team_list() -> None:
+    """List all teams with their roster info."""
+    teams = _load_teams()
+
+    if not teams:
+        console.print(
+            "No teams configured. Use [heading]hivemind team create <name>[/heading] to create one."
+        )
+        return
+
+    table = Table(
+        title="Teams", show_header=True, header_style="bold", box=box.ROUNDED
+    )
+    table.add_column("Name", style="bold")
+    table.add_column("Description")
+    table.add_column("Roster")
+    table.add_column("Size")
+
+    for name, data in sorted(teams.items()):
+        experts = data.get("experts", [])
+        max_roster = data.get("max_roster", 8)
+        roster_str = ", ".join(experts) if experts else "[dim]empty[/dim]"
+        size_str = f"{len(experts)}/{max_roster}"
+        table.add_row(name, data.get("description", ""), roster_str, size_str)
+
+    console.print(table)
+
+
+@team_app.command(name="create")
+def team_create(
+    name: str = typer.Argument(help="Team name"),
+    description: str = typer.Option(..., "--description", "-d", help="Team description"),
+    experts: str = typer.Option(
+        ..., "--experts", "-e", help="Comma-separated expert names"
+    ),
+    max_roster: int | None = typer.Option(
+        None, "--max-roster", help="Maximum roster size"
+    ),
+    skip_analysis: bool = typer.Option(
+        False, "--skip-analysis", help="Use template instead of AI-generated lead"
+    ),
+) -> None:
+    """Create a new team with AI-generated lead agent."""
+    expert_list = [e.strip() for e in experts.split(",") if e.strip()]
+
+    console.print(f"[heading]Creating team: {name}[/heading]")
+    console.print(f"  Description: {description}")
+    console.print(f"  Experts: {', '.join(expert_list)}")
+
+    if not skip_analysis:
+        with console.status(
+            "[heading]Generating team lead agent...[/heading]", spinner="dots"
+        ):
+            result = core_create_team(
+                name, description, expert_list, max_roster=max_roster
+            )
+    else:
+        result = core_create_team(
+            name,
+            description,
+            expert_list,
+            max_roster=max_roster,
+            skip_analysis=True,
+        )
+
+    if not result["success"]:
+        console.print(f"[error]Error: {result['error']}[/error]")
+        raise typer.Exit(1)
+
+    console.print(f"  [success]✓[/success] Team lead deployed: team-lead-{name}")
+    console.print(f"  [success]✓[/success] Team experts deployed")
+    console.print(f"  [success]✓[/success] Librarian updated")
+    console.print(f"\n[bold success]Team '{name}' created![/bold success]")
+
+
+@team_app.command(name="show")
+def team_show(
+    name: str = typer.Argument(
+        help="Team name", autocompletion=_complete_team
+    ),
+) -> None:
+    """Show team details and roster."""
+    teams = _load_teams()
+    if name not in teams:
+        console.print(f"[error]Error: team '{name}' not found[/error]")
+        raise typer.Exit(1)
+
+    team = teams[name]
+    lines: list[str] = []
+    lines.append(f"[heading]Team: {name}[/heading]")
+    lines.append(f"Description: {team.get('description', '')}")
+    lines.append(f"Max roster: {team.get('max_roster', 8)}")
+
+    experts = team.get("experts", [])
+    lines.append(f"\n[heading]Roster ({len(experts)}):[/heading]")
+    for expert in experts:
+        lines.append(f"  - {expert}")
+
+    # Show context files
+    team_dir = TEAMS_DIR / name
+    lines.append(f"\n[heading]Context files:[/heading]")
+    for fname in ["lead.md", "general.md", "private.md"]:
+        fpath = team_dir / fname
+        status = "[success]exists[/success]" if fpath.exists() else "[dim]empty[/dim]"
+        lines.append(f"  - {fname}: {status}")
+
+    # Expert overrides
+    experts_dir = team_dir / "experts"
+    if experts_dir.exists():
+        overrides = list(experts_dir.glob("*.md"))
+        if overrides:
+            lines.append(f"\n[heading]Expert overrides:[/heading]")
+            for f in overrides:
+                lines.append(f"  - {f.name}")
+
+    # Projects using this team
+    projects = _load_projects()
+    team_projects = [
+        p for p, d in projects.items() if name in d.get("teams", [])
+    ]
+    if team_projects:
+        lines.append(f"\n[heading]Projects:[/heading]")
+        for p in team_projects:
+            lines.append(f"  - {p}")
+
+    console.print(Panel("\n".join(lines), border_style="blue"))
+
+
+@team_app.command(name="add-expert")
+def team_add_expert(
+    team: str = typer.Argument(help="Team name", autocompletion=_complete_team),
+    expert: str = typer.Argument(
+        help="Expert name", autocompletion=_complete_expert
+    ),
+) -> None:
+    """Add an expert to a team's roster."""
+    result = core_add_expert_to_team(team, expert)
+    if not result["success"]:
+        console.print(f"[error]Error: {result['error']}[/error]")
+        raise typer.Exit(1)
+    console.print(
+        f"[success]✓[/success] Added {expert} to team {team}"
+    )
+
+
+@team_app.command(name="remove-expert")
+def team_remove_expert(
+    team: str = typer.Argument(help="Team name", autocompletion=_complete_team),
+    expert: str = typer.Argument(
+        help="Expert name", autocompletion=_complete_expert
+    ),
+) -> None:
+    """Remove an expert from a team's roster."""
+    result = core_remove_expert_from_team(team, expert)
+    if not result["success"]:
+        console.print(f"[error]Error: {result['error']}[/error]")
+        raise typer.Exit(1)
+    console.print(
+        f"[success]✓[/success] Removed {expert} from team {team}"
+    )
+
+
+@team_app.command(name="delete")
+def team_delete(
+    name: str = typer.Argument(help="Team name", autocompletion=_complete_team),
+) -> None:
+    """Delete a team and its deployed agents."""
+    if not typer.confirm(f"Delete team '{name}' and all its agents?"):
+        console.print("[warning]Cancelled[/warning]")
+        raise typer.Exit(0)
+
+    result = core_delete_team(name)
+    if not result["success"]:
+        console.print(f"[error]Error: {result['error']}[/error]")
+        raise typer.Exit(1)
+    console.print(f"[success]✓[/success] Team '{name}' deleted")
+
+
+# --- Project subcommands ---
+
+project_app = typer.Typer(
+    name="project",
+    help="Manage projects.",
+    no_args_is_help=True,
+)
+app.add_typer(project_app, name="project")
+
+
+def _complete_project(incomplete: str) -> list[str]:
+    """Shell completion for project names."""
+    return [n for n in _load_projects() if n.startswith(incomplete)]
+
+
+@project_app.command(name="list")
+def project_list() -> None:
+    """List all projects."""
+    projects = _load_projects()
+    config = _load_config()
+    active = config.get("active_project")
+
+    if not projects:
+        console.print(
+            "No projects configured. Use [heading]hivemind project create <name>[/heading] to create one."
+        )
+        return
+
+    table = Table(
+        title="Projects", show_header=True, header_style="bold", box=box.ROUNDED
+    )
+    table.add_column("Name", style="bold")
+    table.add_column("Status")
+    table.add_column("Description")
+    table.add_column("Teams")
+
+    for name, data in sorted(projects.items()):
+        status = "[success]active[/success]" if name == active else "[dim]inactive[/dim]"
+        teams_str = ", ".join(data.get("teams", [])) or "[dim]none[/dim]"
+        table.add_row(name, status, data.get("description", ""), teams_str)
+
+    console.print(table)
+
+
+@project_app.command(name="create")
+def project_create(
+    name: str = typer.Argument(help="Project name"),
+    description: str = typer.Option(
+        ..., "--description", "-d", help="Project description"
+    ),
+    teams: str = typer.Option("", "--teams", "-t", help="Comma-separated team names"),
+    repos: str = typer.Option("", "--repos", "-r", help="Comma-separated repo names"),
+    objectives: str = typer.Option(
+        "", "--objectives", "-o", help="Comma-separated objectives"
+    ),
+    skip_analysis: bool = typer.Option(
+        False, "--skip-analysis", help="Use template instead of AI-generated lead"
+    ),
+) -> None:
+    """Create a new project with AI-generated lead agent."""
+    teams_list = [t.strip() for t in teams.split(",") if t.strip()]
+    repos_list = [r.strip() for r in repos.split(",") if r.strip()]
+    objectives_list = [o.strip() for o in objectives.split(",") if o.strip()]
+
+    console.print(f"[heading]Creating project: {name}[/heading]")
+    console.print(f"  Description: {description}")
+    if teams_list:
+        console.print(f"  Teams: {', '.join(teams_list)}")
+    if repos_list:
+        console.print(f"  Repos: {', '.join(repos_list)}")
+
+    if not skip_analysis:
+        with console.status(
+            "[heading]Generating project lead agent...[/heading]", spinner="dots"
+        ):
+            result = core_create_project(
+                name, description, teams_list, repos_list, objectives_list
+            )
+    else:
+        result = core_create_project(
+            name,
+            description,
+            teams_list,
+            repos_list,
+            objectives_list,
+            skip_analysis=True,
+        )
+
+    if not result["success"]:
+        console.print(f"[error]Error: {result['error']}[/error]")
+        raise typer.Exit(1)
+
+    console.print(f"  [success]✓[/success] Project lead deployed: project-lead-{name}")
+    console.print(f"  [success]✓[/success] Librarian updated")
+    console.print(f"\n[bold success]Project '{name}' created![/bold success]")
+
+
+@project_app.command(name="show")
+def project_show(
+    name: str = typer.Argument(
+        help="Project name", autocompletion=_complete_project
+    ),
+) -> None:
+    """Show project details."""
+    projects = _load_projects()
+    if name not in projects:
+        console.print(f"[error]Error: project '{name}' not found[/error]")
+        raise typer.Exit(1)
+
+    project = projects[name]
+    config = _load_config()
+    is_active = config.get("active_project") == name
+
+    lines: list[str] = []
+    lines.append(f"[heading]Project: {name}[/heading]")
+    lines.append(f"Description: {project.get('description', '')}")
+    lines.append(
+        f"Status: {'[success]active[/success]' if is_active else '[dim]inactive[/dim]'}"
+    )
+
+    teams_list = project.get("teams", [])
+    lines.append(f"\n[heading]Teams ({len(teams_list)}):[/heading]")
+    for team in teams_list:
+        lines.append(f"  - {team}")
+
+    repos_list = project.get("repos", [])
+    if repos_list:
+        lines.append(f"\n[heading]Repos:[/heading]")
+        for repo in repos_list:
+            lines.append(f"  - {repo}")
+
+    objectives = project.get("objectives", [])
+    if objectives:
+        lines.append(f"\n[heading]Objectives:[/heading]")
+        for obj in objectives:
+            lines.append(f"  - {obj}")
+
+    # Show context files
+    project_dir = PROJECTS_DIR / name
+    lines.append(f"\n[heading]Context files:[/heading]")
+    for fname in ["lead.md", "overview.md", "context.md", "project.md"]:
+        fpath = project_dir / fname
+        status = "[success]exists[/success]" if fpath.exists() else "[dim]empty[/dim]"
+        lines.append(f"  - {fname}: {status}")
+
+    console.print(Panel("\n".join(lines), border_style="blue"))
+
+
+@project_app.command(name="set")
+def project_set(
+    name: str = typer.Argument(
+        help="Project name to activate", autocompletion=_complete_project
+    ),
+) -> None:
+    """Set the active project (updates HIVEMIND.md for all sessions)."""
+    result = core_set_active_project(name)
+    if not result["success"]:
+        console.print(f"[error]Error: {result['error']}[/error]")
+        raise typer.Exit(1)
+    console.print(
+        f"[success]✓[/success] Active project set to [heading]{name}[/heading]"
+    )
+    console.print("[info]HIVEMIND.md updated — all new sessions will see this project.[/info]")
+
+
+@project_app.command(name="clear")
+def project_clear() -> None:
+    """Clear the active project."""
+    result = core_clear_active_project()
+    console.print("[success]✓[/success] Active project cleared")
+    console.print("[info]HIVEMIND.md updated — no active project.[/info]")
+
+
+@project_app.command(name="add-team")
+def project_add_team(
+    project: str = typer.Argument(
+        help="Project name", autocompletion=_complete_project
+    ),
+    team: str = typer.Argument(help="Team name", autocompletion=_complete_team),
+) -> None:
+    """Assign a team to a project."""
+    result = core_add_team_to_project(project, team)
+    if not result["success"]:
+        console.print(f"[error]Error: {result['error']}[/error]")
+        raise typer.Exit(1)
+    console.print(
+        f"[success]✓[/success] Added team {team} to project {project}"
+    )
+
+
+@project_app.command(name="remove-team")
+def project_remove_team(
+    project: str = typer.Argument(
+        help="Project name", autocompletion=_complete_project
+    ),
+    team: str = typer.Argument(help="Team name", autocompletion=_complete_team),
+) -> None:
+    """Remove a team from a project."""
+    result = core_remove_team_from_project(project, team)
+    if not result["success"]:
+        console.print(f"[error]Error: {result['error']}[/error]")
+        raise typer.Exit(1)
+    console.print(
+        f"[success]✓[/success] Removed team {team} from project {project}"
+    )
+
+
+@project_app.command(name="add-repo")
+def project_add_repo(
+    project: str = typer.Argument(
+        help="Project name", autocompletion=_complete_project
+    ),
+    repo: str = typer.Argument(
+        help="Repo name", autocompletion=_complete_expert
+    ),
+) -> None:
+    """Associate a repo with a project."""
+    result = core_add_repo_to_project(project, repo)
+    if not result["success"]:
+        console.print(f"[error]Error: {result['error']}[/error]")
+        raise typer.Exit(1)
+    console.print(
+        f"[success]✓[/success] Added repo {repo} to project {project}"
+    )
+
+
+@project_app.command(name="delete")
+def project_delete(
+    name: str = typer.Argument(
+        help="Project name", autocompletion=_complete_project
+    ),
+) -> None:
+    """Delete a project."""
+    if not typer.confirm(f"Delete project '{name}' and its lead agent?"):
+        console.print("[warning]Cancelled[/warning]")
+        raise typer.Exit(0)
+
+    result = core_delete_project(name)
+    if not result["success"]:
+        console.print(f"[error]Error: {result['error']}[/error]")
+        raise typer.Exit(1)
+    console.print(f"[success]✓[/success] Project '{name}' deleted")
+
+
 # --- Redeploy command ---
 
 
@@ -844,18 +1298,23 @@ def redeploy() -> None:
 
     deployed = result.get("deployed", [])
     failed = result.get("failed", [])
+    teams_deployed = result.get("teams_deployed", [])
+    projects_deployed = result.get("projects_deployed", [])
 
     for name in deployed:
         console.print(f"  [success]✓[/success] {name}: redeployed")
     for name in failed:
         console.print(f"  [warning]![/warning] {name}: failed to redeploy")
+    for name in teams_deployed:
+        console.print(f"  [success]✓[/success] {name}: redeployed")
+    for name in projects_deployed:
+        console.print(f"  [success]✓[/success] {name}: redeployed")
 
     if result.get("librarian_updated"):
         console.print(f"  [success]✓[/success] Librarian updated")
 
-    console.print(
-        f"\n[bold success]Redeployed {len(deployed)} agent(s).[/bold success]"
-    )
+    total = len(deployed) + len(teams_deployed) + len(projects_deployed)
+    console.print(f"\n[bold success]Redeployed {total} agent(s).[/bold success]")
 
 
 @app.command()
@@ -1063,108 +1522,123 @@ def crawl(
 def status() -> None:
     """Show a dashboard of hivemind status."""
     provider = _get_provider()
-    home_dir = provider.home_dir
+    config = _load_config()
 
-    # Build provider-specific symlink checks
-    symlink_checks = provider.status_symlinks(
-        agents_dir=AGENTS_DIR,
-        commands_dir=COMMANDS_DIR,
-        rules_source=HIVEMIND_ROOT / "HIVEMIND.md",
-    )
+    # --- Overview panel ---
+    overview_lines: list[str] = []
+    overview_lines.append(f"Provider: [heading]{provider.name}[/heading]")
 
-    # Add internal symlinks (not provider-specific)
-    symlink_checks.extend(
-        [
-            ("repos/", REPOS_DIR, REPOS_LINK),
-            ("external_docs/", EXTERNAL_DOCS_DIR, EXTERNAL_DOCS_LINK),
-        ]
-    )
-
-    # Symlinks section
-    symlink_lines: list[str] = []
-    for display_name, target, link in symlink_checks:
-        if link.is_symlink():
-            actual = link.resolve()
-            if actual == target.resolve():
-                symlink_lines.append(f"[success]✓[/success] {display_name} → {target}")
-            else:
-                symlink_lines.append(
-                    f"[warning]![/warning] {display_name} → {link.readlink()} "
-                    f"(expected {target})"
-                )
-        else:
-            symlink_lines.append(
-                f"[error]✗[/error] {display_name} is not a symlink "
-                "(run: [heading]hivemind init[/heading])"
-            )
-
-    # Check experts directory (now a real directory with per-expert symlinks)
-    provider_experts = home_dir / "experts"
-    if provider_experts.is_dir() and not provider_experts.is_symlink():
-        expert_count = sum(1 for _ in provider_experts.iterdir())
-        symlink_lines.append(
-            f"[success]✓[/success] {home_dir}/experts/ (directory with {expert_count} expert symlinks)"
-        )
-    elif provider_experts.is_symlink():
-        symlink_lines.append(
-            f"[warning]![/warning] {home_dir}/experts/ is a symlink (expected directory, run: hivemind init)"
+    active_project = config.get("active_project")
+    if active_project:
+        overview_lines.append(
+            f"Active project: [success]{active_project}[/success] "
+            f"(lead: project-lead-{active_project})"
         )
     else:
-        symlink_lines.append(
-            f"[error]✗[/error] {home_dir}/experts/ does not exist (run: hivemind init)"
-        )
+        overview_lines.append("Active project: [dim]none[/dim]")
 
-    # Show active provider info
-    config = _load_config()
-    provider_info = f"Active provider: [heading]{provider.name}[/heading]"
-    symlink_lines.insert(0, provider_info)
-    symlink_lines.insert(1, "")
+    enabled = config.get("enabled", [])
+    disabled = config.get("disabled", [])
+    teams = _load_teams()
+    projects = _load_projects()
+    overview_lines.append(
+        f"Experts: [success]{len(enabled)} enabled[/success]"
+        + (f", [warning]{len(disabled)} disabled[/warning]" if disabled else "")
+    )
+    overview_lines.append(f"Teams: {len(teams)}")
+    overview_lines.append(f"Projects: {len(projects)}")
 
-    console.print(Panel("\n".join(symlink_lines), title="Status", border_style="blue"))
+    console.print(Panel("\n".join(overview_lines), title="Hivemind", border_style="blue"))
 
-    # Repos section (combine public and private)
+    # --- Experts table (enabled + disabled only, skip unlisted) ---
     repos = _load_repos()
     private_repos = _load_private_repos()
-    config = _load_config()
-    private_experts = set(config.get("private", []))
+    private_expert_set = set(config.get("private", []))
 
-    all_repos = {**repos, **private_repos}
-    if all_repos:
-        repo_lines: list[str] = []
-        for name in sorted(all_repos):
-            is_private = name in private_experts
-            repos_dict = private_repos if is_private else repos
+    listed_experts = [
+        name for name in _expert_names()
+        if name in enabled or name in disabled
+    ]
 
-            remote = repos_dict[name].get("remote", "")
-            commit = repos_dict[name].get("commit", "")
-            ref_name = repos_dict[name].get("ref_name", "")
-            fetched = (
-                "[success]fetched[/success]"
-                if (REPOS_DIR / name).is_dir()
-                else "[error]not fetched[/error]"
-            )
-            # Show HEAD commit from expert dir
+    if listed_experts:
+        table = Table(
+            title="Experts", show_header=True, header_style="bold", box=box.ROUNDED
+        )
+        table.add_column("Name", style="bold")
+        table.add_column("Status")
+        table.add_column("HEAD")
+        table.add_column("Teams")
+
+        for name in listed_experts:
+            # Status
+            if name in enabled:
+                status_str = "[success]enabled[/success]"
+            else:
+                status_str = "[warning]disabled[/warning]"
+
+            # HEAD
             expert_dir = _get_expert_dir(name)
             head_commit = _get_head_commit(expert_dir)
-            head_display = f"HEAD: {head_commit[:12]}" if head_commit else "HEAD: none"
-            versions = _count_versions(expert_dir)
-
-            ref_display = ""
-            if ref_name:
-                ref_display = f" @ {ref_name}"
-            elif commit:
-                ref_display = f" @ {commit[:12]}"
-
-            name_display = f"{name} [private]" if is_private else name
-            repo_lines.append(
-                f"[heading]{name_display}[/heading]: {remote}{ref_display} [{fetched}] "
-                f"({head_display}, {versions} version{'s' if versions != 1 else ''})"
+            head_display = (
+                f"[commit]{head_commit[:12]}[/commit]"
+                if head_commit
+                else "[dim]none[/dim]"
             )
 
-        console.print(Panel("\n".join(repo_lines), title="Repos", border_style="blue"))
-    else:
-        console.print(Panel("No repos configured.", title="Repos", border_style="dim"))
+            # Teams this expert belongs to
+            expert_teams = [
+                t for t, td in teams.items() if name in td.get("experts", [])
+            ]
+            teams_display = ", ".join(expert_teams) if expert_teams else "[dim]-[/dim]"
 
-    # Experts section
-    console.print()
-    list_experts()
+            table.add_row(name, status_str, head_display, teams_display)
+
+        console.print(table)
+
+    # --- Teams table ---
+    if teams:
+        table = Table(
+            title="Teams", show_header=True, header_style="bold", box=box.ROUNDED
+        )
+        table.add_column("Name", style="bold")
+        table.add_column("Roster")
+        table.add_column("Projects")
+
+        for name, data in sorted(teams.items()):
+            experts_list = data.get("experts", [])
+            max_roster = data.get("max_roster", 8)
+            roster_str = f"{', '.join(experts_list)} ({len(experts_list)}/{max_roster})"
+
+            team_projects = [
+                p for p, pd in projects.items() if name in pd.get("teams", [])
+            ]
+            projects_str = ", ".join(team_projects) if team_projects else "[dim]-[/dim]"
+
+            table.add_row(name, roster_str, projects_str)
+
+        console.print(table)
+
+    # --- Projects table ---
+    if projects:
+        table = Table(
+            title="Projects", show_header=True, header_style="bold", box=box.ROUNDED
+        )
+        table.add_column("Name", style="bold")
+        table.add_column("Status")
+        table.add_column("Teams")
+        table.add_column("Objectives")
+
+        for name, data in sorted(projects.items()):
+            is_active = name == active_project
+            status_str = (
+                "[success]active[/success]" if is_active else "[dim]inactive[/dim]"
+            )
+            teams_str = ", ".join(data.get("teams", [])) or "[dim]-[/dim]"
+            objectives = data.get("objectives", [])
+            obj_str = "; ".join(objectives[:2]) if objectives else "[dim]-[/dim]"
+            if len(objectives) > 2:
+                obj_str += f" (+{len(objectives) - 2})"
+
+            table.add_row(name, status_str, teams_str, obj_str)
+
+        console.print(table)
