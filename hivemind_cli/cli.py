@@ -251,6 +251,8 @@ def init() -> None:
         agents_dir=AGENTS_DIR,
         commands_dir=COMMANDS_DIR,
         rules_source=HIVEMIND_ROOT / "HIVEMIND.md",
+        teams_dir=TEAMS_DIR,
+        projects_dir=PROJECTS_DIR,
         permissions=provider.permissions,
     )
     for label, status_msg in results:

@@ -98,3 +98,24 @@ ONLY USE `builtin` FOR `cd` only and no other command
 
 Project lead: `project-lead-hivemind`
 
+### Working on hivemind features
+
+Before implementing any feature in this project:
+
+1. **Consult `project-lead-hivemind`** for scope, architecture decisions, and cross-team coordination.
+2. **Delegate TUI work to `team-lead-tui-dev`** for all Textual/Python TUI implementation.
+
+The project lead maintains the architecture map and tracks objectives. The tui-dev team lead owns all implementation in `hivemind_cli/tui/`.
+
+### Current objectives (priority order)
+
+1. **Modern TUI redesign** — remove Header widget, add floating search overlay (`/` opens, `Esc` closes), clean minimal CSS
+2. **Full CRUD for experts** — `hivemind delete <name>` CLI command + delete action in TUI
+3. **Teams/Projects TUI views** — teams screen (list, create, add/remove experts, delete), projects screen (list, set active, create, delete), top-level tab navigation between Experts | Teams | Projects
+
+### Architecture summary
+
+TUI entry point: `hivemind_cli/tui/app.py` → `HivemindApp`
+Screens inherit `BaseScreen` (`screens/base_screen.py`)
+All tables inherit `VimDataTable` (`widgets/vim_data_table.py`) for consistent vim navigation
+Active screens: `MainScreen` (expert list), `VersionDetailScreen` (commit history)

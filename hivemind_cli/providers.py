@@ -282,6 +282,8 @@ class Provider(ABC):
         agents_dir: Path,
         commands_dir: Path,
         rules_source: Path,
+        teams_dir: Path | None = None,
+        projects_dir: Path | None = None,
         permissions: dict | None = None,
     ) -> list[tuple[str, str]]:
         """Initialize provider directory structure and deploy symlinks.
@@ -290,6 +292,8 @@ class Provider(ABC):
             agents_dir: Hivemind's agents/ directory
             commands_dir: Hivemind's commands/ directory
             rules_source: Path to HIVEMIND.md rules file in hivemind root
+            teams_dir: Hivemind's teams/ directory
+            projects_dir: Hivemind's projects/ directory
             permissions: Permissions dict to write as settings.json (Claude only)
 
         Returns:
@@ -303,6 +307,8 @@ class Provider(ABC):
         agents_dir: Path,
         commands_dir: Path,
         rules_source: Path,
+        teams_dir: Path | None = None,
+        projects_dir: Path | None = None,
     ) -> list[tuple[str, Path, Path]]:
         """Return symlink checks for the status dashboard.
 
@@ -312,6 +318,8 @@ class Provider(ABC):
             agents_dir: Hivemind's agents/ directory
             commands_dir: Hivemind's commands/ directory
             rules_source: Path to HIVEMIND.md rules file in hivemind root
+            teams_dir: Hivemind's teams/ directory
+            projects_dir: Hivemind's projects/ directory
 
         Returns:
             List of (display_name, expected_target, link_path) tuples
@@ -335,6 +343,32 @@ class ClaudeProvider(Provider):
     @property
     def experts_base_path(self) -> str:
         return "~/.claude/experts"
+
+    def format_lead_md(self, agent_name: str, description: str, body: str) -> str:
+        """Format lead agent with Edit tool added for self-management."""
+        tools = list(self._settings.get("tools", []))
+        if "Edit" not in tools:
+            tools.append("Edit")
+        model = self._settings.get("model", "sonnet")
+
+        tools_str = ", ".join(tools)
+
+        frontmatter = (
+            f"---\n"
+            f"name: {agent_name}\n"
+            f"description: {description}\n"
+            f"tools: {tools_str}\n"
+            f"model: {model}\n"
+            f"---\n\n"
+        )
+
+        transformed = replace_expert_paths(
+            body,
+            old_base="{EXPERTS_DIR}",
+            new_base=self.experts_base_path,
+        )
+
+        return frontmatter + transformed
 
     def _format_agent_md_internal(
         self, agent_name: str, description: str, body: str
@@ -471,6 +505,8 @@ class ClaudeProvider(Provider):
         agents_dir: Path,
         commands_dir: Path,
         rules_source: Path,
+        teams_dir: Path | None = None,
+        projects_dir: Path | None = None,
         permissions: dict | None = None,
     ) -> list[tuple[str, str]]:
         """Initialize ~/.claude directory structure with symlinks."""
@@ -492,13 +528,31 @@ class ClaudeProvider(Provider):
         rules_link = self._home_dir / self.rules_file_name
         results.append(_setup_symlink(rules_source, rules_link, self.rules_file_name))
 
+        # teams/ and projects/ symlinks under hivemind/ subdirectory
+        # (avoids conflicts with ~/.claude/projects/ which Claude Code owns)
+        hivemind_subdir = self._home_dir / "hivemind"
+        hivemind_subdir.mkdir(parents=True, exist_ok=True)
+
+        if teams_dir:
+            teams_link = hivemind_subdir / "teams"
+            results.append(_setup_symlink(teams_dir, teams_link, "hivemind/teams/"))
+
+        if projects_dir:
+            projects_link = hivemind_subdir / "projects"
+            results.append(_setup_symlink(projects_dir, projects_link, "hivemind/projects/"))
+
         # Generate settings.json from permissions config
         if permissions:
             settings_path = self._home_dir / "settings.json"
             # Remove old symlink if present
             if settings_path.is_symlink():
                 settings_path.unlink()
-            settings_data = {"permissions": permissions}
+            settings_data = {
+                "permissions": permissions,
+                "env": {
+                    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1",
+                },
+            }
             settings_path.write_text(_json.dumps(settings_data, indent=2) + "\n")
             results.append(("settings.json", "generated from hivemind.json"))
 
@@ -515,9 +569,11 @@ class ClaudeProvider(Provider):
         agents_dir: Path,
         commands_dir: Path,
         rules_source: Path,
+        teams_dir: Path | None = None,
+        projects_dir: Path | None = None,
     ) -> list[tuple[str, Path, Path]]:
         """Return symlink checks for Claude Code provider."""
-        return [
+        checks = [
             (f"{self._home_dir}/agents/", agents_dir, self._home_dir / "agents"),
             (f"{self._home_dir}/commands/", commands_dir, self._home_dir / "commands"),
             (
@@ -526,6 +582,16 @@ class ClaudeProvider(Provider):
                 self._home_dir / self.rules_file_name,
             ),
         ]
+        hivemind_subdir = self._home_dir / "hivemind"
+        if teams_dir:
+            checks.append(
+                (f"{hivemind_subdir}/teams/", teams_dir, hivemind_subdir / "teams")
+            )
+        if projects_dir:
+            checks.append(
+                (f"{hivemind_subdir}/projects/", projects_dir, hivemind_subdir / "projects")
+            )
+        return checks
 
 
 # --- OpenCode Provider ---
@@ -687,6 +753,8 @@ class OpenCodeProvider(Provider):
         agents_dir: Path,
         commands_dir: Path,
         rules_source: Path,
+        teams_dir: Path | None = None,
+        projects_dir: Path | None = None,
         permissions: dict | None = None,
     ) -> list[tuple[str, str]]:
         """Initialize ~/.config/opencode directory structure."""
@@ -719,6 +787,8 @@ class OpenCodeProvider(Provider):
         agents_dir: Path,
         commands_dir: Path,
         rules_source: Path,
+        teams_dir: Path | None = None,
+        projects_dir: Path | None = None,
     ) -> list[tuple[str, Path, Path]]:
         """Return symlink checks for OpenCode provider."""
         return [

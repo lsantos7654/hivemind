@@ -157,16 +157,16 @@ Team lead for the {team_name} team. {description} Coordinates work across the te
 
 These files are YOUR responsibility to maintain:
 
-- **General context** (shared with all team experts): `~/projects/hivemind/teams/{team_name}/general.md`
-- **Private notes** (only you see this): `~/projects/hivemind/teams/{team_name}/private.md`
-- **Per-expert context**: `~/projects/hivemind/teams/{team_name}/experts/<expert-name>.md`
+- **General context** (shared with all team experts): `~/.claude/hivemind/teams/{team_name}/general.md`
+- **Private notes** (only you see this): `~/.claude/hivemind/teams/{team_name}/private.md`
+- **Per-expert context**: `~/.claude/hivemind/teams/{team_name}/experts/<expert-name>.md`
 
 The general.md content is appended to every team expert's agent file at deploy time.
 Per-expert files in experts/ are appended only to that specific expert's team copy.
 
 ## Self-Management
 
-You can update your own agent definition at: `~/projects/hivemind/teams/{team_name}/lead.md`
+You can update your own agent definition at: `~/.claude/hivemind/teams/{team_name}/lead.md`
 After editing, run `hivemind redeploy` to apply changes.
 
 The roster is dynamic. Check `hivemind.json` teams.{team_name}.experts for the current roster.
@@ -292,16 +292,16 @@ Project lead for the {project_name} project. {description} Maintains the high-le
 
 These files are YOUR responsibility to maintain:
 
-- **Overview** (high-level architecture map): `~/projects/hivemind/projects/{project_name}/overview.md`
-- **Context** (project notes, todos, decisions): `~/projects/hivemind/projects/{project_name}/context.md`
-- **Project brief** (appended to HIVEMIND.md when active): `~/projects/hivemind/projects/{project_name}/project.md`
+- **Overview** (high-level architecture map): `~/.claude/hivemind/projects/{project_name}/overview.md`
+- **Context** (project notes, todos, decisions): `~/.claude/hivemind/projects/{project_name}/context.md`
+- **Project brief** (appended to HIVEMIND.md when active): `~/.claude/hivemind/projects/{project_name}/project.md`
 
 The project.md content is appended to HIVEMIND.md when this project is set as active via `hivemind project set {project_name}`,
 making it visible to every Claude session.
 
 ## Self-Management
 
-You can update your own agent definition at: `~/projects/hivemind/projects/{project_name}/lead.md`
+You can update your own agent definition at: `~/.claude/hivemind/projects/{project_name}/lead.md`
 After editing, run `hivemind redeploy` to apply changes.
 
 ## Instructions

@@ -16,7 +16,9 @@
         "allow": [
           "Read(~/.cache/hivemind/**)",
           "Grep(~/.cache/hivemind/**)",
-          "Glob(~/.cache/hivemind/**)"
+          "Glob(~/.cache/hivemind/**)",
+          "Edit(~/.claude/hivemind/teams/**)",
+          "Edit(~/.claude/hivemind/projects/**)"
         ]
       }
     },
@@ -233,65 +235,6 @@
       "remote": "https://github.com/darrenburns/posting",
       "commit": "e56508f71b01353220902cf8bba96aad1188b07f",
       "ref_name": ""
-    }
-  },
-  "teams": {
-    "nix-infra": {
-      "description": "NixOS infrastructure and configuration",
-      "experts": [
-        "nixpkgs",
-        "home-manager",
-        "nixvim",
-        "plasma-manager"
-      ],
-      "max_roster": 8
-    },
-    "tui-dev": {
-      "description": "Python TUI development with Textual and Rich",
-      "experts": [
-        "textual",
-        "rich",
-        "rich-cli",
-        "trogon",
-        "posting",
-        "toolong"
-      ],
-      "max_roster": 8
-    }
-  },
-  "projects": {
-    "desktop-config": {
-      "description": "Reproducible KDE Plasma desktop",
-      "teams": [
-        "nix-infra"
-      ],
-      "repos": [
-        "nixpkgs",
-        "home-manager",
-        "plasma-manager"
-      ],
-      "objectives": [
-        "Declarative KDE config",
-        "Reproducible dev environments"
-      ]
-    },
-    "hivemind": {
-      "description": "Hivemind CLI and TUI development",
-      "teams": [
-        "tui-dev"
-      ],
-      "repos": [
-        "textual",
-        "rich",
-        "trogon",
-        "posting",
-        "toolong"
-      ],
-      "objectives": [
-        "Vim-like motion across all TUI screens",
-        "Consistent keybinding framework",
-        "Teams and projects TUI views"
-      ]
     }
   }
 }

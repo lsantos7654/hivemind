@@ -119,27 +119,27 @@ def _save_hivemind(data: dict) -> None:
 
 
 def _load_teams() -> dict:
-    """Load teams from hivemind.json."""
-    return _load_hivemind().get("teams", {})
+    """Load teams from config.json."""
+    return _load_config().get("teams", {})
 
 
 def _save_teams(teams: dict) -> None:
-    """Save teams to hivemind.json."""
-    data = _load_hivemind()
-    data["teams"] = teams
-    _save_hivemind(data)
+    """Save teams to config.json."""
+    config = _load_config()
+    config["teams"] = teams
+    _save_config(config)
 
 
 def _load_projects() -> dict:
-    """Load projects from hivemind.json."""
-    return _load_hivemind().get("projects", {})
+    """Load projects from config.json."""
+    return _load_config().get("projects", {})
 
 
 def _save_projects(projects: dict) -> None:
-    """Save projects to hivemind.json."""
-    data = _load_hivemind()
-    data["projects"] = projects
-    _save_hivemind(data)
+    """Save projects to config.json."""
+    config = _load_config()
+    config["projects"] = projects
+    _save_config(config)
 
 
 def _get_provider() -> Provider:
@@ -1856,27 +1856,11 @@ def _regenerate_hivemind_md() -> None:
     if active_project:
         projects = _load_projects()
         if active_project in projects:
-            project_info = projects[active_project]
             project_md_path = PROJECTS_DIR / active_project / "project.md"
-
-            content += f"\n## Active Project: {active_project}\n\n"
-            content += f"Project lead: `project-lead-{active_project}`\n\n"
-
-            # Append project.md content if it exists
             if project_md_path.exists():
                 project_content = project_md_path.read_text().strip()
                 if project_content:
-                    content += project_content + "\n"
-            else:
-                desc = project_info.get("description", "")
-                objectives = project_info.get("objectives", [])
-                if desc:
-                    content += f"{desc}\n\n"
-                if objectives:
-                    content += "### Objectives\n\n"
-                    for obj in objectives:
-                        content += f"- {obj}\n"
-                    content += "\n"
+                    content += "\n" + project_content + "\n"
 
     HIVEMIND_MD.write_text(content)
 
@@ -2074,8 +2058,15 @@ def create_team(
     team_dir = TEAMS_DIR / name
     team_dir.mkdir(parents=True, exist_ok=True)
     (team_dir / "experts").mkdir(exist_ok=True)
-    (team_dir / "general.md").write_text("")
-    (team_dir / "private.md").write_text("")
+
+    # Pre-populate context files
+    expert_list = "\n".join(f"- **{e}**" for e in experts)
+    (team_dir / "general.md").write_text(
+        f"# {name}\n\n{description}\n\n## Experts\n\n{expert_list}\n"
+    )
+    (team_dir / "private.md").write_text(
+        f"# {name} — Private Notes\n\nTeam lead's private notes. Not shared with experts.\n"
+    )
 
     # Build roster info
     roster = []
@@ -2324,9 +2315,24 @@ def create_project(
     # Create project directory
     project_dir = PROJECTS_DIR / name
     project_dir.mkdir(parents=True, exist_ok=True)
-    (project_dir / "overview.md").write_text("")
-    (project_dir / "context.md").write_text("")
-    (project_dir / "project.md").write_text("")
+
+    # Pre-populate context files
+    teams_str = "\n".join(f"- **{t}**" for t in teams_list) if teams_list else "- (none)"
+    repos_str = "\n".join(f"- {r}" for r in repos) if repos else "- (none)"
+    obj_str = "\n".join(f"- {o}" for o in objectives) if objectives else "- (none)"
+
+    (project_dir / "overview.md").write_text(
+        f"# {name}\n\n{description}\n\n"
+        f"## Teams\n\n{teams_str}\n\n"
+        f"## Repos\n\n{repos_str}\n\n"
+        f"## Objectives\n\n{obj_str}\n"
+    )
+    (project_dir / "context.md").write_text(
+        f"# {name} — Context\n\nProject decisions, progress notes, and todos.\n"
+    )
+    (project_dir / "project.md").write_text(
+        f"## Active Project: {name}\n\nProject lead: `project-lead-{name}`\n"
+    )
 
     # Build teams info
     teams_info = []
