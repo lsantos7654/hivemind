@@ -57,6 +57,14 @@ class ExpertTable(VimDataTable):
         # Update experts list
         self.experts = filtered
 
+        # Empty state
+        if not self.experts:
+            if self.filter_query:
+                self.add_row("", f"[dim]No results for \"{self.filter_query}\"[/dim]", "", "", "", "", "")
+            elif not self._all_experts:
+                self.add_row("", "[dim]No experts[/dim]", "", "", "", "", "")
+            return
+
         # Add rows
         for expert in self.experts:
             checkbox = "☑" if expert.name in self.selected_rows else "☐"

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from textual.app import ComposeResult
 from textual.containers import Container, Horizontal
-from textual.widgets import Header, Static, Input, Button
+from textual.widgets import Footer, Static, Input, Button
 from textual.binding import Binding
 from textual.reactive import reactive
 
@@ -19,13 +19,12 @@ class VersionDetailScreen(BaseScreen):
 
     BINDINGS = [
         *BaseScreen.BINDINGS,
-        Binding("q", "quit_or_back", "Back"),
-        Binding("enter", "switch_version", "Switch"),
-        Binding("i", "input_commit", "Input Commit"),
-        Binding("r", "refresh", "Refresh"),
+        Binding("q", "quit_or_back", "Back", show=True),
+        Binding("enter", "switch_version", "Switch", show=True),
+        Binding("i", "input_commit", "Input Commit", show=True),
+        Binding("r", "refresh", "Refresh", show=True),
     ]
 
-    # Reactive variable for search filtering
     filter_query: reactive[str] = reactive("", init=False)
 
     def __init__(self, expert: ExpertRow, **kwargs):
@@ -36,8 +35,6 @@ class VersionDetailScreen(BaseScreen):
         self._input_visible = False
 
     def compose(self) -> ComposeResult:
-        """Compose the version detail screen."""
-        yield Header(show_clock=True)
         yield Container(
             Static(
                 f"Expert: {self.expert.name}\n"
@@ -59,12 +56,9 @@ class VersionDetailScreen(BaseScreen):
                 id="commit-input-container",
                 classes="hidden",
             ),
-            Static(
-                "↑↓/jk: Navigate  Ctrl+d/u: Half Page  Enter: Switch  /: Search  i: Input  r: Refresh  Esc/q: Back",
-                classes="footer keybindings",
-            ),
             id="main-container",
         )
+        yield Footer()
 
     def on_mount(self) -> None:
         """Load versions and populate table when mounted."""

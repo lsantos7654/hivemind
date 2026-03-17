@@ -11,11 +11,12 @@ from hivemind_cli.core import (
     update_expert,
     enable_expert,
     disable_expert,
+    delete_expert,
 )
 from hivemind_cli.tui.models import OperationStatus
 
 if TYPE_CHECKING:
-    from hivemind_cli.tui.screens.main_screen import MainScreen
+    from hivemind_cli.tui.screens.experts_pane import ExpertsPane
 
 
 class CancellationToken:
@@ -33,7 +34,7 @@ class CancellationToken:
         return self._cancelled
 
 
-def create_tui_progress_callback(screen: MainScreen, expert_name: str):
+def create_tui_progress_callback(screen: ExpertsPane, expert_name: str):
     """Create a progress callback that updates the TUI."""
 
     def on_progress(info: ProgressInfo):
@@ -51,7 +52,7 @@ def create_tui_progress_callback(screen: MainScreen, expert_name: str):
     return on_progress
 
 
-async def update_expert_async(screen: MainScreen, expert_name: str, token: CancellationToken):
+async def update_expert_async(screen: ExpertsPane, expert_name: str, token: CancellationToken):
     """Async wrapper for updating an expert with cancellation support."""
     from hivemind_cli.core import update_expert_async_internal
 
@@ -102,7 +103,7 @@ async def update_expert_async(screen: MainScreen, expert_name: str, token: Cance
         screen.app.refresh_experts()
 
 
-def enable_expert_sync(screen: MainScreen, expert_name: str):
+def enable_expert_sync(screen: ExpertsPane, expert_name: str):
     """Synchronous wrapper for enabling an expert in the TUI."""
     result = enable_expert(expert_name)
 
@@ -117,7 +118,7 @@ def enable_expert_sync(screen: MainScreen, expert_name: str):
     screen.app.refresh_experts()
 
 
-def disable_expert_sync(screen: MainScreen, expert_name: str):
+def disable_expert_sync(screen: ExpertsPane, expert_name: str):
     """Synchronous wrapper for disabling an expert in the TUI."""
     result = disable_expert(expert_name)
 
@@ -128,6 +129,18 @@ def disable_expert_sync(screen: MainScreen, expert_name: str):
             screen.notify(f"Disabled: {expert_name}", severity="warning")
     else:
         screen.notify(f"Failed to disable {expert_name}: {result['error']}", severity="error")
+
+    screen.app.refresh_experts()
+
+
+def delete_expert_sync(screen, expert_name: str):
+    """Synchronous wrapper for deleting an expert in the TUI."""
+    result = delete_expert(expert_name)
+
+    if result["success"]:
+        screen.notify(f"Deleted: {expert_name}", severity="information")
+    else:
+        screen.notify(f"Failed to delete {expert_name}: {result['error']}", severity="error")
 
     screen.app.refresh_experts()
 

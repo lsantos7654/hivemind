@@ -1,4 +1,4 @@
-"""Base screen with shared functionality for all hivemind TUI screens."""
+"""Base screen with worker management for push-screen views (e.g. VersionDetailScreen)."""
 
 from __future__ import annotations
 
@@ -7,11 +7,10 @@ from textual.binding import Binding
 
 
 class BaseScreen(Screen):
-    """Base screen providing shared bindings and worker management."""
+    """Base screen providing worker management for async operations."""
 
     BINDINGS = [
-        Binding("slash", "focus_search", "Search"),
-        Binding("escape", "handle_escape", "Back/Clear"),
+        Binding("escape", "handle_escape", "Back/Clear", show=True),
         Binding("ctrl+c", "handle_escape", "Back/Clear", show=False),
         Binding("ctrl+o", "go_back", "Back", show=False),
     ]
@@ -37,17 +36,10 @@ class BaseScreen(Screen):
         """Get worker info for an expert."""
         return self._active_workers.get(expert_name)
 
-    def action_focus_search(self) -> None:
-        """Focus the search input."""
-        try:
-            self.query_one("#search-input").focus()
-        except Exception:
-            pass
-
     def action_handle_escape(self) -> None:
         """Override in subclass for screen-specific escape behavior."""
         ...
 
     def action_go_back(self) -> None:
-        """Go back one screen. Override in MainScreen to exit app."""
+        """Go back one screen."""
         self.app.pop_screen()

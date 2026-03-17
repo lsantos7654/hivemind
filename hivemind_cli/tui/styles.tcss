@@ -1,66 +1,141 @@
-/* Hivemind TUI Styles */
+/* Hivemind TUI — Modern Styles */
+
+/* Global defaults */
+* {
+    scrollbar-size-vertical: 1;
+    scrollbar-color: $primary 10%;
+    scrollbar-color-hover: $primary 80%;
+}
 
 Screen {
-    background: $surface;
+    background: $background;
 }
 
-/* Header */
-.header {
-    background: $primary;
-    color: $text;
-    padding: 1;
-    text-align: center;
+/* Pane widgets fill available space */
+ExpertsPane,
+TeamsPane,
+ProjectsPane {
+    height: 1fr;
+    layers: base overlay;
 }
 
-/* Search bar */
-.search-container {
-    height: 3;
-    padding: 0 1;
+/* Tab indicator — non-focusable header showing active tab */
+#tab-indicator {
+    dock: top;
+    height: 1;
+    padding: 0 2;
     background: $panel;
+    color: $text-muted;
 }
 
-.search-label {
+ContentSwitcher {
+    height: 1fr;
+}
+
+/* Filter indicator — subtle label showing active query */
+.filter-indicator {
+    display: none;
+    dock: top;
+    height: 1;
+    padding: 0 2;
+    background: $panel;
+    color: $text-muted;
+}
+
+/* Search overlay */
+SearchBar {
+    layer: overlay;
+    display: none;
+    dock: top;
+    width: 60%;
+    height: 3;
+    margin: 1 0 0 2;
+    background: $panel;
+    border: round $accent 60%;
+}
+
+SearchBar.visible {
+    display: block;
+}
+
+SearchBar .search-label {
     padding: 1 0;
     width: auto;
 }
 
-Input {
+SearchBar Input {
     width: 1fr;
-    border: tall $primary;
+    border: none;
+    background: $panel;
 }
 
-Input:focus {
-    border: tall $accent;
+SearchBar Input:focus {
+    border-left: outer $accent;
 }
 
 /* Tables */
 DataTable {
     height: 1fr;
-    border: tall transparent;
+    border: none;
+    background: $background;
 }
 
 DataTable:focus {
-    border: tall $accent;
+    border: round $accent 40%;
 }
 
 DataTable > .datatable--cursor {
-    background: $accent;
-}
-
-/* Footer */
-.footer {
-    background: $panel;
+    background: $accent 30%;
     color: $text;
-    height: 3;
-    padding: 0 1;
 }
 
-.keybindings {
-    text-align: left;
-    padding: 0 1;
+DataTable > .datatable--header {
+    background: $panel;
+    color: $text-muted;
+    text-style: bold;
+}
+
+DataTable > .datatable--even-row {
+    background: $surface;
+}
+
+/* Confirmation modal */
+ConfirmationModal {
+    align: center middle;
+}
+
+ConfirmationModal .modal-body {
+    background: $background;
+    padding: 1 2;
+    width: 50;
+    height: auto;
+    max-height: 70%;
+    border: round $accent 60%;
+    border-title-color: $text;
+    border-title-style: bold;
+}
+
+ConfirmationModal .modal-message {
+    margin: 1 0;
+    text-align: center;
+}
+
+ConfirmationModal .modal-buttons {
+    align: center middle;
+    height: 3;
+    margin-top: 1;
+}
+
+ConfirmationModal .modal-buttons Button {
+    margin: 0 1;
 }
 
 /* Version detail screen */
+#main-container {
+    layers: base overlay;
+    height: 1fr;
+}
+
 #expert-header {
     height: auto;
     padding: 1 2;
@@ -80,8 +155,9 @@ DataTable > .datatable--cursor {
 }
 
 .section-title {
-    padding: 1 2;
+    padding: 0 2;
     text-style: bold;
+    color: $text-muted;
 }
 
 #version-table {

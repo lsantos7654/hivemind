@@ -6,11 +6,21 @@ import json
 import os
 from pathlib import Path
 
-from textual.app import App
+from textual.app import App, ComposeResult
+from textual.binding import Binding
 from textual.css.query import NoMatches
+from textual.widgets import ContentSwitcher, Footer, Static
 
 from hivemind_cli.tui.models import ExpertRow, ExpertStatus
-from hivemind_cli.tui.screens import MainScreen
+from hivemind_cli.tui.screens.experts_pane import ExpertsPane
+from hivemind_cli.tui.screens.teams_screen import TeamsPane
+from hivemind_cli.tui.screens.projects_screen import ProjectsPane
+from hivemind_cli.tui.widgets import SearchBar
+from hivemind_cli.tui.widgets.vim_data_table import VimDataTable
+
+
+TAB_ORDER = ["pane-experts", "pane-teams", "pane-projects"]
+TAB_NAMES = {"pane-experts": "Experts", "pane-teams": "Teams", "pane-projects": "Projects"}
 
 
 class HivemindApp(App):
@@ -19,7 +29,15 @@ class HivemindApp(App):
     CSS_PATH = "styles.tcss"
     TITLE = "Hivemind Expert Manager"
     COMMANDS = set()
-    COMMAND_PALETTE_BINDING = ""  # disable command palette, frees ctrl-p
+    COMMAND_PALETTE_BINDING = ""
+
+    BINDINGS = [
+        Binding("h", "previous_tab", "Prev Tab", show=False),
+        Binding("l", "next_tab", "Next Tab", show=False),
+        Binding("1", "show_tab('pane-experts')", "Experts", show=False),
+        Binding("2", "show_tab('pane-teams')", "Teams", show=False),
+        Binding("3", "show_tab('pane-projects')", "Projects", show=False),
+    ]
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -33,13 +51,107 @@ class HivemindApp(App):
         self.config_json = self.hivemind_root / "config.json"
         self.hivemind_json = self.hivemind_root / "hivemind.json"
 
+        self._teams_loaded = False
+        self._projects_loaded = False
+
+    def compose(self) -> ComposeResult:
+        yield Static("", id="tab-indicator")
+        with ContentSwitcher(initial="pane-experts", id="switcher"):
+            yield ExpertsPane(self.experts, id="pane-experts")
+            yield TeamsPane(id="pane-teams")
+            yield ProjectsPane(id="pane-projects")
+        yield Footer()
+
     def on_mount(self) -> None:
-        """Load data and show main screen when app mounts."""
         self.load_experts()
-        self.push_screen(MainScreen(self.experts))
+        try:
+            pane = self.query_one(ExpertsPane)
+            pane.experts = self.experts
+            table = pane.query_one("#expert-table")
+            table.update_experts(self.experts)
+        except NoMatches:
+            pass
+        self._update_tab_indicator()
+        self._focus_active_table()
+
+    # --- Tab navigation ---
+
+    def action_next_tab(self) -> None:
+        switcher = self.query_one("#switcher", ContentSwitcher)
+        idx = TAB_ORDER.index(switcher.current)
+        switcher.current = TAB_ORDER[(idx + 1) % len(TAB_ORDER)]
+        self._on_tab_switched()
+
+    def action_previous_tab(self) -> None:
+        switcher = self.query_one("#switcher", ContentSwitcher)
+        idx = TAB_ORDER.index(switcher.current)
+        switcher.current = TAB_ORDER[(idx - 1) % len(TAB_ORDER)]
+        self._on_tab_switched()
+
+    def action_show_tab(self, tab_id: str) -> None:
+        switcher = self.query_one("#switcher", ContentSwitcher)
+        if tab_id in TAB_ORDER:
+            switcher.current = tab_id
+            self._on_tab_switched()
+
+    def _on_tab_switched(self) -> None:
+        self._lazy_load_active_tab()
+        self._update_tab_indicator()
+        self._focus_active_table()
+
+    def _lazy_load_active_tab(self) -> None:
+        switcher = self.query_one("#switcher", ContentSwitcher)
+        active = switcher.current
+
+        if active == "pane-teams" and not self._teams_loaded:
+            self._teams_loaded = True
+            try:
+                self.query_one(TeamsPane).load_teams()
+            except NoMatches:
+                pass
+
+        elif active == "pane-projects" and not self._projects_loaded:
+            self._projects_loaded = True
+            try:
+                self.query_one(ProjectsPane).load_projects()
+            except NoMatches:
+                pass
+
+    def _focus_active_table(self) -> None:
+        switcher = self.query_one("#switcher", ContentSwitcher)
+        try:
+            pane = self.query_one(f"#{switcher.current}")
+            table = pane.query_one(VimDataTable)
+            table.focus()
+        except NoMatches:
+            pass
+
+    def _update_tab_indicator(self) -> None:
+        switcher = self.query_one("#switcher", ContentSwitcher)
+        active = switcher.current
+        parts = []
+        for tab_id in TAB_ORDER:
+            name = TAB_NAMES[tab_id]
+            if tab_id == active:
+                parts.append(f"[bold]{name}[/bold]")
+            else:
+                parts.append(f"[dim]{name}[/dim]")
+        self.query_one("#tab-indicator", Static).update("  │  ".join(parts))
+
+    def check_action(self, action: str, parameters: tuple) -> bool | None:
+        """Block h/l tab switching when search input has focus."""
+        if action in ("next_tab", "previous_tab"):
+            try:
+                for sb in self.query(SearchBar):
+                    if sb.query_one("#search-input").has_focus:
+                        return False
+            except Exception:
+                pass
+        return True
+
+    # --- Data loading ---
 
     def load_experts(self) -> None:
-        """Load expert data from config and repos.json."""
         config = self._load_config()
         repos = self._load_repos()
         private_repos = self._load_private_repos()
@@ -50,7 +162,6 @@ class HivemindApp(App):
 
         for name in expert_names:
             is_private = name in private_experts
-            # Determine status
             if name in config["enabled"]:
                 status = ExpertStatus.ENABLED
             elif name in config["disabled"]:
@@ -58,21 +169,14 @@ class HivemindApp(App):
             else:
                 status = ExpertStatus.UNLISTED
 
-            # Get HEAD commit
-            # Get the correct expert directory based on privacy status
             expert_dir = (
                 self.private_experts_dir / name if is_private
                 else self.experts_dir / name
             )
             commit = self._get_head_commit(expert_dir)
-
-            # Count versions
             version_count = self._count_versions(expert_dir)
-
-            # Check if agent exists
             has_agent = (self.agents_dir / f"expert-{name}.md").is_file()
 
-            # Get remote info (check both public and private repos)
             remote = ""
             ref_name = ""
             repos_dict = private_repos if is_private else repos
@@ -94,28 +198,32 @@ class HivemindApp(App):
                 )
             )
 
-        # Sort: enabled first, then alphabetically by name
         self.experts.sort(key=lambda e: (
-            0 if e.status == ExpertStatus.ENABLED else 1,  # Enabled first
-            e.name.lower()  # Then alphabetically
+            0 if e.status == ExpertStatus.ENABLED else 1,
+            e.name.lower()
         ))
 
     def refresh_experts(self) -> None:
-        """Reload expert data and update the screen."""
         self.load_experts()
         try:
-            main_screen = self.screen
-            if isinstance(main_screen, MainScreen):
-                # Update the main screen's expert list
-                main_screen.experts = self.experts
-                # Update the table
-                table = main_screen.query_one("#expert-table")
-                table.update_experts(self.experts)
+            pane = self.query_one(ExpertsPane)
+            pane.experts = self.experts
+            table = pane.query_one("#expert-table")
+            table.update_experts(self.experts)
         except (NoMatches, AttributeError):
             pass
 
+    def load_teams(self) -> dict:
+        config = self._load_config()
+        return config.get("teams", {})
+
+    def load_projects(self) -> tuple[dict, str | None]:
+        config = self._load_config()
+        projects = config.get("projects", {})
+        active = config.get("active_project")
+        return projects, active
+
     def _load_config(self) -> dict:
-        """Load config.json."""
         default = {"enabled": [], "disabled": []}
         if not self.config_json.exists():
             return default
@@ -125,24 +233,20 @@ class HivemindApp(App):
         return data
 
     def _load_hivemind(self) -> dict:
-        """Load hivemind.json (shared project config)."""
         if not self.hivemind_json.exists():
             return {}
         return json.loads(self.hivemind_json.read_text())
 
     def _load_repos(self) -> dict:
-        """Load repos from hivemind.json."""
         return self._load_hivemind().get("repos", {})
 
     def _load_private_repos(self) -> dict:
-        """Load private-repos.json."""
         private_repos_json = self.hivemind_root / "private-repos.json"
         if not private_repos_json.exists():
             return {}
         return json.loads(private_repos_json.read_text())
 
     def _expert_names(self) -> list[str]:
-        """List all expert names from experts/ and private-experts/ directories."""
         experts = []
         if self.experts_dir.exists():
             experts.extend(d.name for d in self.experts_dir.iterdir() if d.is_dir())
@@ -151,14 +255,12 @@ class HivemindApp(App):
         return sorted(experts)
 
     def _get_head_commit(self, expert_dir: Path) -> str | None:
-        """Read the HEAD symlink to get the current commit hash."""
         head = expert_dir / "HEAD"
         if not head.is_symlink():
             return None
         return os.readlink(head)
 
     def _count_versions(self, expert_dir: Path) -> int:
-        """Count commit directories (excludes HEAD symlink)."""
         if not expert_dir.exists():
             return 0
         return sum(
