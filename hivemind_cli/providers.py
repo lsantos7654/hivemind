@@ -105,7 +105,7 @@ class Provider(ABC):
         """Initialize provider from its config section.
 
         Args:
-            config: Provider config dict with keys: enabled, engine, home_dir, settings
+            config: Provider config dict with keys: engine, home_dir, settings
         """
         self._config = config
         self._home_dir = Path(os.path.expanduser(config.get("home_dir", "")))
@@ -154,6 +154,16 @@ class Provider(ABC):
         """
         home = self._config.get("home_dir", "")
         return f"{home}/experts"
+
+    @property
+    def hivemind_base_path(self) -> str:
+        """Base path for hivemind dir as it appears in agent bodies.
+
+        Used for path replacement at deploy time.
+        E.g. "~/.claude/hivemind" or "~/.config/opencode/hivemind"
+        """
+        home = self._config.get("home_dir", "")
+        return f"{home}/hivemind"
 
     # --- Agent formatting ---
 
@@ -419,6 +429,7 @@ class ClaudeProvider(Provider):
             old_base="{EXPERTS_DIR}",
             new_base=self.experts_base_path,
         )
+        transformed = transformed.replace("{HIVEMIND_DIR}", self.hivemind_base_path)
 
         return frontmatter + transformed
 
@@ -681,6 +692,7 @@ class OpenCodeProvider(Provider):
             old_base="{EXPERTS_DIR}",
             new_base=self.experts_base_path,
         )
+        transformed = transformed.replace("{HIVEMIND_DIR}", self.hivemind_base_path)
 
         return frontmatter + transformed
 
