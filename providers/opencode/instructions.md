@@ -6,7 +6,7 @@
 
 1. **Consult `project-lead-{project}`** via task to scope objectives and track progress
 2. **Read team context** (`teams/<team>/general.md`) for domain patterns and constraints
-3. **Spawn experts via `task`** for implementation work — launch multiple tasks in parallel when independent
+3. **Spawn experts via `task`** for implementation work — prefer team-scoped variants (`expert-{name}_{team}`) over generic experts when the task falls within a team's domain. Launch multiple tasks in parallel when independent.
 4. **Consult team leads** via task only when you need domain-specific architectural advice
 5. **After work completes**, consult project-lead via task to record outcomes in context.md
 

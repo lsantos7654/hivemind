@@ -17,7 +17,7 @@ Two orchestration modes are available. Choose based on task complexity:
 
 1. **Consult `project-lead-{project}`** (background) to scope objectives and track progress
 2. **Read team context** (`teams/<team>/general.md`) for domain patterns and constraints
-3. **Spawn experts directly** in parallel background agents for implementation work
+3. **Spawn experts directly** — prefer team-scoped variants (`expert-{name}_{team}`) over generic experts when the task falls within a team's domain. Launch parallel background agents for implementation work.
 4. **Consult team leads** (foreground, quick) only when you need domain-specific architectural advice
 5. **After work completes**, consult project-lead (background) to record outcomes in context.md
 

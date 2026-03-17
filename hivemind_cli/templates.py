@@ -79,6 +79,7 @@ provider determines where agents are deployed and how analysis commands are buil
 - Expert definitions: `experts/<name>/HEAD/agent.md` (platform-neutral body, no frontmatter)
 - Versioned knowledge: `experts/<name>/<commit>/` (HEAD symlink points to active version)
 - Agent files: Generated at deploy time with provider-specific frontmatter
+- Team-scoped experts: `agents/expert-{name}_{team}.md` — when experts join a team, hivemind deploys a variant with team context (general.md, per-expert notes) baked in. Prefer `expert-{name}_{team}` over `expert-{name}` when working within a team's scope.
 - Librarian: `agents/librarian.md` — auto-generated catalog of all experts, teams, and projects
 - Team context: `teams/<team>/` — general.md, private.md, experts/*.md (managed by team lead)
 - Project context: `projects/<project>/` — overview.md, context.md, project.md

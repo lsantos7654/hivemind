@@ -563,10 +563,17 @@ def _update_librarian() -> None:
     team_entries: list[str] = []
     for team_name, team_data in sorted(teams.items()):
         desc = team_data.get("description", "")
-        roster = ", ".join(team_data.get("experts", []))
-        team_entries.append(
-            f"### team-lead-{team_name}\nTeam lead for {desc}. Roster: {roster}."
+        experts = team_data.get("experts", [])
+        roster = ", ".join(experts)
+        variants = ", ".join(f"expert-{e}_{team_name}" for e in experts)
+        entry = (
+            f"### team-lead-{team_name}\n"
+            f"Team lead for {desc}. Roster: {roster}.\n"
+            f"Team-scoped experts: {variants}. "
+            f"These variants have team context baked in — "
+            f"prefer them over generic experts for work within this team's domain."
         )
+        team_entries.append(entry)
     team_catalog = (
         "\n\n---\n\n".join(team_entries) if team_entries else "No teams configured."
     )
@@ -603,10 +610,14 @@ def _update_librarian() -> None:
         "## Instructions\n\n"
         "1. For project-scoped questions, recommend the project lead\n"
         "2. For cross-expert coordination, recommend the team lead\n"
-        "3. For domain-specific questions, recommend the expert directly\n"
-        "4. Respond with agent name(s) and why they're the right fit\n"
-        "5. If multiple agents are relevant, rank by relevance\n"
-        "6. If no match, say so clearly\n"
+        "3. For domain-specific questions within a team's scope, recommend the "
+        "team-scoped expert variant (`expert-{name}_{team}`) — these have team "
+        "context baked in\n"
+        "4. For domain-specific questions outside any team scope, recommend the "
+        "generic expert\n"
+        "5. Respond with agent name(s) and why they're the right fit\n"
+        "6. If multiple agents are relevant, rank by relevance\n"
+        "7. If no match, say so clearly\n"
     )
 
     # Format with provider-specific frontmatter
