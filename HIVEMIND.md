@@ -5,18 +5,20 @@ Expert agents are managed centrally via the `hivemind` CLI. Source of truth: `~/
 ## Managing Experts
 
 ```
-hivemind list              # See all experts and their status
-hivemind add <url>         # Register, clone, AI-analyze, and create expert agent
-hivemind enable <name>     # Enable an expert (clones repo + deploys agent)
-hivemind disable <name>    # Disable an expert (removes agent)
-hivemind update [name]     # Fetch latest commits and re-analyze with AI
-hivemind query <question>  # Ask the librarian which expert(s) can help
-hivemind status            # Full dashboard
-hivemind init              # Set up provider directory structure and enable agents
-hivemind redeploy          # Regenerate all agent files for the active provider
-hivemind provider list     # List available providers and their status
-hivemind provider switch   # Switch active provider
-hivemind provider show     # Show detailed provider configuration
+hivemind expert list              # See all experts and their status
+hivemind expert show <name>       # Show expert details
+hivemind expert add <url>         # Register, clone, AI-analyze, and create expert agent
+hivemind expert enable <name>     # Enable an expert (clones repo + deploys agent)
+hivemind expert disable <name>    # Disable an expert (removes agent)
+hivemind expert delete <name>     # Delete an expert entirely
+hivemind expert update [name]     # Fetch latest commits and re-analyze with AI
+hivemind expert query <question>  # Ask the librarian which expert(s) can help
+hivemind status                   # Full dashboard
+hivemind init                     # Set up provider directory structure and enable agents
+hivemind redeploy                 # Regenerate all agent files for the active provider
+hivemind provider list            # List available providers and their status
+hivemind provider switch          # Switch active provider
+hivemind provider show            # Show detailed provider configuration
 ```
 
 ## Managing Teams
@@ -91,8 +93,10 @@ to regenerate deployed agent files with the correct provider frontmatter.
 
 ## Shell Navigation
 
-ALWAYS USE `builtin cd` INSTEAD OF `cd` TO AVOID ZOXIDE INTERFERENCE!!!!
-ONLY USE `builtin` FOR `cd` only and no other command
+ONLY the `cd` command needs the `builtin` prefix: `builtin cd /some/path`
+NEVER use `builtin` with any other command. `builtin uv`, `builtin python`, `builtin git` are ALL WRONG.
+Correct: `uv run ...`, `python ...`, `git ...` — no `builtin` prefix.
+The ONLY reason `cd` needs `builtin` is because zoxide overrides it.
 
 ## Orchestration models
 
@@ -173,8 +177,9 @@ Project lead: `project-lead-hivemind`
 ### Current objectives (priority order)
 
 1. **Modern TUI redesign** — remove Header widget, add floating search overlay (`/` opens, `Esc` closes), clean minimal CSS
-2. **Full CRUD for experts** — `hivemind delete <name>` CLI command + delete action in TUI
+2. **Full CRUD for experts** — `hivemind expert delete <name>` CLI command + delete action in TUI
 3. **Teams/Projects TUI views** — teams screen (list, create, add/remove experts, delete), projects screen (list, set active, create, delete), top-level tab navigation between Experts | Teams | Projects
+4. **CLI reorganization** — group expert commands under `hivemind expert` subcommand for consistent command hierarchy (complete)
 
 ### Architecture summary
 
@@ -193,7 +198,7 @@ Active screens: `MainScreen` (expert list), `VersionDetailScreen` (commit histor
 
 **Objective 2 — Delete expert:**
 - `core.py` needs `delete_expert(name: str) -> dict` — removes from config, deletes agent file, deletes expert dir, removes from hivemind.json repos, regenerates librarian
-- CLI: add `hivemind delete <name>` command (with confirmation prompt)
+- CLI: add `hivemind expert delete <name>` command (with confirmation prompt)
 - TUI: add `D` binding to `MainScreen` with a confirmation `ModalScreen` before calling `delete_expert_sync(screen, name)` in `operations.py`
 
 **Objective 3 — Teams/Projects TUI:**

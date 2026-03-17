@@ -125,6 +125,16 @@ def _complete_expert(incomplete: str) -> list[str]:
     return [n for n in _expert_names() if n.startswith(incomplete)]
 
 
+# --- Expert subcommands ---
+
+expert_app = typer.Typer(
+    name="expert",
+    help="Manage experts.",
+    no_args_is_help=True,
+)
+app.add_typer(expert_app, name="expert")
+
+
 def _complete_provider(incomplete: str) -> list[str]:
     """Shell completion for provider names."""
     from hivemind_cli.providers import PROVIDER_CLASSES
@@ -307,7 +317,7 @@ def init() -> None:
     console.print("\n[bold success]Hivemind initialized![/bold success]")
 
 
-@app.command(name="list")
+@expert_app.command(name="list")
 def list_experts() -> None:
     """Show all experts with their status."""
     config = _load_config()
@@ -391,7 +401,86 @@ def list_experts() -> None:
         console.print(private_table)
 
 
-@app.command()
+@expert_app.command("show")
+def show_expert(
+    name: str = typer.Argument(
+        ..., help="Expert name", autocompletion=_complete_expert
+    ),
+) -> None:
+    """Show detailed information about an expert."""
+    experts = _expert_names()
+    if name not in experts:
+        console.print(f"[error]Error: expert '{name}' not found[/error]")
+        raise typer.Exit(1)
+
+    config = _load_config()
+    repos = _load_repos()
+    private_repos = _load_private_repos()
+    private_experts = set(config.get("private", []))
+    teams = _load_teams()
+
+    is_private = name in private_experts
+
+    # Status
+    if name in config["enabled"]:
+        status_str = "[success]enabled[/success]"
+    elif name in config["disabled"]:
+        status_str = "[warning]disabled[/warning]"
+    else:
+        status_str = "[error]unlisted[/error]"
+
+    # Visibility
+    visibility = "[warning]private[/warning]" if is_private else "[info]public[/info]"
+
+    # HEAD commit and version count
+    expert_dir = _get_expert_dir(name)
+    head_commit = _get_head_commit(expert_dir)
+    head_display = (
+        f"[commit]{head_commit}[/commit]" if head_commit else "[dim]none[/dim]"
+    )
+    version_count = _count_versions(expert_dir)
+
+    # Remote URL
+    repos_dict = private_repos if is_private else repos
+    remote = ""
+    ref_name = ""
+    if name in repos_dict:
+        remote = repos_dict[name].get("remote", "")
+        ref_name = repos_dict[name].get("ref_name", "")
+
+    # Teams containing this expert
+    expert_teams = [
+        t for t, td in teams.items() if name in td.get("experts", [])
+    ]
+
+    # Agent file status
+    agent_file = AGENTS_DIR / f"expert-{name}.md"
+    agent_status = (
+        "[success]deployed[/success]" if agent_file.exists() else "[dim]not deployed[/dim]"
+    )
+
+    lines: list[str] = []
+    lines.append(f"[heading]Expert: {name}[/heading]")
+    lines.append(f"Status: {status_str}")
+    lines.append(f"Visibility: {visibility}")
+    lines.append(f"HEAD: {head_display}")
+    lines.append(f"Versions: {version_count}")
+    if remote:
+        remote_display = remote
+        if ref_name:
+            remote_display += f" @ {ref_name}"
+        lines.append(f"Remote: {remote_display}")
+    lines.append(f"Agent: {agent_status}")
+
+    if expert_teams:
+        lines.append(f"\n[heading]Teams:[/heading]")
+        for t in expert_teams:
+            lines.append(f"  - {t}")
+
+    console.print(Panel("\n".join(lines), border_style="blue"))
+
+
+@expert_app.command()
 def add(
     url: str = typer.Argument(help="Git remote URL"),
     ref: typing.Optional[str] = typer.Option(
@@ -588,7 +677,7 @@ def add(
         shutil.rmtree(tmpdir, ignore_errors=True)
 
 
-@app.command()
+@expert_app.command()
 def enable(
     name: str = typer.Argument(
         help="Expert name to enable", autocompletion=_complete_expert
@@ -613,7 +702,7 @@ def enable(
         console.print(f"[success]✓[/success] Enabled: {name}")
 
 
-@app.command()
+@expert_app.command()
 def disable(
     name: str = typer.Argument(
         help="Expert name to disable", autocompletion=_complete_expert
@@ -636,7 +725,7 @@ def disable(
         console.print(f"[warning]✓[/warning] Disabled: {name}")
 
 
-@app.command()
+@expert_app.command()
 def delete(
     name: str = typer.Argument(
         help="Expert name to delete", autocompletion=_complete_expert
@@ -663,7 +752,7 @@ def delete(
     console.print(f"[error]✗[/error] Deleted: {name}")
 
 
-@app.command()
+@expert_app.command()
 def update(
     name: typing.Optional[str] = typer.Argument(
         None,
@@ -730,7 +819,7 @@ def update(
         console.print("\n[success]All experts are up to date.[/success]")
 
 
-@app.command()
+@expert_app.command()
 def query(
     question: str = typer.Argument(help="Question to ask the librarian"),
 ) -> None:
@@ -1358,7 +1447,7 @@ def redeploy() -> None:
 
 
 
-@app.command()
+@expert_app.command()
 def crawl(
     url: str = typer.Argument(..., help="Starting URL to crawl"),
     agent: str = typer.Argument(
@@ -1674,3 +1763,113 @@ def status() -> None:
             table.add_row(name, status_str, teams_str, obj_str)
 
         console.print(table)
+
+
+# --- Backward-compatible aliases for moved expert commands ---
+
+_DEPRECATION = "[yellow]Note: 'hivemind {cmd}' is now 'hivemind expert {cmd}'[/yellow]"
+
+
+@app.command("list", hidden=True)
+def list_compat() -> None:
+    """Deprecated: use 'hivemind expert list'."""
+    console.print(_DEPRECATION.format(cmd="list"))
+    list_experts()
+
+
+@app.command("add", hidden=True)
+def add_compat(
+    url: str = typer.Argument(help="Git remote URL"),
+    ref: typing.Optional[str] = typer.Option(
+        None, "--ref", help="Tag, branch, or commit"
+    ),
+    private: bool = typer.Option(
+        False, "--private", help="Mark as private (won't be committed to git)"
+    ),
+) -> None:
+    """Deprecated: use 'hivemind expert add'."""
+    console.print(_DEPRECATION.format(cmd="add"))
+    add(url=url, ref=ref, private=private)
+
+
+@app.command("enable", hidden=True)
+def enable_compat(
+    name: str = typer.Argument(
+        help="Expert name to enable", autocompletion=_complete_expert
+    ),
+) -> None:
+    """Deprecated: use 'hivemind expert enable'."""
+    console.print(_DEPRECATION.format(cmd="enable"))
+    enable(name=name)
+
+
+@app.command("disable", hidden=True)
+def disable_compat(
+    name: str = typer.Argument(
+        help="Expert name to disable", autocompletion=_complete_expert
+    ),
+) -> None:
+    """Deprecated: use 'hivemind expert disable'."""
+    console.print(_DEPRECATION.format(cmd="disable"))
+    disable(name=name)
+
+
+@app.command("delete", hidden=True)
+def delete_compat(
+    name: str = typer.Argument(
+        help="Expert name to delete", autocompletion=_complete_expert
+    ),
+    force: bool = typer.Option(
+        False, "--force", "-f", help="Skip confirmation prompt"
+    ),
+) -> None:
+    """Deprecated: use 'hivemind expert delete'."""
+    console.print(_DEPRECATION.format(cmd="delete"))
+    delete(name=name, force=force)
+
+
+@app.command("update", hidden=True)
+def update_compat(
+    name: typing.Optional[str] = typer.Argument(
+        None,
+        help="Expert name (or omit for all enabled)",
+        autocompletion=_complete_expert,
+    ),
+    skip_analysis: bool = typer.Option(
+        False,
+        "--skip-analysis",
+        help="Pull latest repo changes without re-running AI analysis",
+    ),
+) -> None:
+    """Deprecated: use 'hivemind expert update'."""
+    console.print(_DEPRECATION.format(cmd="update"))
+    update(name=name, skip_analysis=skip_analysis)
+
+
+@app.command("query", hidden=True)
+def query_compat(
+    question: str = typer.Argument(help="Question to ask the librarian"),
+) -> None:
+    """Deprecated: use 'hivemind expert query'."""
+    console.print(_DEPRECATION.format(cmd="query"))
+    query(question=question)
+
+
+@app.command("crawl", hidden=True)
+def crawl_compat(
+    url: str = typer.Argument(..., help="Starting URL to crawl"),
+    agent: str = typer.Argument(
+        ..., help="Agent name for output directory", autocompletion=_complete_expert
+    ),
+    max_pages: int | None = typer.Option(
+        None, "--max-pages", "-n", help="Maximum pages to crawl (default: no limit)"
+    ),
+    raw_markdown: bool = typer.Option(
+        False,
+        "--raw-markdown",
+        help="Force raw markdown fetching (.md endpoints only, no browser fallback)",
+    ),
+) -> None:
+    """Deprecated: use 'hivemind expert crawl'."""
+    console.print(_DEPRECATION.format(cmd="crawl"))
+    crawl(url=url, agent=agent, max_pages=max_pages, raw_markdown=raw_markdown)
