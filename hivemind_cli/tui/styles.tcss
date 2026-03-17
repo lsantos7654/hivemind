@@ -49,7 +49,7 @@ SearchBar {
     dock: top;
     width: 60%;
     height: 3;
-    margin: 1 0 0 2;
+    offset: 20% 30%;
     background: $panel;
     border: round $accent 60%;
 }
@@ -131,38 +131,20 @@ ConfirmationModal .modal-buttons Button {
 }
 
 /* Version detail screen */
-#main-container {
+VersionDetailScreen {
     layers: base overlay;
-    height: 1fr;
 }
 
 #expert-header {
-    height: auto;
-    padding: 1 2;
-    background: $panel;
-    margin-bottom: 1;
-}
-
-#search-container {
-    height: 3;
-    padding: 1 2;
-    background: $panel;
-    margin: 0 2 1 2;
-}
-
-#search-container.hidden {
-    display: none;
-}
-
-.section-title {
+    dock: top;
+    height: 1;
     padding: 0 2;
-    text-style: bold;
+    background: $panel;
     color: $text-muted;
 }
 
 #version-table {
     height: 1fr;
-    margin: 0 2;
 }
 
 #commit-input-container {

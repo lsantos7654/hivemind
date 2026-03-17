@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import time
-
 from textual.app import ComposeResult
 from textual.widgets import DataTable, Static
 from textual.binding import Binding
@@ -36,7 +34,6 @@ class ExpertsPane(BasePane):
     def __init__(self, experts: list[ExpertRow], **kwargs):
         super().__init__(**kwargs)
         self.experts = experts
-        self._last_escape_press: float = 0.0
         self._active_workers: dict[str, dict] = {}
 
     def _get_table_id(self) -> str:
@@ -61,20 +58,15 @@ class ExpertsPane(BasePane):
         self._visible_names = [e.name for e in table.experts]
 
     def _on_all_clear(self) -> None:
-        """Double-press escape to exit."""
+        """Clear selections, then double-press to exit."""
         table = self.query_one("#expert-table", ExpertTable)
 
-        # Clear selections first
         if table.get_selected_experts():
             table.clear_selection()
             self._last_escape_press = 0.0
             return
 
-        now = time.monotonic()
-        if now - self._last_escape_press < 0.5:
-            self.app.exit()
-        else:
-            self._last_escape_press = now
+        super()._on_all_clear()
 
     # --- Worker management ---
 

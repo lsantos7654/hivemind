@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import time
+
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.widget import Widget
@@ -17,12 +19,14 @@ class BasePane(Widget, can_focus=False):
     BINDINGS = [
         Binding("slash", "focus_search", "Search", show=True),
         Binding("escape", "handle_escape", "Back/Clear", show=True),
+        Binding("ctrl+c", "handle_escape", "Back/Clear", show=False),
     ]
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self._filter_query: str = ""
         self._visible_names: list[str] = []
+        self._last_escape_press: float = 0.0
 
     def _get_table_id(self) -> str:
         """Return the CSS id of this pane's table. Override in subclass."""
@@ -41,8 +45,12 @@ class BasePane(Widget, can_focus=False):
         return 0
 
     def _on_all_clear(self) -> None:
-        """Called when escape has nothing left to clear. Override for custom behavior."""
-        pass
+        """Double-press escape/ctrl+c to exit. Override for extra clear steps."""
+        now = time.monotonic()
+        if now - self._last_escape_press < 0.5:
+            self.app.exit()
+        else:
+            self._last_escape_press = now
 
     def get_current_name(self) -> str | None:
         """Get the name of the item at the current cursor position."""
