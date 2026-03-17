@@ -1790,6 +1790,67 @@ def disable_expert(name: str) -> dict:
     return {"success": True, "already_disabled": already_disabled}
 
 
+def delete_expert(name: str) -> dict:
+    """Delete an expert entirely — removes config entries, agent files, expert dir, and repo entry.
+
+    Returns:
+        dict with keys: success (bool), error (str | None)
+    """
+    import shutil
+
+    expert_dir = _get_expert_dir(name)
+    if not expert_dir.is_dir():
+        return {"success": False, "error": f"Expert '{name}' not found"}
+
+    is_private = _is_private_expert(name)
+
+    # Undeploy agent and provider expert files
+    _undeploy_agent(name)
+    _undeploy_expert(name)
+
+    # Remove from config.json (enabled/disabled lists)
+    config = _load_config()
+    if name in config.get("enabled", []):
+        config["enabled"].remove(name)
+    if name in config.get("disabled", []):
+        config["disabled"].remove(name)
+    if name in config.get("private", []):
+        config["private"].remove(name)
+    _save_config(config)
+
+    # Remove from repos (hivemind.json or private-repos.json)
+    if is_private:
+        repos = _load_private_repos()
+        if name in repos:
+            del repos[name]
+            _save_private_repos(repos)
+    else:
+        repos = _load_repos()
+        if name in repos:
+            del repos[name]
+            _save_repos(repos)
+
+    # Remove from any team rosters
+    teams = _load_teams()
+    for team_data in teams.values():
+        experts_list = team_data.get("experts", [])
+        if name in experts_list:
+            experts_list.remove(name)
+    _save_teams(teams)
+
+    # Delete expert directory
+    if expert_dir.exists():
+        shutil.rmtree(expert_dir)
+
+    # Delete cached repo
+    repo_cache = REPOS_DIR / name
+    if repo_cache.exists():
+        shutil.rmtree(repo_cache)
+
+    _update_librarian()
+    return {"success": True}
+
+
 def redeploy_all_agents() -> dict:
     """Regenerate all enabled agent files with current provider settings.
 

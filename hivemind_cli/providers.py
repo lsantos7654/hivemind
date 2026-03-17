@@ -275,7 +275,6 @@ class Provider(ABC):
             name: Expert name
         """
 
-    @abstractmethod
     def init_dirs(
         self,
         *,
@@ -288,19 +287,64 @@ class Provider(ABC):
     ) -> list[tuple[str, str]]:
         """Initialize provider directory structure and deploy symlinks.
 
-        Args:
-            agents_dir: Hivemind's agents/ directory
-            commands_dir: Hivemind's commands/ directory
-            rules_source: Path to HIVEMIND.md rules file in hivemind root
-            teams_dir: Hivemind's teams/ directory
-            projects_dir: Hivemind's projects/ directory
-            permissions: Permissions dict to write as settings.json (Claude only)
-
-        Returns:
-            List of (label, status_message) tuples for display
+        Shared logic for all providers: agents/, commands/, rules file,
+        experts/ directory, and hivemind/teams/ + hivemind/projects/ symlinks.
+        Provider-specific steps go in _post_init_dirs().
         """
+        results: list[tuple[str, str]] = []
 
-    @abstractmethod
+        self._home_dir.mkdir(parents=True, exist_ok=True)
+
+        # Core symlinks: agents/, commands/, rules file
+        results.append(
+            _setup_symlink(agents_dir, self._home_dir / "agents", "agents/")
+        )
+        results.append(
+            _setup_symlink(commands_dir, self._home_dir / "commands", "commands/")
+        )
+        results.append(
+            _setup_symlink(
+                rules_source,
+                self._home_dir / self.rules_file_name,
+                self.rules_file_name,
+            )
+        )
+
+        # experts/ directory (real dir, not symlink)
+        experts_dir = self._home_dir / "experts"
+        experts_dir.mkdir(parents=True, exist_ok=True)
+        results.append(("experts/", "directory ready"))
+
+        # teams/ and projects/ under hivemind/ subdirectory
+        # (avoids conflicts with provider-owned directories)
+        hivemind_subdir = self._home_dir / "hivemind"
+        hivemind_subdir.mkdir(parents=True, exist_ok=True)
+
+        if teams_dir:
+            results.append(
+                _setup_symlink(
+                    teams_dir, hivemind_subdir / "teams", "hivemind/teams/"
+                )
+            )
+
+        if projects_dir:
+            results.append(
+                _setup_symlink(
+                    projects_dir, hivemind_subdir / "projects", "hivemind/projects/"
+                )
+            )
+
+        # Provider-specific hook
+        results.extend(self._post_init_dirs(permissions=permissions))
+
+        return results
+
+    def _post_init_dirs(
+        self, *, permissions: dict | None = None
+    ) -> list[tuple[str, str]]:
+        """Provider-specific init steps. Override in subclasses."""
+        return []
+
     def status_symlinks(
         self,
         *,
@@ -313,17 +357,35 @@ class Provider(ABC):
         """Return symlink checks for the status dashboard.
 
         Each tuple is (display_name, expected_target, link_path).
-
-        Args:
-            agents_dir: Hivemind's agents/ directory
-            commands_dir: Hivemind's commands/ directory
-            rules_source: Path to HIVEMIND.md rules file in hivemind root
-            teams_dir: Hivemind's teams/ directory
-            projects_dir: Hivemind's projects/ directory
-
-        Returns:
-            List of (display_name, expected_target, link_path) tuples
+        Shared across all providers.
         """
+        checks = [
+            (f"{self._home_dir}/agents/", agents_dir, self._home_dir / "agents"),
+            (
+                f"{self._home_dir}/commands/",
+                commands_dir,
+                self._home_dir / "commands",
+            ),
+            (
+                f"{self._home_dir}/{self.rules_file_name}",
+                rules_source,
+                self._home_dir / self.rules_file_name,
+            ),
+        ]
+        hivemind_subdir = self._home_dir / "hivemind"
+        if teams_dir:
+            checks.append(
+                (f"{hivemind_subdir}/teams/", teams_dir, hivemind_subdir / "teams")
+            )
+        if projects_dir:
+            checks.append(
+                (
+                    f"{hivemind_subdir}/projects/",
+                    projects_dir,
+                    hivemind_subdir / "projects",
+                )
+            )
+        return checks
 
 
 # --- Claude Code Provider ---
@@ -499,49 +561,14 @@ class ClaudeProvider(Provider):
             else:
                 expert_link.unlink()
 
-    def init_dirs(
-        self,
-        *,
-        agents_dir: Path,
-        commands_dir: Path,
-        rules_source: Path,
-        teams_dir: Path | None = None,
-        projects_dir: Path | None = None,
-        permissions: dict | None = None,
+    def _post_init_dirs(
+        self, *, permissions: dict | None = None
     ) -> list[tuple[str, str]]:
-        """Initialize ~/.claude directory structure with symlinks."""
+        """Generate settings.json from permissions config."""
         import json as _json
 
         results: list[tuple[str, str]] = []
 
-        self._home_dir.mkdir(parents=True, exist_ok=True)
-
-        # agents/ symlink
-        agents_link = self._home_dir / "agents"
-        results.append(_setup_symlink(agents_dir, agents_link, "agents/"))
-
-        # commands/ symlink
-        commands_link = self._home_dir / "commands"
-        results.append(_setup_symlink(commands_dir, commands_link, "commands/"))
-
-        # Rules file symlink (e.g. CLAUDE.md)
-        rules_link = self._home_dir / self.rules_file_name
-        results.append(_setup_symlink(rules_source, rules_link, self.rules_file_name))
-
-        # teams/ and projects/ symlinks under hivemind/ subdirectory
-        # (avoids conflicts with ~/.claude/projects/ which Claude Code owns)
-        hivemind_subdir = self._home_dir / "hivemind"
-        hivemind_subdir.mkdir(parents=True, exist_ok=True)
-
-        if teams_dir:
-            teams_link = hivemind_subdir / "teams"
-            results.append(_setup_symlink(teams_dir, teams_link, "hivemind/teams/"))
-
-        if projects_dir:
-            projects_link = hivemind_subdir / "projects"
-            results.append(_setup_symlink(projects_dir, projects_link, "hivemind/projects/"))
-
-        # Generate settings.json from permissions config
         if permissions:
             settings_path = self._home_dir / "settings.json"
             # Remove old symlink if present
@@ -556,42 +583,7 @@ class ClaudeProvider(Provider):
             settings_path.write_text(_json.dumps(settings_data, indent=2) + "\n")
             results.append(("settings.json", "generated from hivemind.json"))
 
-        # experts/ directory (real dir, not symlink)
-        experts_dir = self._home_dir / "experts"
-        experts_dir.mkdir(parents=True, exist_ok=True)
-        results.append(("experts/", "directory ready"))
-
         return results
-
-    def status_symlinks(
-        self,
-        *,
-        agents_dir: Path,
-        commands_dir: Path,
-        rules_source: Path,
-        teams_dir: Path | None = None,
-        projects_dir: Path | None = None,
-    ) -> list[tuple[str, Path, Path]]:
-        """Return symlink checks for Claude Code provider."""
-        checks = [
-            (f"{self._home_dir}/agents/", agents_dir, self._home_dir / "agents"),
-            (f"{self._home_dir}/commands/", commands_dir, self._home_dir / "commands"),
-            (
-                f"{self._home_dir}/{self.rules_file_name}",
-                rules_source,
-                self._home_dir / self.rules_file_name,
-            ),
-        ]
-        hivemind_subdir = self._home_dir / "hivemind"
-        if teams_dir:
-            checks.append(
-                (f"{hivemind_subdir}/teams/", teams_dir, hivemind_subdir / "teams")
-            )
-        if projects_dir:
-            checks.append(
-                (f"{hivemind_subdir}/projects/", projects_dir, hivemind_subdir / "projects")
-            )
-        return checks
 
 
 # --- OpenCode Provider ---
@@ -656,6 +648,51 @@ class OpenCodeProvider(Provider):
     def format_agent_md(self, name: str, description: str, body: str) -> str:
         """Format agent.md with OpenCode YAML frontmatter."""
         return self._format_agent_md_internal(f"expert-{name}", description, body)
+
+    def format_lead_md(self, agent_name: str, description: str, body: str) -> str:
+        """Format lead agent with edit tool added for self-management."""
+        model = self._settings.get("model", "anthropic/claude-sonnet-4-20250514")
+        temperature = self._settings.get("temperature", 0.1)
+        tools = dict(self._settings.get("tools", {}))
+        if "edit" not in tools:
+            tools["edit"] = True
+
+        lines = [
+            "---",
+            f"description: {description}",
+            "mode: subagent",
+            f"model: {model}",
+            f"temperature: {temperature}",
+        ]
+
+        if tools:
+            lines.append("tools:")
+            for tool_name, enabled in sorted(tools.items()):
+                lines.append(f"  {tool_name}: {str(enabled).lower()}")
+
+        # Permissions for hivemind paths including teams/projects context
+        home = self._config.get("home_dir", "~/.config/opencode")
+        hivemind_subdir = f"{home}/hivemind"
+        lines.append("permission:")
+        lines.append("  external_directory:")
+        lines.append(f'    "~/.cache/hivemind/**": allow')
+        lines.append(f'    "{self.experts_base_path}/**": allow')
+        lines.append(f'    "{hivemind_subdir}/teams/**": allow')
+        lines.append(f'    "{hivemind_subdir}/projects/**": allow')
+
+        lines.append("---")
+        lines.append("")
+        lines.append("")
+
+        frontmatter = "\n".join(lines)
+
+        transformed = replace_expert_paths(
+            body,
+            old_base="{EXPERTS_DIR}",
+            new_base=self.experts_base_path,
+        )
+
+        return frontmatter + transformed
 
     def format_librarian_md(self, body: str) -> str:
         """Format librarian.md with OpenCode YAML frontmatter."""
@@ -747,59 +784,70 @@ class OpenCodeProvider(Provider):
             else:
                 expert_link.unlink()
 
-    def init_dirs(
-        self,
-        *,
-        agents_dir: Path,
-        commands_dir: Path,
-        rules_source: Path,
-        teams_dir: Path | None = None,
-        projects_dir: Path | None = None,
-        permissions: dict | None = None,
+    def _post_init_dirs(
+        self, *, permissions: dict | None = None
     ) -> list[tuple[str, str]]:
-        """Initialize ~/.config/opencode directory structure."""
+        """Generate/merge global permissions into opencode.json."""
+        import json as _json
+
         results: list[tuple[str, str]] = []
 
-        self._home_dir.mkdir(parents=True, exist_ok=True)
+        home = self._config.get("home_dir", "~/.config/opencode")
+        experts_path = f"{home}/experts"
+        hivemind_path = f"{home}/hivemind"
 
-        # agents/ symlink
-        agents_link = self._home_dir / "agents"
-        results.append(_setup_symlink(agents_dir, agents_link, "agents/"))
+        hivemind_permissions = {
+            "external_directory": {
+                "~/.cache/hivemind/**": "allow",
+                f"{experts_path}/**": "allow",
+                f"{hivemind_path}/teams/**": "allow",
+                f"{hivemind_path}/projects/**": "allow",
+            },
+            "read": {
+                "~/.cache/hivemind/**": "allow",
+                f"{experts_path}/**": "allow",
+                f"{hivemind_path}/teams/**": "allow",
+                f"{hivemind_path}/projects/**": "allow",
+            },
+            "grep": {
+                "~/.cache/hivemind/**": "allow",
+                f"{experts_path}/**": "allow",
+            },
+            "glob": {
+                "~/.cache/hivemind/**": "allow",
+                f"{experts_path}/**": "allow",
+            },
+            "edit": {
+                f"{hivemind_path}/teams/**": "allow",
+                f"{hivemind_path}/projects/**": "allow",
+            },
+        }
 
-        # commands/ symlink
-        commands_link = self._home_dir / "commands"
-        results.append(_setup_symlink(commands_dir, commands_link, "commands/"))
+        config_path = self._home_dir / "opencode.json"
+        existing: dict = {}
+        if config_path.exists() and not config_path.is_symlink():
+            try:
+                existing = _json.loads(config_path.read_text())
+            except (ValueError, OSError):
+                pass
 
-        # Rules file symlink (e.g. AGENTS.md)
-        rules_link = self._home_dir / self.rules_file_name
-        results.append(_setup_symlink(rules_source, rules_link, self.rules_file_name))
+        # Deep-merge hivemind permissions into existing permission key
+        existing_perms = existing.get("permission", {})
+        for tool_key, patterns in hivemind_permissions.items():
+            if tool_key not in existing_perms:
+                existing_perms[tool_key] = {}
+            if isinstance(existing_perms[tool_key], dict):
+                existing_perms[tool_key].update(patterns)
+            else:
+                # Was a flat string like "allow" — convert to pattern dict
+                existing_perms[tool_key] = {"*": existing_perms[tool_key]}
+                existing_perms[tool_key].update(patterns)
 
-        # experts/ directory
-        experts_dir = self._home_dir / "experts"
-        experts_dir.mkdir(parents=True, exist_ok=True)
-        results.append(("experts/", "directory ready"))
+        existing["permission"] = existing_perms
+        config_path.write_text(_json.dumps(existing, indent=2) + "\n")
+        results.append(("opencode.json", "permissions merged for hivemind paths"))
 
         return results
-
-    def status_symlinks(
-        self,
-        *,
-        agents_dir: Path,
-        commands_dir: Path,
-        rules_source: Path,
-        teams_dir: Path | None = None,
-        projects_dir: Path | None = None,
-    ) -> list[tuple[str, Path, Path]]:
-        """Return symlink checks for OpenCode provider."""
-        return [
-            (f"{self._home_dir}/agents/", agents_dir, self._home_dir / "agents"),
-            (f"{self._home_dir}/commands/", commands_dir, self._home_dir / "commands"),
-            (
-                f"{self._home_dir}/{self.rules_file_name}",
-                rules_source,
-                self._home_dir / self.rules_file_name,
-            ),
-        ]
 
 
 # --- Provider Registry ---

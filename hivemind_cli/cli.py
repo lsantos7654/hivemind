@@ -56,6 +56,7 @@ from hivemind_cli.core import (
     update_expert,
     enable_expert as core_enable_expert,
     disable_expert as core_disable_expert,
+    delete_expert as core_delete_expert_fn,
     redeploy_all_agents,
     switch_provider,
     create_team as core_create_team,
@@ -633,6 +634,33 @@ def disable(
         )
     else:
         console.print(f"[warning]✓[/warning] Disabled: {name}")
+
+
+@app.command()
+def delete(
+    name: str = typer.Argument(
+        help="Expert name to delete", autocompletion=_complete_expert
+    ),
+    force: bool = typer.Option(
+        False, "--force", "-f", help="Skip confirmation prompt"
+    ),
+) -> None:
+    """Delete an expert entirely (removes all local data and agent files)."""
+    if not force:
+        confirm = typer.confirm(
+            f"Delete expert '{name}'? This removes all local data, agent files, and cached repos."
+        )
+        if not confirm:
+            console.print("[dim]Cancelled.[/dim]")
+            raise typer.Exit(0)
+
+    result = core_delete_expert_fn(name)
+
+    if not result["success"]:
+        console.print(f"[error]Error: {result['error']}[/error]")
+        raise typer.Exit(1)
+
+    console.print(f"[error]✗[/error] Deleted: {name}")
 
 
 @app.command()
