@@ -98,21 +98,34 @@ ONLY USE `builtin` FOR `cd` only and no other command
 
 Project lead: `project-lead-hivemind`
 
-### Working on hivemind features
+### Orchestration model
 
-Before implementing any feature in this project:
+**The orchestrator (main Claude) IS the team lead for all teams.** Subagents cannot spawn other subagents (depth limited to 1), so the orchestrator must spawn experts directly.
 
-1. **Consult `project-lead-hivemind`** for scope, architecture decisions, and cross-team coordination.
-2. **Delegate TUI work to `team-lead-tui-dev`** for all Textual/Python TUI implementation.
+**Workflow:**
 
-The project lead maintains the architecture map and tracks objectives. The tui-dev team lead owns all implementation in `hivemind_cli/tui/`.
+1. **Consult `project-lead-hivemind`** (background) to scope objectives and track progress
+2. **Read team context** (`teams/<team>/general.md`) for domain patterns and constraints
+3. **Spawn experts directly** in parallel background agents for implementation work
+4. **Consult team leads** (foreground, quick) only when you need domain-specific architectural advice
+5. **After work completes**, consult project-lead (background) to record outcomes in context.md
 
-### Agent execution rules
+**Agent execution rules:**
 
-- **Always run lead agents in the background** (`run_in_background: true`) — project-lead, team-lead, and expert agents should never block the conversation.
-- **Maximize parallel agents** — launch as many independent agents as possible in a single message.
-- The orchestrator stays conversational with the user while leads and experts work asynchronously.
-- Only use foreground agents when the result is required before responding to the user.
+- **Always run project-lead and expert agents in the background** (`run_in_background: true`)
+- **Maximize parallel agents** — launch as many independent agents as possible in a single message
+- **Team leads are advisors**, not delegators — consult them for guidance, don't ask them to spawn experts
+- The orchestrator stays conversational with the user while agents work asynchronously
+- Only use foreground agents when the result is required before responding
+
+**Metadata update timing:**
+
+| When | Who | What |
+|------|-----|------|
+| Before work | Project lead (bg) | context.md — scope, decisions |
+| Before work | Orchestrator reads | teams/\<team\>/general.md — domain context |
+| After work | Project lead (bg) | context.md — outcomes, todos checked off |
+| After lessons | Orchestrator writes | teams/\<team\>/general.md — new patterns |
 
 ### Current objectives (priority order)
 
