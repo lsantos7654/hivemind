@@ -42,17 +42,6 @@ class ExpertRow:
 
 
 @dataclass
-class OperationProgress:
-    """Tracks progress of an individual operation."""
-
-    expert_name: str
-    status: OperationStatus
-    phase: str
-    progress: int  # 0-100
-    error_msg: str | None = None
-
-
-@dataclass
 class VersionInfo:
     """Information about a git version (tag or commit)."""
 

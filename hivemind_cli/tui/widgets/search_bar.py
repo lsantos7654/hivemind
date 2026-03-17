@@ -27,7 +27,7 @@ class SearchBar(Horizontal):
         self.remove_class("visible")
 
     @property
-    def is_visible(self) -> bool:
+    def is_shown(self) -> bool:
         """Check if the overlay is currently shown."""
         return self.has_class("visible")
 

@@ -8,7 +8,6 @@ from typing import TYPE_CHECKING
 from hivemind_cli.core import (
     UpdatePhase,
     ProgressInfo,
-    update_expert,
     enable_expert,
     disable_expert,
     delete_expert,
@@ -143,6 +142,29 @@ def delete_expert_sync(screen, expert_name: str):
         screen.notify(f"Failed to delete {expert_name}: {result['error']}", severity="error")
 
     screen.app.refresh_experts()
+
+
+async def add_expert_async(pane, url: str):
+    """Async wrapper for adding an expert via subprocess."""
+    import sys
+
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            sys.executable, "-m", "hivemind_cli.cli", "add", url,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, stderr = await proc.communicate()
+
+        if proc.returncode == 0:
+            pane.notify("Expert added successfully", severity="information")
+        else:
+            error = stderr.decode().strip() or "Unknown error"
+            pane.notify(f"Failed to add expert: {error}", severity="error")
+    except Exception as e:
+        pane.notify(f"Error: {e}", severity="error")
+    finally:
+        pane.app.refresh_experts()
 
 
 async def switch_version_async_tui(

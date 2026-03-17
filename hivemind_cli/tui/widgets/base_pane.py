@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import time
 
-from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.widget import Widget
 from textual.widgets import Static
@@ -110,7 +109,7 @@ class BasePane(Widget, can_focus=False):
         table = self._get_table()
 
         # Stage 1: If search overlay is visible, hide it
-        if search_input.has_focus or search_bar.is_visible:
+        if search_input.has_focus or search_bar.is_shown:
             search_bar.hide()
             table.focus()
             return

@@ -40,6 +40,7 @@ class ConfirmationModal(ModalScreen[bool]):
         self._bindings.bind("y", "confirm", description="Yes")
         self._bindings.bind("n", "dismiss_modal", description="No")
         self._bindings.bind("escape", "dismiss_modal", description="Cancel")
+        self._bindings.bind("ctrl+o", "dismiss_modal", description="Back")
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         self.dismiss(event.button.id == "confirm")

@@ -26,6 +26,7 @@ class ExpertsPane(BasePane):
         Binding("e", "enable", "Enable", show=True),
         Binding("d", "disable", "Disable", show=True),
         Binding("D", "delete", "Delete", show=True),
+        Binding("a", "add_expert", "Add", show=True),
         Binding("u", "update", "Update", show=True),
         Binding("U", "update_all", "Update All", show=False),
         Binding("x", "cancel_update", "Cancel", show=False),
@@ -173,6 +174,20 @@ class ExpertsPane(BasePane):
             ),
             _do_delete,
         )
+
+    def action_add_expert(self) -> None:
+        from hivemind_cli.tui.widgets.add_expert_modal import AddExpertModal
+
+        async def _handle_result(url: str | None) -> None:
+            if url:
+                self.notify(f"Adding expert from {url}...", severity="information")
+                self.run_worker(self._add_expert_wrapper(url), exclusive=False)
+
+        self.app.push_screen(AddExpertModal(), _handle_result)
+
+    async def _add_expert_wrapper(self, url: str):
+        from hivemind_cli.tui.operations import add_expert_async
+        await add_expert_async(self, url)
 
     def action_update(self) -> None:
         table = self.query_one("#expert-table", ExpertTable)

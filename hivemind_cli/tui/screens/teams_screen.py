@@ -16,6 +16,7 @@ class TeamsPane(BasePane):
     BINDINGS = [
         *BasePane.BINDINGS,
         Binding("enter", "show_details", "Details", show=True),
+        Binding("n", "create_team", "New", show=True),
         Binding("D", "delete_team", "Delete", show=True),
     ]
 
@@ -69,10 +70,33 @@ class TeamsPane(BasePane):
             elif not self._teams:
                 table.add_row("[dim]No teams[/dim]", "", "")
 
+    def action_create_team(self) -> None:
+        from hivemind_cli.tui.widgets.create_team_modal import CreateTeamModal
+
+        async def _handle_result(data: dict | None) -> None:
+            if data:
+                from hivemind_cli.core import create_team
+
+                result = create_team(
+                    data["name"],
+                    data["description"],
+                    data["experts"],
+                    skip_analysis=True,
+                )
+                if result["success"]:
+                    self.notify(f"Created team: {data['name']}", severity="information")
+                    self.load_teams()
+                else:
+                    self.notify(f"Failed: {result.get('error', 'Unknown')}", severity="error")
+
+        self.app.push_screen(CreateTeamModal(), _handle_result)
+
     def action_show_details(self) -> None:
         name = self.get_current_name()
-        if name:
-            self.notify(f"Team: {name}", severity="information")
+        if name and name in self._teams:
+            from hivemind_cli.tui.screens.team_detail_screen import TeamDetailScreen
+
+            self.app.push_screen(TeamDetailScreen(name, self._teams[name]))
 
     def action_delete_team(self) -> None:
         from hivemind_cli.tui.widgets import ConfirmationModal

@@ -21,7 +21,6 @@ class VersionDetailScreen(BaseScreen):
     BINDINGS = [
         *BaseScreen.BINDINGS,
         Binding("slash", "focus_search", "Search", show=True),
-        Binding("ctrl+c", "handle_escape", "Back/Clear", show=False),
         Binding("q", "quit_or_back", "Back", show=True),
         Binding("enter", "switch_version", "Switch", show=True),
         Binding("i", "input_commit", "Input Commit", show=True),
@@ -137,7 +136,7 @@ class VersionDetailScreen(BaseScreen):
         search_input = self.query_one("#search-input")
 
         # Hide search overlay
-        if search_input.has_focus or search_bar.is_visible:
+        if search_input.has_focus or search_bar.is_shown:
             search_bar.hide()
             self.query_one("#version-table", VimDataTable).focus()
             return

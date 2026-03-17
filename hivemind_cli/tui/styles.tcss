@@ -99,12 +99,12 @@ DataTable > .datatable--even-row {
     background: $surface;
 }
 
-/* Confirmation modal */
-ConfirmationModal {
+/* Modals */
+ModalScreen {
     align: center middle;
 }
 
-ConfirmationModal .modal-body {
+.modal-body {
     background: $background;
     padding: 1 2;
     width: 50;
@@ -115,19 +115,29 @@ ConfirmationModal .modal-body {
     border-title-style: bold;
 }
 
-ConfirmationModal .modal-message {
+.modal-message {
     margin: 1 0;
     text-align: center;
 }
 
-ConfirmationModal .modal-buttons {
+.modal-buttons {
     align: center middle;
     height: 3;
     margin-top: 1;
 }
 
-ConfirmationModal .modal-buttons Button {
+.modal-buttons Button {
     margin: 0 1;
+}
+
+.modal-body Input {
+    margin: 0 0 1 0;
+}
+
+.modal-body .error-label {
+    color: $error;
+    display: none;
+    height: 1;
 }
 
 /* Version detail screen */

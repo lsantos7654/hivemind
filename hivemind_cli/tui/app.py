@@ -34,6 +34,8 @@ class HivemindApp(App):
     BINDINGS = [
         Binding("h", "previous_tab", "Prev Tab", show=False),
         Binding("l", "next_tab", "Next Tab", show=False),
+        Binding("tab", "next_tab", "Next Tab", show=False, priority=True),
+        Binding("shift+tab", "previous_tab", "Prev Tab", show=False, priority=True),
         Binding("1", "show_tab('pane-experts')", "Experts", show=False),
         Binding("2", "show_tab('pane-teams')", "Teams", show=False),
         Binding("3", "show_tab('pane-projects')", "Projects", show=False),
@@ -139,8 +141,10 @@ class HivemindApp(App):
         self.query_one("#tab-indicator", Static).update("  │  ".join(parts))
 
     def check_action(self, action: str, parameters: tuple) -> bool | None:
-        """Block h/l tab switching when search input has focus."""
-        if action in ("next_tab", "previous_tab"):
+        """Block tab switching when a screen is pushed or search input has focus."""
+        if action in ("next_tab", "previous_tab", "show_tab"):
+            if len(self.screen_stack) > 1:
+                return False
             try:
                 for sb in self.query(SearchBar):
                     if sb.query_one("#search-input").has_focus:

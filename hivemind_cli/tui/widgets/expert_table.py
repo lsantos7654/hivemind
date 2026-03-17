@@ -12,7 +12,7 @@ from hivemind_cli.tui.widgets.vim_data_table import VimDataTable
 class ExpertTable(VimDataTable):
     """DataTable for displaying experts with multi-select support."""
 
-    selected_rows: reactive[set[str]] = reactive(set(), init=False)
+    selected_rows: reactive[set[str]] = reactive(set, init=False)
     filter_query: reactive[str] = reactive("", init=False)
     filter_status: reactive[str | None] = reactive(None, init=False)
 

@@ -5,7 +5,16 @@ from __future__ import annotations
 import time
 
 from textual.binding import Binding
-from textual.widgets import DataTable
+from textual.widgets import DataTable, SelectionList
+
+
+class VimSelectionList(SelectionList):
+    """SelectionList with vim-style j/k navigation."""
+
+    BINDINGS = [
+        Binding("j", "cursor_down", "Down", show=False),
+        Binding("k", "cursor_up", "Up", show=False),
+    ]
 
 
 class VimDataTable(DataTable):
@@ -40,12 +49,16 @@ class VimDataTable(DataTable):
 
     def action_half_page_down(self) -> None:
         """Move down half a visible page (ctrl-d)."""
+        if self.row_count == 0:
+            return
         half = max(1, self.size.height // 2)
         new_row = min(self.cursor_row + half, self.row_count - 1)
         self.move_cursor(row=new_row)
 
     def action_half_page_up(self) -> None:
         """Move up half a visible page (ctrl-u)."""
+        if self.row_count == 0:
+            return
         half = max(1, self.size.height // 2)
         new_row = max(0, self.cursor_row - half)
         self.move_cursor(row=new_row)

@@ -16,6 +16,7 @@ class ProjectsPane(BasePane):
     BINDINGS = [
         *BasePane.BINDINGS,
         Binding("enter", "show_details", "Details", show=True),
+        Binding("n", "create_project", "New", show=True),
         Binding("s", "set_active", "Set Active", show=True),
         Binding("D", "delete_project", "Delete", show=True),
     ]
@@ -71,10 +72,37 @@ class ProjectsPane(BasePane):
             elif not self._projects:
                 table.add_row("[dim]No projects[/dim]", "", "", "")
 
+    def action_create_project(self) -> None:
+        from hivemind_cli.tui.widgets.create_project_modal import CreateProjectModal
+
+        async def _handle_result(data: dict | None) -> None:
+            if data:
+                from hivemind_cli.core import create_project
+
+                result = create_project(
+                    data["name"],
+                    data["description"],
+                    data["teams"],
+                    repos=[],
+                    objectives=[],
+                    skip_analysis=True,
+                )
+                if result["success"]:
+                    self.notify(f"Created project: {data['name']}", severity="information")
+                    self.load_projects()
+                else:
+                    self.notify(f"Failed: {result.get('error', 'Unknown')}", severity="error")
+
+        self.app.push_screen(CreateProjectModal(), _handle_result)
+
     def action_show_details(self) -> None:
         name = self.get_current_name()
-        if name:
-            self.notify(f"Project: {name}", severity="information")
+        if name and name in self._projects:
+            from hivemind_cli.tui.screens.project_detail_screen import ProjectDetailScreen
+
+            self.app.push_screen(
+                ProjectDetailScreen(name, self._projects[name], name == self._active_project)
+            )
 
     def action_set_active(self) -> None:
         from hivemind_cli.core import set_active_project
