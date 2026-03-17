@@ -1,7 +1,6 @@
 {
   "providers": {
     "claude": {
-      "enabled": true,
       "engine": "claude -p --verbose --dangerously-skip-permissions",
       "home_dir": "~/.claude",
       "settings": {
@@ -23,7 +22,6 @@
       }
     },
     "opencode": {
-      "enabled": false,
       "engine": "opencode run",
       "home_dir": "~/.config/opencode",
       "settings": {

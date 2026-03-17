@@ -95,7 +95,6 @@ def replace_expert_paths(body: str, *, old_base: str, new_base: str) -> str:
     return body.replace(old_base, new_base)
 
 
-
 # --- Provider Base Class ---
 
 
@@ -140,11 +139,6 @@ class Provider(ABC):
     def settings(self) -> dict:
         """Provider-specific settings (model, tools, temperature, etc.)."""
         return self._settings
-
-    @property
-    def enabled(self) -> bool:
-        """Whether this provider is enabled."""
-        return self._config.get("enabled", False)
 
     @property
     def permissions(self) -> dict | None:
@@ -296,9 +290,7 @@ class Provider(ABC):
         self._home_dir.mkdir(parents=True, exist_ok=True)
 
         # Core symlinks: agents/, commands/, rules file
-        results.append(
-            _setup_symlink(agents_dir, self._home_dir / "agents", "agents/")
-        )
+        results.append(_setup_symlink(agents_dir, self._home_dir / "agents", "agents/"))
         results.append(
             _setup_symlink(commands_dir, self._home_dir / "commands", "commands/")
         )
@@ -322,9 +314,7 @@ class Provider(ABC):
 
         if teams_dir:
             results.append(
-                _setup_symlink(
-                    teams_dir, hivemind_subdir / "teams", "hivemind/teams/"
-                )
+                _setup_symlink(teams_dir, hivemind_subdir / "teams", "hivemind/teams/")
             )
 
         if projects_dir:
@@ -730,6 +720,16 @@ class OpenCodeProvider(Provider):
         model = self._settings.get("model", "github-copilot/claude-sonnet-4")
         cmd.extend(["--model", model])
 
+        # Set working directory to common parent of extra dirs so opencode
+        # can access both the cloned repo and expert staging directory
+        if extra_dirs:
+            import os
+
+            resolved = [str(d.resolve()) for d in extra_dirs if d.exists()]
+            if resolved:
+                common = os.path.commonpath(resolved)
+                cmd.extend(["--dir", common])
+
         return cmd
 
     def build_query_command(self) -> list[str]:
@@ -878,7 +878,6 @@ def get_provider(name: str, provider_config: dict) -> Provider:
             f"Unknown provider '{name}'. Available: {', '.join(PROVIDER_CLASSES)}"
         )
     return cls(provider_config)
-
 
 
 # --- Internal Helpers ---

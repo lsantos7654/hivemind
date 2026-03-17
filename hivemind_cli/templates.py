@@ -28,18 +28,20 @@ Expert agents are managed centrally via the `hivemind` CLI. Source of truth: `~/
 ## Managing Experts
 
 ```
-hivemind list              # See all experts and their status
-hivemind add <url>         # Register, clone, AI-analyze, and create expert agent
-hivemind enable <name>     # Enable an expert (clones repo + deploys agent)
-hivemind disable <name>    # Disable an expert (removes agent)
-hivemind update [name]     # Fetch latest commits and re-analyze with AI
-hivemind query <question>  # Ask the librarian which expert(s) can help
-hivemind status            # Full dashboard
-hivemind init              # Set up provider directory structure and enable agents
-hivemind redeploy          # Regenerate all agent files for the active provider
-hivemind provider list     # List available providers and their status
-hivemind provider switch   # Switch active provider
-hivemind provider show     # Show detailed provider configuration
+hivemind expert list              # See all experts and their status
+hivemind expert show <name>       # Show expert details
+hivemind expert add <url>         # Register, clone, AI-analyze, and create expert agent
+hivemind expert enable <name>     # Enable an expert (clones repo + deploys agent)
+hivemind expert disable <name>    # Disable an expert (removes agent)
+hivemind expert delete <name>     # Delete an expert entirely
+hivemind expert update [name]     # Fetch latest commits and re-analyze with AI
+hivemind expert query <question>  # Ask the librarian which expert(s) can help
+hivemind status                   # Full dashboard
+hivemind init                     # Set up provider directory structure and enable agents
+hivemind redeploy                 # Regenerate all agent files for the active provider
+hivemind provider list            # List available providers and their status
+hivemind provider switch          # Switch active provider
+hivemind provider show            # Show detailed provider configuration
 ```
 
 ## Managing Teams
@@ -351,7 +353,9 @@ def project_lead_prompt(
     Returns:
         Complete prompt for AI generation
     """
-    template = project_lead_template(project_name, description, teams, repos, objectives)
+    template = project_lead_template(
+        project_name, description, teams, repos, objectives
+    )
 
     return f"""\
 You are creating a project lead agent definition for the "{project_name}" project.

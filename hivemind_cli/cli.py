@@ -117,6 +117,7 @@ def main(ctx: typer.Context) -> None:
         app_instance = HivemindApp()
         app_instance.run()
 
+
 # Paths imported from core module
 
 
@@ -285,14 +286,6 @@ def init() -> None:
 
     _update_librarian_cli()
 
-    # Mark provider as enabled in hivemind.json
-    if not provider.enabled:
-        hivemind = _load_hivemind()
-        hivemind.setdefault("providers", {}).setdefault(provider.name, {})["enabled"] = (
-            True
-        )
-        _save_hivemind(hivemind)
-
     # Remove stale agent files
     for f in AGENTS_DIR.glob("expert-*.md"):
         expert_name = f.name.removeprefix("expert-").removesuffix(".md")
@@ -449,14 +442,14 @@ def show_expert(
         ref_name = repos_dict[name].get("ref_name", "")
 
     # Teams containing this expert
-    expert_teams = [
-        t for t, td in teams.items() if name in td.get("experts", [])
-    ]
+    expert_teams = [t for t, td in teams.items() if name in td.get("experts", [])]
 
     # Agent file status
     agent_file = AGENTS_DIR / f"expert-{name}.md"
     agent_status = (
-        "[success]deployed[/success]" if agent_file.exists() else "[dim]not deployed[/dim]"
+        "[success]deployed[/success]"
+        if agent_file.exists()
+        else "[dim]not deployed[/dim]"
     )
 
     lines: list[str] = []
@@ -730,9 +723,7 @@ def delete(
     name: str = typer.Argument(
         help="Expert name to delete", autocompletion=_complete_expert
     ),
-    force: bool = typer.Option(
-        False, "--force", "-f", help="Skip confirmation prompt"
-    ),
+    force: bool = typer.Option(False, "--force", "-f", help="Skip confirmation prompt"),
 ) -> None:
     """Delete an expert entirely (removes all local data and agent files)."""
     if not force:
@@ -772,7 +763,9 @@ def update(
     if name:
         names = [name]
         if name not in repos:
-            console.print(f"[error]Error: '{name}' not found in hivemind.json repos[/error]")
+            console.print(
+                f"[error]Error: '{name}' not found in hivemind.json repos[/error]"
+            )
             raise typer.Exit(1)
     else:
         names = config["enabled"]
@@ -878,14 +871,13 @@ def provider_list() -> None:
     for name in sorted(PROVIDER_CLASSES):
         prov_config = providers.get(name, {})
         is_active = name == active
-        enabled = prov_config.get("enabled", False)
 
         if is_active:
             status_str = "[success]active[/success]"
-        elif enabled:
-            status_str = "[info]enabled[/info]"
+        elif prov_config:
+            status_str = "[info]configured[/info]"
         else:
-            status_str = "[dim]disabled[/dim]"
+            status_str = "[dim]not configured[/dim]"
 
         engine = prov_config.get("engine", "[dim]not configured[/dim]")
         home_dir = prov_config.get("home_dir", "[dim]not configured[/dim]")
@@ -943,9 +935,6 @@ def provider_show(
     lines.append(
         f"Active: {'[success]yes[/success]' if is_active else '[dim]no[/dim]'}"
     )
-    lines.append(
-        f"Enabled: {'[success]yes[/success]' if prov_config.get('enabled') else '[dim]no[/dim]'}"
-    )
     lines.append(f"Engine: {prov_config.get('engine', 'not set')}")
     lines.append(f"Home directory: {prov_config.get('home_dir', 'not set')}")
 
@@ -992,9 +981,7 @@ def team_list() -> None:
         )
         return
 
-    table = Table(
-        title="Teams", show_header=True, header_style="bold", box=box.ROUNDED
-    )
+    table = Table(title="Teams", show_header=True, header_style="bold", box=box.ROUNDED)
     table.add_column("Name", style="bold")
     table.add_column("Description")
     table.add_column("Roster")
@@ -1013,7 +1000,9 @@ def team_list() -> None:
 @team_app.command(name="create")
 def team_create(
     name: str = typer.Argument(help="Team name"),
-    description: str = typer.Option(..., "--description", "-d", help="Team description"),
+    description: str = typer.Option(
+        ..., "--description", "-d", help="Team description"
+    ),
     experts: str = typer.Option(
         ..., "--experts", "-e", help="Comma-separated expert names"
     ),
@@ -1059,9 +1048,7 @@ def team_create(
 
 @team_app.command(name="show")
 def team_show(
-    name: str = typer.Argument(
-        help="Team name", autocompletion=_complete_team
-    ),
+    name: str = typer.Argument(help="Team name", autocompletion=_complete_team),
 ) -> None:
     """Show team details and roster."""
     teams = _load_teams()
@@ -1099,9 +1086,7 @@ def team_show(
 
     # Projects using this team
     projects = _load_projects()
-    team_projects = [
-        p for p, d in projects.items() if name in d.get("teams", [])
-    ]
+    team_projects = [p for p, d in projects.items() if name in d.get("teams", [])]
     if team_projects:
         lines.append(f"\n[heading]Projects:[/heading]")
         for p in team_projects:
@@ -1113,35 +1098,27 @@ def team_show(
 @team_app.command(name="add-expert")
 def team_add_expert(
     team: str = typer.Argument(help="Team name", autocompletion=_complete_team),
-    expert: str = typer.Argument(
-        help="Expert name", autocompletion=_complete_expert
-    ),
+    expert: str = typer.Argument(help="Expert name", autocompletion=_complete_expert),
 ) -> None:
     """Add an expert to a team's roster."""
     result = core_add_expert_to_team(team, expert)
     if not result["success"]:
         console.print(f"[error]Error: {result['error']}[/error]")
         raise typer.Exit(1)
-    console.print(
-        f"[success]✓[/success] Added {expert} to team {team}"
-    )
+    console.print(f"[success]✓[/success] Added {expert} to team {team}")
 
 
 @team_app.command(name="remove-expert")
 def team_remove_expert(
     team: str = typer.Argument(help="Team name", autocompletion=_complete_team),
-    expert: str = typer.Argument(
-        help="Expert name", autocompletion=_complete_expert
-    ),
+    expert: str = typer.Argument(help="Expert name", autocompletion=_complete_expert),
 ) -> None:
     """Remove an expert from a team's roster."""
     result = core_remove_expert_from_team(team, expert)
     if not result["success"]:
         console.print(f"[error]Error: {result['error']}[/error]")
         raise typer.Exit(1)
-    console.print(
-        f"[success]✓[/success] Removed {expert} from team {team}"
-    )
+    console.print(f"[success]✓[/success] Removed {expert} from team {team}")
 
 
 @team_app.command(name="delete")
@@ -1197,7 +1174,9 @@ def project_list() -> None:
     table.add_column("Teams")
 
     for name, data in sorted(projects.items()):
-        status = "[success]active[/success]" if name == active else "[dim]inactive[/dim]"
+        status = (
+            "[success]active[/success]" if name == active else "[dim]inactive[/dim]"
+        )
         teams_str = ", ".join(data.get("teams", [])) or "[dim]none[/dim]"
         table.add_row(name, status, data.get("description", ""), teams_str)
 
@@ -1259,9 +1238,7 @@ def project_create(
 
 @project_app.command(name="show")
 def project_show(
-    name: str = typer.Argument(
-        help="Project name", autocompletion=_complete_project
-    ),
+    name: str = typer.Argument(help="Project name", autocompletion=_complete_project),
 ) -> None:
     """Show project details."""
     projects = _load_projects()
@@ -1322,7 +1299,9 @@ def project_set(
     console.print(
         f"[success]✓[/success] Active project set to [heading]{name}[/heading]"
     )
-    console.print("[info]HIVEMIND.md updated — all new sessions will see this project.[/info]")
+    console.print(
+        "[info]HIVEMIND.md updated — all new sessions will see this project.[/info]"
+    )
 
 
 @project_app.command(name="clear")
@@ -1345,9 +1324,7 @@ def project_add_team(
     if not result["success"]:
         console.print(f"[error]Error: {result['error']}[/error]")
         raise typer.Exit(1)
-    console.print(
-        f"[success]✓[/success] Added team {team} to project {project}"
-    )
+    console.print(f"[success]✓[/success] Added team {team} to project {project}")
 
 
 @project_app.command(name="remove-team")
@@ -1362,9 +1339,7 @@ def project_remove_team(
     if not result["success"]:
         console.print(f"[error]Error: {result['error']}[/error]")
         raise typer.Exit(1)
-    console.print(
-        f"[success]✓[/success] Removed team {team} from project {project}"
-    )
+    console.print(f"[success]✓[/success] Removed team {team} from project {project}")
 
 
 @project_app.command(name="add-repo")
@@ -1372,25 +1347,19 @@ def project_add_repo(
     project: str = typer.Argument(
         help="Project name", autocompletion=_complete_project
     ),
-    repo: str = typer.Argument(
-        help="Repo name", autocompletion=_complete_expert
-    ),
+    repo: str = typer.Argument(help="Repo name", autocompletion=_complete_expert),
 ) -> None:
     """Associate a repo with a project."""
     result = core_add_repo_to_project(project, repo)
     if not result["success"]:
         console.print(f"[error]Error: {result['error']}[/error]")
         raise typer.Exit(1)
-    console.print(
-        f"[success]✓[/success] Added repo {repo} to project {project}"
-    )
+    console.print(f"[success]✓[/success] Added repo {repo} to project {project}")
 
 
 @project_app.command(name="delete")
 def project_delete(
-    name: str = typer.Argument(
-        help="Project name", autocompletion=_complete_project
-    ),
+    name: str = typer.Argument(help="Project name", autocompletion=_complete_project),
 ) -> None:
     """Delete a project."""
     if not typer.confirm(f"Delete project '{name}' and its lead agent?"):
@@ -1444,7 +1413,6 @@ def redeploy() -> None:
 
     total = len(deployed) + len(teams_deployed) + len(projects_deployed)
     console.print(f"\n[bold success]Redeployed {total} agent(s).[/bold success]")
-
 
 
 @expert_app.command()
@@ -1669,7 +1637,9 @@ def status() -> None:
     overview_lines.append(f"Teams: {len(teams)}")
     overview_lines.append(f"Projects: {len(projects)}")
 
-    console.print(Panel("\n".join(overview_lines), title="Hivemind", border_style="blue"))
+    console.print(
+        Panel("\n".join(overview_lines), title="Hivemind", border_style="blue")
+    )
 
     # --- Experts table (enabled + disabled only, skip unlisted) ---
     repos = _load_repos()
@@ -1677,8 +1647,7 @@ def status() -> None:
     private_expert_set = set(config.get("private", []))
 
     listed_experts = [
-        name for name in _expert_names()
-        if name in enabled or name in disabled
+        name for name in _expert_names() if name in enabled or name in disabled
     ]
 
     if listed_experts:
@@ -1819,9 +1788,7 @@ def delete_compat(
     name: str = typer.Argument(
         help="Expert name to delete", autocompletion=_complete_expert
     ),
-    force: bool = typer.Option(
-        False, "--force", "-f", help="Skip confirmation prompt"
-    ),
+    force: bool = typer.Option(False, "--force", "-f", help="Skip confirmation prompt"),
 ) -> None:
     """Deprecated: use 'hivemind expert delete'."""
     console.print(_DEPRECATION.format(cmd="delete"))

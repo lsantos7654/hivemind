@@ -93,116 +93,34 @@ to regenerate deployed agent files with the correct provider frontmatter.
 
 ## Shell Navigation
 
-ONLY the `cd` command needs the `builtin` prefix: `builtin cd /some/path`
-NEVER use `builtin` with any other command. `builtin uv`, `builtin python`, `builtin git` are ALL WRONG.
-Correct: `uv run ...`, `python ...`, `git ...` — no `builtin` prefix.
-The ONLY reason `cd` needs `builtin` is because zoxide overrides it.
+ALWAYS USE `builtin cd` INSTEAD OF `cd` TO AVOID ZOXIDE INTERFERENCE!!!!
+ONLY USE `builtin` FOR `cd` only and no other command
 
-## Orchestration models
+## Orchestration model
 
-Two orchestration modes are available. Choose based on task complexity:
-
-| | Subagents (default) | Agent Teams |
-|---|---|---|
-| **How** | Agent tool spawns focused workers | Full Claude Code sessions with shared task list |
-| **Communication** | Results return to orchestrator only | Teammates message each other directly |
-| **Best for** | Focused tasks, quick lookups, isolated work | Cross-domain work, parallel exploration, debate |
-| **Cost** | Lower — results summarized back | Higher — each teammate is a separate session |
-
-### Subagent model
-
-**The orchestrator (main Claude) IS the team lead for all teams.** Subagents cannot spawn other subagents (depth limited to 1), so the orchestrator must spawn experts directly.
+**The primary agent coordinates all work.** Subagents are spawned via the `task` tool and report results back. Subagents cannot communicate with each other — all coordination flows through the primary agent.
 
 **Workflow:**
 
-1. **Consult `project-lead-{project}`** (background) to scope objectives and track progress
+1. **Consult `project-lead-{project}`** via task to scope objectives and track progress
 2. **Read team context** (`teams/<team>/general.md`) for domain patterns and constraints
-3. **Spawn experts directly** in parallel background agents for implementation work
-4. **Consult team leads** (foreground, quick) only when you need domain-specific architectural advice
-5. **After work completes**, consult project-lead (background) to record outcomes in context.md
+3. **Spawn experts via `task`** for implementation work — launch multiple tasks in parallel when independent
+4. **Consult team leads** via task only when you need domain-specific architectural advice
+5. **After work completes**, consult project-lead via task to record outcomes in context.md
 
-**Execution rules:**
+**Agent execution rules:**
 
-- **Always run project-lead and expert agents in the background** (`run_in_background: true`)
-- **Maximize parallel agents** — launch as many independent agents as possible in a single message
+- **Use the `task` tool** to spawn any hivemind agent (experts, team leads, project leads)
+- **Maximize parallel tasks** — spawn independent tasks simultaneously for throughput
 - **Team leads are advisors**, not delegators — consult them for guidance, don't ask them to spawn experts
-- The orchestrator stays conversational with the user while agents work asynchronously
-- Only use foreground agents when the result is required before responding
+- The primary agent stays conversational with the user while tasks run
+- All agents are discovered automatically from the `agents/` directory
 
-### Agent teams model
-
-Use agent teams when the task benefits from **lateral communication** between workers — not just results flowing back to you.
-
-**When to create an agent team:**
-
-- Work spans multiple hivemind teams or expert domains
-- Debugging with competing hypotheses — teammates investigate and challenge each other's theories
-- Large features where teammates each own a separate module and need to coordinate interfaces
-- Research or review where parallel perspectives add real value (security + performance + testing)
-
-**How to structure teammates using hivemind context:**
-
-Every teammate auto-loads `CLAUDE.md`, which includes all hivemind instructions and active project context. Teammates automatically know about available experts, teams, and project objectives.
-
-- **Assign roles that map to hivemind experts or teams** — e.g., "You own the TUI layer (see the tui-dev team context)" or "You're the Nix infrastructure specialist"
-- **Include domain context in spawn prompts** — reference `teams/<team>/general.md` for team-specific patterns and constraints
-- **Break project objectives into tasks** — use the shared task list so teammates self-claim work
-- **Teammates can spawn hivemind experts as subagents** within their own session for domain-specific knowledge
-
-**Coordination patterns:**
-
-- Consult project-lead (as subagent) to scope work → create agent team → assign tasks from objectives
-- Teammates discuss interfaces and dependencies directly via messages
-- Require plan approval for risky work — teammates plan in read-only mode until the lead approves
-- Team leads can be consulted (as subagents within a teammate) for cross-cutting architectural guidance
-- After all tasks complete, consult project-lead to record outcomes
-
-**Team sizing:** Start with 3-5 teammates. Aim for 5-6 tasks per teammate. Three focused teammates outperform five scattered ones.
-
-**Avoid file conflicts:** Break work so each teammate owns different files. Two teammates editing the same file leads to overwrites.
-
-### Metadata update timing
+**Metadata update timing:**
 
 | When | Who | What |
 |------|-----|------|
-| Before work | Project lead (bg/task) | context.md — scope, decisions |
-| Before work | Orchestrator reads | teams/\<team\>/general.md — domain context |
-| After work | Project lead (bg/task) | context.md — outcomes, todos checked off |
-| After lessons | Orchestrator writes | teams/\<team\>/general.md — new patterns |
-
-## Active Project: hivemind
-
-Project lead: `project-lead-hivemind`
-
-### Current objectives (priority order)
-
-1. **Modern TUI redesign** — remove Header widget, add floating search overlay (`/` opens, `Esc` closes), clean minimal CSS
-2. **Full CRUD for experts** — `hivemind expert delete <name>` CLI command + delete action in TUI
-3. **Teams/Projects TUI views** — teams screen (list, create, add/remove experts, delete), projects screen (list, set active, create, delete), top-level tab navigation between Experts | Teams | Projects
-4. **CLI reorganization** — group expert commands under `hivemind expert` subcommand for consistent command hierarchy (complete)
-
-### Architecture summary
-
-TUI entry point: `hivemind_cli/tui/app.py` → `HivemindApp`
-Screens inherit `BaseScreen` (`screens/base_screen.py`)
-All tables inherit `VimDataTable` (`widgets/vim_data_table.py`) for consistent vim navigation
-Active screens: `MainScreen` (expert list), `VersionDetailScreen` (commit history)
-
-### Key implementation notes
-
-**Objective 1 — TUI redesign:**
-- Remove `Header(show_clock=True)` from `MainScreen.compose()` (`screens/main_screen.py` line 43)
-- `SearchBar` widget (`widgets/search_bar.py`) becomes a floating CSS-layer overlay (hidden by default, shown on `/`, hidden on `Esc`)
-- `BaseScreen.action_focus_search` already handles the `/` binding; add show/hide toggling to it
-- Clean up `styles.tcss` to remove any header-related spacing
-
-**Objective 2 — Delete expert:**
-- `core.py` needs `delete_expert(name: str) -> dict` — removes from config, deletes agent file, deletes expert dir, removes from hivemind.json repos, regenerates librarian
-- CLI: add `hivemind expert delete <name>` command (with confirmation prompt)
-- TUI: add `D` binding to `MainScreen` with a confirmation `ModalScreen` before calling `delete_expert_sync(screen, name)` in `operations.py`
-
-**Objective 3 — Teams/Projects TUI:**
-- New screens: `screens/teams_screen.py` (TeamsScreen), `screens/projects_screen.py` (ProjectsScreen)
-- Both inherit `BaseScreen`, both use `VimDataTable` for their lists
-- `HivemindApp` gains `TabbedContent` wrapping all three screens; tab switching via 1/2/3 keys
-- `app.py` needs `load_teams()` and `load_projects()` analogous to `load_experts()`
+| Before work | Project lead (task) | context.md — scope, decisions |
+| Before work | Primary agent reads | teams/\<team\>/general.md — domain context |
+| After work | Project lead (task) | context.md — outcomes, todos checked off |
+| After lessons | Primary agent writes | teams/\<team\>/general.md — new patterns |

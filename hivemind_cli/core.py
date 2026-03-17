@@ -565,8 +565,7 @@ def _update_librarian() -> None:
         desc = team_data.get("description", "")
         roster = ", ".join(team_data.get("experts", []))
         team_entries.append(
-            f"### team-lead-{team_name}\n"
-            f"Team lead for {desc}. Roster: {roster}."
+            f"### team-lead-{team_name}\nTeam lead for {desc}. Roster: {roster}."
         )
     team_catalog = (
         "\n\n---\n\n".join(team_entries) if team_entries else "No teams configured."
@@ -1166,9 +1165,12 @@ async def update_expert_async_internal(
             head_link.unlink()
         head_link.symlink_to(new_commit)
 
-        # Update repos.json
+        # Update repos.json or private-repos.json
         repos[name]["commit"] = new_commit
-        _save_repos(repos)
+        if is_private:
+            _save_private_repos(repos)
+        else:
+            _save_repos(repos)
 
         return {
             "success": True,
@@ -2309,9 +2311,7 @@ def _deploy_project_lead(project_name: str) -> bool:
     body = strip_frontmatter(lead_md.read_text())
     description = extract_description(body)
 
-    content = provider.format_lead_md(
-        f"project-lead-{project_name}", description, body
-    )
+    content = provider.format_lead_md(f"project-lead-{project_name}", description, body)
 
     AGENTS_DIR.mkdir(parents=True, exist_ok=True)
     agent_file = AGENTS_DIR / f"project-lead-{project_name}.md"
@@ -2388,7 +2388,9 @@ def create_project(
     project_dir.mkdir(parents=True, exist_ok=True)
 
     # Pre-populate context files
-    teams_str = "\n".join(f"- **{t}**" for t in teams_list) if teams_list else "- (none)"
+    teams_str = (
+        "\n".join(f"- **{t}**" for t in teams_list) if teams_list else "- (none)"
+    )
     repos_str = "\n".join(f"- {r}" for r in repos) if repos else "- (none)"
     obj_str = "\n".join(f"- {o}" for o in objectives) if objectives else "- (none)"
 
