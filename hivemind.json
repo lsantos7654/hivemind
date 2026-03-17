@@ -235,6 +235,16 @@
       "remote": "https://github.com/darrenburns/posting",
       "commit": "e56508f71b01353220902cf8bba96aad1188b07f",
       "ref_name": ""
+    },
+    "typer": {
+      "remote": "https://github.com/fastapi/typer",
+      "commit": "f47d887d4c3ecc7f3b8e7cc92ce8cc1d56914e3f",
+      "ref_name": ""
+    },
+    "click": {
+      "remote": "https://github.com/pallets/click",
+      "commit": "cdab890e57a30a9f437b88ce9652f7bfce980c1f",
+      "ref_name": ""
     }
   }
 }
