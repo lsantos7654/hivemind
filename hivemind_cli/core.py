@@ -75,6 +75,7 @@ COMMANDS_DIR = HIVEMIND_ROOT / "commands"
 PRIVATE_EXPERTS_DIR = HIVEMIND_ROOT / "private-experts"
 TEAMS_DIR = HIVEMIND_ROOT / "teams"
 PROJECTS_DIR = HIVEMIND_ROOT / "projects"
+PROVIDERS_DIR = HIVEMIND_ROOT / "providers"
 HIVEMIND_MD = HIVEMIND_ROOT / "HIVEMIND.md"
 
 
@@ -1905,15 +1906,24 @@ def redeploy_all_agents() -> dict:
 
 
 def _regenerate_hivemind_md() -> None:
-    """Regenerate HIVEMIND.md from base template + active project appendix."""
+    """Regenerate HIVEMIND.md from base template + provider instructions + active project."""
     from hivemind_cli.templates import hivemind_md_base
 
     content = hivemind_md_base()
 
-    # Check for active project
     config = _load_config()
-    active_project = config.get("active_project")
 
+    # Append provider-specific orchestration instructions
+    active_provider = config.get("active_provider")
+    if active_provider:
+        provider_instructions = PROVIDERS_DIR / active_provider / "instructions.md"
+        if provider_instructions.exists():
+            instructions_content = provider_instructions.read_text().strip()
+            if instructions_content:
+                content += "\n" + instructions_content + "\n"
+
+    # Append active project content
+    active_project = config.get("active_project")
     if active_project:
         projects = _load_projects()
         if active_project in projects:
@@ -2606,6 +2616,9 @@ def switch_provider(provider_name: str) -> dict:
 
     config["active_provider"] = provider_name
     _save_config(config)
+
+    # Regenerate HIVEMIND.md with new provider's instructions
+    _regenerate_hivemind_md()
 
     return {
         "success": True,
