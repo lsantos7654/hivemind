@@ -254,6 +254,11 @@
       "remote": "https://github.com/kdcokenny/ocx.git",
       "commit": "fa5dc7db1a44ac05a66529a1334649a4f00c3e3b",
       "ref_name": ""
+    },
+    "vitest": {
+      "remote": "https://github.com/vitest-dev/vitest.git",
+      "commit": "75e8216f332823cb44f24d4ef7f6c39c0f1a2c4b",
+      "ref_name": ""
     }
   }
 }
