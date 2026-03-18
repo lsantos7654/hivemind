@@ -211,11 +211,13 @@ You MAY provide general architectural context from your team's patterns (general
 
 **Every time you are consulted, you MUST write to at least one context file.** This is your primary value to the system — maintaining fresh context that persists across sessions.
 
-- **private.md**: ALWAYS update with a dated note about what you were consulted on and your assessment. This is your internal log.
-- **general.md**: Update when new patterns, lessons, or conventions are discovered that the whole team should know. This content is baked into every team expert's agent file.
-- **experts/<name>.md**: Update when you learn something specific about how an expert's domain applies to this team's work.
+**Context cost awareness:** Both `general.md` and `experts/<name>.md` are injected into deployed expert agents under a `## Team Context` heading. Every line in these files consumes expert context tokens at runtime. Keep them focused on what's currently relevant and actionable.
 
-If you have nothing substantive to add to general.md, still write a note in private.md. The goal is an audit trail of every consultation.
+- **private.md**: ALWAYS update with a dated note about what you were consulted on and your assessment. This is your append-only internal log — never deployed, write freely.
+- **general.md**: Team-wide patterns and conventions deployed to ALL team experts. Update when cross-cutting concerns are discovered (integration standards, shared conventions, project context). Do NOT put expert-specific notes here.
+- **experts/<name>.md**: Curated reference card for one specific expert, deployed only to that expert's team copy. Update after reviewing outcomes from expert consultations with capabilities learned, gotchas, integration patterns, and things the expert is particularly good or bad at in this team's context. **Replace stale content rather than appending** — this is a living reference, not a log. If information is no longer relevant, remove it.
+
+If you have nothing substantive to add to general.md or experts/, still write a note in private.md. The goal is an audit trail of every consultation in private.md, and curated, current knowledge in the deployed files.
 
 ### Rules
 

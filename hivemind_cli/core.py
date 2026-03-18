@@ -2143,6 +2143,12 @@ def create_team(
     team_dir.mkdir(parents=True, exist_ok=True)
     (team_dir / "experts").mkdir(exist_ok=True)
 
+    # Seed stub expert context files
+    for expert_name in experts:
+        expert_context = team_dir / "experts" / f"{expert_name}.md"
+        if not expert_context.exists():
+            expert_context.write_text(f"# {expert_name}\n")
+
     # Pre-populate context files
     expert_list = "\n".join(f"- **{e}**" for e in experts)
     (team_dir / "general.md").write_text(
@@ -2366,6 +2372,12 @@ def add_expert_to_team(team_name: str, expert_name: str) -> dict:
     experts.append(expert_name)
     team["experts"] = experts
     _save_teams(teams)
+
+    # Seed stub expert context file if it doesn't exist
+    expert_context = TEAMS_DIR / team_name / "experts" / f"{expert_name}.md"
+    if not expert_context.exists():
+        expert_context.parent.mkdir(parents=True, exist_ok=True)
+        expert_context.write_text(f"# {expert_name}\n")
 
     # Deploy team-scoped copy
     _deploy_team_expert(team_name, expert_name)

@@ -244,6 +244,16 @@
       "remote": "https://github.com/pallets/click",
       "commit": "cdab890e57a30a9f437b88ce9652f7bfce980c1f",
       "ref_name": ""
+    },
+    "opencode-background-agents": {
+      "remote": "https://github.com/kdcokenny/opencode-background-agents.git",
+      "commit": "6f7bf4bf1a8248ecacf7c8dd35d1bdf86b9b1e9c",
+      "ref_name": ""
+    },
+    "ocx": {
+      "remote": "https://github.com/kdcokenny/ocx.git",
+      "commit": "fa5dc7db1a44ac05a66529a1334649a4f00c3e3b",
+      "ref_name": ""
     }
   }
 }
