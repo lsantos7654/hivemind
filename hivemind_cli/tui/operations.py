@@ -102,46 +102,64 @@ async def update_expert_async(screen: ExpertsPane, expert_name: str, token: Canc
         screen.app.refresh_experts()
 
 
-def enable_expert_sync(screen: ExpertsPane, expert_name: str):
-    """Synchronous wrapper for enabling an expert in the TUI."""
-    result = enable_expert(expert_name)
-
-    if result["success"]:
-        if result["already_enabled"]:
-            screen.notify(f"{expert_name}: already enabled", severity="information")
+async def enable_expert_async_op(pane, expert_name: str) -> None:
+    """Async wrapper for enabling an expert in the TUI."""
+    try:
+        pane.set_expert_operation_status(expert_name, OperationStatus.IN_PROGRESS)
+        pane.set_expert_status_message(expert_name, "enabling...")
+        result = await asyncio.to_thread(enable_expert, expert_name)
+        if result["success"]:
+            if result["already_enabled"]:
+                pane.notify(f"{expert_name}: already enabled", severity="information")
+            else:
+                pane.notify(f"Enabled: {expert_name}", severity="information")
         else:
-            screen.notify(f"Enabled: {expert_name}", severity="information")
-    else:
-        screen.notify(f"Failed to enable {expert_name}: {result['error']}", severity="error")
+            pane.notify(f"Failed to enable {expert_name}: {result['error']}", severity="error")
+    except Exception as e:
+        pane.notify(f"Error enabling {expert_name}: {e}", severity="error")
+    finally:
+        pane.set_expert_operation_status(expert_name, None)
+        pane.set_expert_status_message(expert_name, None)
+        pane.app.refresh_experts()
 
-    screen.app.refresh_experts()
 
-
-def disable_expert_sync(screen: ExpertsPane, expert_name: str):
-    """Synchronous wrapper for disabling an expert in the TUI."""
-    result = disable_expert(expert_name)
-
-    if result["success"]:
-        if result["already_disabled"]:
-            screen.notify(f"{expert_name}: already disabled", severity="information")
+async def disable_expert_async_op(pane, expert_name: str) -> None:
+    """Async wrapper for disabling an expert in the TUI."""
+    try:
+        pane.set_expert_operation_status(expert_name, OperationStatus.IN_PROGRESS)
+        pane.set_expert_status_message(expert_name, "disabling...")
+        result = await asyncio.to_thread(disable_expert, expert_name)
+        if result["success"]:
+            if result["already_disabled"]:
+                pane.notify(f"{expert_name}: already disabled", severity="information")
+            else:
+                pane.notify(f"Disabled: {expert_name}", severity="warning")
         else:
-            screen.notify(f"Disabled: {expert_name}", severity="warning")
-    else:
-        screen.notify(f"Failed to disable {expert_name}: {result['error']}", severity="error")
+            pane.notify(f"Failed to disable {expert_name}: {result['error']}", severity="error")
+    except Exception as e:
+        pane.notify(f"Error disabling {expert_name}: {e}", severity="error")
+    finally:
+        pane.set_expert_operation_status(expert_name, None)
+        pane.set_expert_status_message(expert_name, None)
+        pane.app.refresh_experts()
 
-    screen.app.refresh_experts()
 
-
-def delete_expert_sync(screen, expert_name: str):
-    """Synchronous wrapper for deleting an expert in the TUI."""
-    result = delete_expert(expert_name)
-
-    if result["success"]:
-        screen.notify(f"Deleted: {expert_name}", severity="information")
-    else:
-        screen.notify(f"Failed to delete {expert_name}: {result['error']}", severity="error")
-
-    screen.app.refresh_experts()
+async def delete_expert_async_op(pane, expert_name: str) -> None:
+    """Async wrapper for deleting an expert in the TUI."""
+    try:
+        pane.set_expert_operation_status(expert_name, OperationStatus.IN_PROGRESS)
+        pane.set_expert_status_message(expert_name, "deleting...")
+        result = await asyncio.to_thread(delete_expert, expert_name)
+        if result["success"]:
+            pane.notify(f"Deleted: {expert_name}", severity="information")
+        else:
+            pane.notify(f"Failed to delete {expert_name}: {result['error']}", severity="error")
+    except Exception as e:
+        pane.notify(f"Error deleting {expert_name}: {e}", severity="error")
+    finally:
+        pane.set_expert_operation_status(expert_name, None)
+        pane.set_expert_status_message(expert_name, None)
+        pane.app.refresh_experts()
 
 
 async def add_expert_async(pane, url: str):

@@ -11,8 +11,8 @@ from hivemind_cli.tui.widgets.base_pane import BasePane
 from hivemind_cli.tui.widgets import ExpertTable, SearchBar
 from hivemind_cli.tui.operations import (
     update_expert_async,
-    enable_expert_sync,
-    disable_expert_sync,
+    enable_expert_async_op,
+    disable_expert_async_op,
 )
 
 
@@ -129,7 +129,8 @@ class ExpertsPane(BasePane):
 
         if selected:
             for name in selected:
-                enable_expert_sync(self, name)
+                self.notify(f"Enabling {name}...", severity="information")
+                self.run_worker(enable_expert_async_op(self, name), exit_on_error=False)
             table.clear_selection()
 
     def action_disable(self) -> None:
@@ -143,7 +144,8 @@ class ExpertsPane(BasePane):
 
         if selected:
             for name in selected:
-                disable_expert_sync(self, name)
+                self.notify(f"Disabling {name}...", severity="information")
+                self.run_worker(disable_expert_async_op(self, name), exit_on_error=False)
             table.clear_selection()
 
     def action_delete(self) -> None:
@@ -163,8 +165,9 @@ class ExpertsPane(BasePane):
 
         async def _do_delete(confirmed: bool) -> None:
             if confirmed:
-                from hivemind_cli.tui.operations import delete_expert_sync
-                delete_expert_sync(self, name)
+                from hivemind_cli.tui.operations import delete_expert_async_op
+                self.notify(f"Deleting {name}...", severity="warning")
+                self.run_worker(delete_expert_async_op(self, name), exit_on_error=False)
 
         self.app.push_screen(
             ConfirmationModal(
