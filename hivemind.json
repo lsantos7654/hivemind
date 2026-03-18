@@ -259,6 +259,11 @@
       "remote": "https://github.com/vitest-dev/vitest.git",
       "commit": "75e8216f332823cb44f24d4ef7f6c39c0f1a2c4b",
       "ref_name": ""
+    },
+    "uv": {
+      "remote": "https://github.com/astral-sh/uv.git",
+      "commit": "49ad87eb7d4062ceb4e49c8aeae5b3901e0b171f",
+      "ref_name": ""
     }
   }
 }
