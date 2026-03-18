@@ -16,6 +16,7 @@ class TeamDetailScreen(BaseScreen):
     BINDINGS = [
         *BaseScreen.BINDINGS,
         Binding("a", "add_expert", "Add Expert", show=True),
+        Binding("e", "edit_team", "Edit", show=True),
         Binding("D", "remove_expert", "Remove", show=True),
         Binding("q", "quit_or_back", "Back", show=True),
     ]
@@ -68,6 +69,32 @@ class TeamDetailScreen(BaseScreen):
             self.team_data = teams[self.team_name]
         self._populate_table()
         self.query_one("#team-header", Static).update(self._format_header())
+
+    def action_edit_team(self) -> None:
+        from hivemind_cli.tui.widgets.edit_team_modal import EditTeamModal
+        from hivemind_cli.core import update_team
+
+        current_desc = self.team_data.get("description", "")
+
+        async def _handle_result(data: dict | None) -> None:
+            if not data:
+                return
+            new_name = data["name"] if data["name"] != self.team_name else None
+            new_desc = data["description"] if data["description"] != current_desc else None
+
+            if new_name is None and new_desc is None:
+                return
+
+            result = update_team(self.team_name, new_name=new_name, description=new_desc)
+            if result["success"]:
+                if new_name:
+                    self.team_name = new_name
+                self.notify(f"Updated team: {self.team_name}", severity="information")
+                self._reload()
+            else:
+                self.notify(f"Failed: {result.get('error', 'Unknown')}", severity="error")
+
+        self.app.push_screen(EditTeamModal(self.team_name, current_desc), _handle_result)
 
     def action_add_expert(self) -> None:
         from hivemind_cli.tui.widgets.confirmation_modal import ConfirmationModal

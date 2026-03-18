@@ -2231,6 +2231,109 @@ def delete_team(name: str) -> dict:
     return {"success": True}
 
 
+def update_team(
+    name: str,
+    new_name: str | None = None,
+    description: str | None = None,
+) -> dict:
+    """Update a team's name and/or description.
+
+    Returns:
+        dict with keys: success (bool), error (str | None)
+    """
+    teams = _load_teams()
+    if name not in teams:
+        return {"success": False, "error": f"Team '{name}' does not exist"}
+
+    team = teams[name]
+
+    if description is not None:
+        team["description"] = description
+
+    if new_name and new_name != name:
+        if new_name in teams:
+            return {"success": False, "error": f"Team '{new_name}' already exists"}
+
+        # Rename key in teams dict
+        teams[new_name] = teams.pop(name)
+
+        # Rename team directory
+        old_dir = TEAMS_DIR / name
+        new_dir = TEAMS_DIR / new_name
+        if old_dir.exists():
+            old_dir.rename(new_dir)
+
+        # Update project references
+        projects = _load_projects()
+        for proj in projects.values():
+            proj_teams = proj.get("teams", [])
+            if name in proj_teams:
+                proj_teams[proj_teams.index(name)] = new_name
+        _save_projects(projects)
+
+        # Redeploy team agents under new name
+        _undeploy_team_lead(name)
+        _undeploy_team_experts(name)
+        _save_teams(teams)
+        _deploy_team_lead(new_name)
+        _deploy_team_experts(new_name)
+        _update_librarian()
+    else:
+        _save_teams(teams)
+        _deploy_team_lead(name)
+        _update_librarian()
+
+    return {"success": True}
+
+
+def update_project(
+    name: str,
+    new_name: str | None = None,
+    description: str | None = None,
+) -> dict:
+    """Update a project's name and/or description.
+
+    Returns:
+        dict with keys: success (bool), error (str | None)
+    """
+    projects = _load_projects()
+    if name not in projects:
+        return {"success": False, "error": f"Project '{name}' does not exist"}
+
+    project = projects[name]
+
+    if description is not None:
+        project["description"] = description
+
+    if new_name and new_name != name:
+        if new_name in projects:
+            return {"success": False, "error": f"Project '{new_name}' already exists"}
+
+        # Rename key in projects dict
+        projects[new_name] = projects.pop(name)
+
+        # Rename project directory
+        old_dir = PROJECTS_DIR / name
+        new_dir = PROJECTS_DIR / new_name
+        if old_dir.exists():
+            old_dir.rename(new_dir)
+
+        # Update active_project if it matches
+        config = _load_config()
+        if config.get("active_project") == name:
+            config["active_project"] = new_name
+            _save_config(config)
+
+        _save_projects(projects)
+        _update_librarian()
+        _regenerate_hivemind_md()
+    else:
+        _save_projects(projects)
+        _update_librarian()
+
+    return {"success": True}
+
+
 def add_expert_to_team(team_name: str, expert_name: str) -> dict:
     """Add an expert to a team's roster.
 

@@ -16,6 +16,7 @@ class ProjectDetailScreen(BaseScreen):
     BINDINGS = [
         *BaseScreen.BINDINGS,
         Binding("a", "add_team", "Add Team", show=True),
+        Binding("e", "edit_project", "Edit", show=True),
         Binding("D", "remove_team", "Remove", show=True),
         Binding("s", "set_active", "Set Active", show=True),
         Binding("q", "quit_or_back", "Back", show=True),
@@ -74,6 +75,32 @@ class ProjectDetailScreen(BaseScreen):
         self.is_active = active == self.project_name
         self._populate_table()
         self.query_one("#project-header", Static).update(self._format_header())
+
+    def action_edit_project(self) -> None:
+        from hivemind_cli.tui.widgets.edit_project_modal import EditProjectModal
+        from hivemind_cli.core import update_project
+
+        current_desc = self.project_data.get("description", "")
+
+        async def _handle_result(data: dict | None) -> None:
+            if not data:
+                return
+            new_name = data["name"] if data["name"] != self.project_name else None
+            new_desc = data["description"] if data["description"] != current_desc else None
+
+            if new_name is None and new_desc is None:
+                return
+
+            result = update_project(self.project_name, new_name=new_name, description=new_desc)
+            if result["success"]:
+                if new_name:
+                    self.project_name = new_name
+                self.notify(f"Updated project: {self.project_name}", severity="information")
+                self._reload()
+            else:
+                self.notify(f"Failed: {result.get('error', 'Unknown')}", severity="error")
+
+        self.app.push_screen(EditProjectModal(self.project_name, current_desc), _handle_result)
 
     def action_add_team(self) -> None:
         from hivemind_cli.core import add_team_to_project

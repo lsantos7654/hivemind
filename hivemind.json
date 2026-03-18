@@ -12,6 +12,7 @@
         ]
       },
       "permissions": {
+        "defaultMode": "acceptEdits",
         "allow": [
           "Read(~/.cache/hivemind/**)",
           "Grep(~/.cache/hivemind/**)",

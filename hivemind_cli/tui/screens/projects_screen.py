@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from textual.app import ComposeResult
 from textual.binding import Binding
-from textual.widgets import Static
+from textual.widgets import DataTable, Static
 
 from hivemind_cli.tui.widgets.base_pane import BasePane
 from hivemind_cli.tui.widgets import VimDataTable, SearchBar
@@ -15,7 +15,6 @@ class ProjectsPane(BasePane):
 
     BINDINGS = [
         *BasePane.BINDINGS,
-        Binding("enter", "show_details", "Details", show=True),
         Binding("n", "create_project", "New", show=True),
         Binding("s", "set_active", "Set Active", show=True),
         Binding("D", "delete_project", "Delete", show=True),
@@ -103,6 +102,10 @@ class ProjectsPane(BasePane):
             self.app.push_screen(
                 ProjectDetailScreen(name, self._projects[name], name == self._active_project)
             )
+
+    def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
+        if event.data_table.id == "projects-table":
+            self.action_show_details()
 
     def action_set_active(self) -> None:
         from hivemind_cli.core import set_active_project

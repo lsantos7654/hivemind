@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from textual.app import ComposeResult
 from textual.binding import Binding
-from textual.widgets import Static
+from textual.widgets import DataTable, Static
 
 from hivemind_cli.tui.widgets.base_pane import BasePane
 from hivemind_cli.tui.widgets import VimDataTable, SearchBar
@@ -15,7 +15,6 @@ class TeamsPane(BasePane):
 
     BINDINGS = [
         *BasePane.BINDINGS,
-        Binding("enter", "show_details", "Details", show=True),
         Binding("n", "create_team", "New", show=True),
         Binding("D", "delete_team", "Delete", show=True),
     ]
@@ -97,6 +96,10 @@ class TeamsPane(BasePane):
             from hivemind_cli.tui.screens.team_detail_screen import TeamDetailScreen
 
             self.app.push_screen(TeamDetailScreen(name, self._teams[name]))
+
+    def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
+        if event.data_table.id == "teams-table":
+            self.action_show_details()
 
     def action_delete_team(self) -> None:
         from hivemind_cli.tui.widgets import ConfirmationModal
