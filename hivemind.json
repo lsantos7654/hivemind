@@ -264,6 +264,11 @@
       "remote": "https://github.com/astral-sh/uv.git",
       "commit": "49ad87eb7d4062ceb4e49c8aeae5b3901e0b171f",
       "ref_name": ""
+    },
+    "neovim": {
+      "remote": "https://github.com/neovim/neovim.git",
+      "commit": "1b2b715389c5a34f323001f34e4b78b86c9cff8d",
+      "ref_name": ""
     }
   }
 }
