@@ -269,6 +269,11 @@
       "remote": "https://github.com/neovim/neovim.git",
       "commit": "1b2b715389c5a34f323001f34e4b78b86c9cff8d",
       "ref_name": ""
+    },
+    "pi-mono": {
+      "remote": "https://github.com/badlogic/pi-mono.git",
+      "commit": "970774ec3ce2756f45b892ec1208bc73ba6f612d",
+      "ref_name": ""
     }
   }
 }
