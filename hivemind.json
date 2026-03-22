@@ -309,6 +309,11 @@
       "remote": "https://github.com/anthropics/anthropic-sdk-typescript",
       "commit": "0f8153b3a15212dc2e71eaa042ea28ee6efca348",
       "ref_name": ""
+    },
+    "node": {
+      "remote": "https://github.com/nodejs/node",
+      "commit": "5d900bed775e29d94336206eee1139e6f2de55c3",
+      "ref_name": ""
     }
   }
 }
