@@ -274,6 +274,41 @@
       "remote": "https://github.com/badlogic/pi-mono.git",
       "commit": "970774ec3ce2756f45b892ec1208bc73ba6f612d",
       "ref_name": ""
+    },
+    "marked": {
+      "remote": "https://github.com/markedjs/marked",
+      "commit": "3993763cf535d941e7252852a6342919e0e6ca96",
+      "ref_name": ""
+    },
+    "jsdiff": {
+      "remote": "https://github.com/kpdecker/jsdiff",
+      "commit": "af7393ac3404565dc8da655c2e7aeeed28c01ff7",
+      "ref_name": ""
+    },
+    "chalk": {
+      "remote": "https://github.com/chalk/chalk",
+      "commit": "aa06bb5ac3f14df9fda8cfb54274dfc165ddfdef",
+      "ref_name": ""
+    },
+    "biome": {
+      "remote": "https://github.com/biomejs/biome",
+      "commit": "81b530c51264a17ce8bac73f2d932bcbf1c03c6c",
+      "ref_name": ""
+    },
+    "openai-node": {
+      "remote": "https://github.com/openai/openai-node",
+      "commit": "d95158f4b01ab416a168fcbc863952bf02558baf",
+      "ref_name": ""
+    },
+    "typebox": {
+      "remote": "https://github.com/sinclairzx81/typebox",
+      "commit": "4f0832d2f0e4b94c84d9f94c1318a5fc9d5015f4",
+      "ref_name": ""
+    },
+    "anthropic-sdk-typescript": {
+      "remote": "https://github.com/anthropics/anthropic-sdk-typescript",
+      "commit": "0f8153b3a15212dc2e71eaa042ea28ee6efca348",
+      "ref_name": ""
     }
   }
 }
