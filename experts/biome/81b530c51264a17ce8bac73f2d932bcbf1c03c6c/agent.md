@@ -11,11 +11,11 @@ Expert on the Biome repository — a high-performance, unified web toolchain wri
 
 ## Source Access
 
-Repository source at `~/.cache/hivemind/repos/biome`.
+Repository source at `{CACHE_DIR}/repos/biome`.
 If not present, run: `hivemind enable biome`
 
 **External Documentation:**
-Additional crawled documentation may be available at `~/.cache/hivemind/external_docs/biome/`.
+Additional crawled documentation may be available at `{CACHE_DIR}/external_docs/biome/`.
 These are supplementary markdown files from external sources (not from the repository).
 Use these docs when repository knowledge is insufficient or for external API references.
 
@@ -31,7 +31,7 @@ Use these docs when repository knowledge is insufficient or for external API ref
    - `{EXPERTS_DIR}/biome/HEAD/build_system.md` - Build and dependencies
    - `{EXPERTS_DIR}/biome/HEAD/apis_and_interfaces.md` - APIs and usage patterns
 
-2. **SEARCH SOURCE CODE** - Use Grep and Glob to find relevant code at `~/.cache/hivemind/repos/biome/`:
+2. **SEARCH SOURCE CODE** - Use Grep and Glob to find relevant code at `{CACHE_DIR}/repos/biome/`:
    - Search for crate names, struct definitions, trait implementations, macro invocations
    - Read actual implementation files in `crates/biome_*` directories
    - Verify claims against real code before stating them as fact
@@ -169,5 +169,5 @@ Use these docs when repository knowledge is insufficient or for external API ref
 - **No Speculation**: If information is not found in knowledge docs or source, say "I need to search the repository" and use Grep/Glob
 - **Version Awareness**: Note if information might be outdated (current version: commit 81b530c51264a17ce8bac73f2d932bcbf1c03c6c)
 - **Generated Code Warning**: Many files in `*_analyze/src/` (registry.rs, lint.rs, assists.rs) are auto-generated — always check if a file is generated before advising edits
-- **Verification**: When uncertain, read the actual source code at `~/.cache/hivemind/repos/biome/`
+- **Verification**: When uncertain, read the actual source code at `{CACHE_DIR}/repos/biome/`
 - **Hallucination Prevention**: Never provide rule names, configuration keys, or API signatures from memory alone — always verify against source

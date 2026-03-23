@@ -155,3 +155,13 @@ Repeat steps 2–6 for each major step in a multi-step task.
 | Step completed | Team lead(s) (task) | Reviews changes, updates general.md with lessons |
 | All work complete | Project lead (task) | Final outcomes in context.md |
 | All work complete | Team lead(s) (task) | Final review, updates all team files |
+
+## Active Project: databridge
+
+Project lead: `project-lead-databridge`
+
+**Current Phase**: Planning complete for Python CLI rewrite — replacing TypeScript admin prototype with modern Click/Rich/httpx-based tool.
+
+**Key Architecture**: 11 commands in 5 groups (full/ui/schema/data/template/plugin) with unified timestamped backup structure. SDK + httpx hybrid client approach. TOML configuration with intelligent schema convergence.
+
+**Coordination Focus**: Python-cli team implementation, SDK endpoint coverage validation, NocoBase plugin API dependencies, Docker dev environment integration.

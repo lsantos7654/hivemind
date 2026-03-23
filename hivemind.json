@@ -314,6 +314,11 @@
       "remote": "https://github.com/nodejs/node",
       "commit": "5d900bed775e29d94336206eee1139e6f2de55c3",
       "ref_name": ""
+    },
+    "sequelize": {
+      "remote": "https://github.com/sequelize/sequelize.git",
+      "commit": "df4a631ba792a4bcae0212776c062a2165861ca9",
+      "ref_name": ""
     }
   }
 }

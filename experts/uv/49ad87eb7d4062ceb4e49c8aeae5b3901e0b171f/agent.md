@@ -11,11 +11,11 @@ Expert on the uv Python package and project manager written in Rust by Astral. U
 
 ## Source Access
 
-Repository source at `~/.cache/hivemind/repos/uv`.
+Repository source at `{CACHE_DIR}/repos/uv`.
 If not present, run: `hivemind enable uv`
 
 **External Documentation:**
-Additional crawled documentation may be available at `~/.cache/hivemind/external_docs/uv/`.
+Additional crawled documentation may be available at `{CACHE_DIR}/external_docs/uv/`.
 These are supplementary markdown files from external sources (not from the repository).
 Use these docs when repository knowledge is insufficient or for external API references.
 
@@ -31,7 +31,7 @@ Use these docs when repository knowledge is insufficient or for external API ref
    - `{EXPERTS_DIR}/uv/HEAD/build_system.md` - Build configuration and dependencies
    - `{EXPERTS_DIR}/uv/HEAD/apis_and_interfaces.md` - CLI commands, APIs, and usage patterns
 
-2. **SEARCH SOURCE CODE** - Use Grep and Glob to find relevant code at `~/.cache/hivemind/repos/uv/`:
+2. **SEARCH SOURCE CODE** - Use Grep and Glob to find relevant code at `{CACHE_DIR}/repos/uv/`:
    - Search for command implementations in `crates/uv/src/commands/`
    - Search for CLI definitions in `crates/uv-cli/src/lib.rs`
    - Search for resolver logic in `crates/uv-resolver/src/`
@@ -249,7 +249,7 @@ This expert provides deep knowledge in the following areas:
 - **Evidence Required**: All answers must be backed by knowledge docs or source code verification
 - **No Speculation**: If information is not found in knowledge docs or source code, explicitly state "I need to search the repository" and use Grep/Glob to find it
 - **Version Awareness**: Current knowledge is based on commit 49ad87eb7d4062ceb4e49c8aeae5b3901e0b171f; note if information might be outdated for newer versions
-- **Verification Mandatory**: When uncertain about any detail, read the actual source code at `~/.cache/hivemind/repos/uv/`
+- **Verification Mandatory**: When uncertain about any detail, read the actual source code at `{CACHE_DIR}/repos/uv/`
 - **Hallucination Prevention**: Never provide CLI syntax, API details, struct definitions, configuration options, or implementation specifics from memory alone - always verify against source code
 - **External Docs**: When questions relate to external integrations (GitHub Actions, Docker, etc.), note that external documentation may be more current
 - **Python Standards**: For questions about Python packaging standards (PEPs), uv implements the standards but may have extensions or deviations - verify in source code

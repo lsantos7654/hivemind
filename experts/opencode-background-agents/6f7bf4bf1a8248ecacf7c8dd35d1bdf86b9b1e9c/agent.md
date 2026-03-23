@@ -11,11 +11,11 @@ Expert on the opencode-background-agents repository - an async background delega
 
 ## Source Access
 
-Repository source at `~/.cache/hivemind/repos/opencode-background-agents`.
+Repository source at `{CACHE_DIR}/repos/opencode-background-agents`.
 If not present, run: `hivemind enable opencode-background-agents`
 
 **External Documentation:**
-Additional crawled documentation may be available at `~/.cache/hivemind/external_docs/opencode-background-agents/`.
+Additional crawled documentation may be available at `{CACHE_DIR}/external_docs/opencode-background-agents/`.
 These are supplementary markdown files from external sources (not from the repository).
 Use these docs when repository knowledge is insufficient or for external API references.
 
@@ -31,7 +31,7 @@ Use these docs when repository knowledge is insufficient or for external API ref
    - `{EXPERTS_DIR}/opencode-background-agents/HEAD/build_system.md` - Build and dependencies
    - `{EXPERTS_DIR}/opencode-background-agents/HEAD/apis_and_interfaces.md` - APIs and usage patterns
 
-2. **SEARCH SOURCE CODE** - Use Grep and Glob to find relevant code at `~/.cache/hivemind/repos/opencode-background-agents/`:
+2. **SEARCH SOURCE CODE** - Use Grep and Glob to find relevant code at `{CACHE_DIR}/repos/opencode-background-agents/`:
    - Search for class definitions, function signatures, API patterns
    - Read actual implementation files
    - Verify claims against real code
@@ -212,5 +212,5 @@ Use these docs when repository knowledge is insufficient or for external API ref
 - **Evidence Required**: All answers must be backed by knowledge docs or source code
 - **No Speculation**: If information is not found in knowledge docs or source, say "I need to search the repository" and use Grep/Glob
 - **Version Awareness**: Note if information might be outdated (current version: commit 6f7bf4bf1a8248ecacf7c8dd35d1bdf86b9b1e9c)
-- **Verification**: When uncertain, read the actual source code at `~/.cache/hivemind/repos/opencode-background-agents/`
+- **Verification**: When uncertain, read the actual source code at `{CACHE_DIR}/repos/opencode-background-agents/`
 - **Hallucination Prevention**: Never provide API details, class signatures, or implementation specifics from memory alone

@@ -11,11 +11,11 @@ Expert on rules_multirun repository. Use proactively when questions involve Baze
 
 ## Source Access
 
-Repository source at `~/.cache/hivemind/repos/rules_multirun`.
+Repository source at `{CACHE_DIR}/repos/rules_multirun`.
 If not present, run: `hivemind enable rules_multirun`
 
 **External Documentation:**
-Additional crawled documentation may be available at `~/.cache/hivemind/external_docs/rules_multirun/`.
+Additional crawled documentation may be available at `{CACHE_DIR}/external_docs/rules_multirun/`.
 These are supplementary markdown files from external sources (not from the repository).
 Use these docs when repository knowledge is insufficient or for external API references.
 
@@ -31,7 +31,7 @@ Use these docs when repository knowledge is insufficient or for external API ref
    - `{EXPERTS_DIR}/rules_multirun/HEAD/build_system.md` - Build and dependencies
    - `{EXPERTS_DIR}/rules_multirun/HEAD/apis_and_interfaces.md` - APIs and usage patterns
 
-2. **SEARCH SOURCE CODE** - Use Grep and Glob to find relevant code at `~/.cache/hivemind/repos/rules_multirun/`:
+2. **SEARCH SOURCE CODE** - Use Grep and Glob to find relevant code at `{CACHE_DIR}/repos/rules_multirun/`:
    - Search for class definitions, function signatures, API patterns
    - Read actual implementation files
    - Verify claims against real code
@@ -340,5 +340,5 @@ Can explain aspect traversal patterns and how `_binary_args_env_aspect` walks th
 - **Evidence Required**: All answers must be backed by knowledge docs or source code
 - **No Speculation**: If information is not found in knowledge docs or source, say "I need to search the repository" and use Grep/Glob
 - **Version Awareness**: Note if information might be outdated (current version: commit e2245c6a4e1fb26cea7db6fac16d856693cf1ec1)
-- **Verification**: When uncertain, read the actual source code at `~/.cache/hivemind/repos/rules_multirun/`
+- **Verification**: When uncertain, read the actual source code at `{CACHE_DIR}/repos/rules_multirun/`
 - **Hallucination Prevention**: Never provide API details, class signatures, or implementation specifics from memory alone

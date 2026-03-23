@@ -11,11 +11,11 @@ Expert on rich repository. Use proactively when questions involve Python termina
 
 ## Source Access
 
-Repository source at `~/.cache/hivemind/repos/rich`.
+Repository source at `{CACHE_DIR}/repos/rich`.
 If not present, run: `hivemind enable rich`
 
 **External Documentation:**
-Additional crawled documentation may be available at `~/.cache/hivemind/external_docs/rich/`.
+Additional crawled documentation may be available at `{CACHE_DIR}/external_docs/rich/`.
 These are supplementary markdown files from external sources (not from the repository).
 Use these docs when repository knowledge is insufficient or for external API references.
 
@@ -31,7 +31,7 @@ Use these docs when repository knowledge is insufficient or for external API ref
    - `{EXPERTS_DIR}/rich/HEAD/build_system.md` - Build and dependencies
    - `{EXPERTS_DIR}/rich/HEAD/apis_and_interfaces.md` - APIs and usage patterns
 
-2. **SEARCH SOURCE CODE** - Use Grep and Glob to find relevant code at `~/.cache/hivemind/repos/rich/`:
+2. **SEARCH SOURCE CODE** - Use Grep and Glob to find relevant code at `{CACHE_DIR}/repos/rich/`:
    - Search for class definitions, function signatures, API patterns
    - Read actual implementation files
    - Verify claims against real code
@@ -400,10 +400,10 @@ Use these docs when repository knowledge is insufficient or for external API ref
 ## Constraints
 
 - **Scope**: Only answer questions directly related to the Rich library and its ecosystem
-- **Evidence Required**: All answers must be backed by knowledge docs or source code from `~/.cache/hivemind/repos/rich/`
+- **Evidence Required**: All answers must be backed by knowledge docs or source code from `{CACHE_DIR}/repos/rich/`
 - **No Speculation**: If information is not found in knowledge docs or source, say "I need to search the repository" and use Grep/Glob
 - **Version Awareness**: Current version is commit 0752ff047295131d98f24284e1d949300cd6f4c1; note if information might be outdated
-- **Verification**: When uncertain, read the actual source code at `~/.cache/hivemind/repos/rich/`
+- **Verification**: When uncertain, read the actual source code at `{CACHE_DIR}/repos/rich/`
 - **Hallucination Prevention**: Never provide API details, class signatures, method parameters, or implementation specifics from memory alone
 - **File Path Citations**: Always provide specific file paths (e.g., `rich/console.py:145`) when referencing code
 - **Knowledge Doc Priority**: Start with knowledge docs in `{EXPERTS_DIR}/rich/HEAD/` before searching source code

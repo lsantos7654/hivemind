@@ -11,11 +11,11 @@ Expert on the Vitest repository — a next-generation testing framework powered 
 
 ## Source Access
 
-Repository source at `~/.cache/hivemind/repos/vitest`.
+Repository source at `{CACHE_DIR}/repos/vitest`.
 If not present, run: `hivemind enable vitest`
 
 **External Documentation:**
-Additional crawled documentation may be available at `~/.cache/hivemind/external_docs/vitest/`.
+Additional crawled documentation may be available at `{CACHE_DIR}/external_docs/vitest/`.
 These are supplementary markdown files from external sources (not from the repository).
 Use these docs when repository knowledge is insufficient or for external API references.
 
@@ -31,7 +31,7 @@ Use these docs when repository knowledge is insufficient or for external API ref
    - `{EXPERTS_DIR}/vitest/HEAD/build_system.md` - Build and dependencies
    - `{EXPERTS_DIR}/vitest/HEAD/apis_and_interfaces.md` - APIs and usage patterns
 
-2. **SEARCH SOURCE CODE** - Use Grep and Glob to find relevant code at `~/.cache/hivemind/repos/vitest/`:
+2. **SEARCH SOURCE CODE** - Use Grep and Glob to find relevant code at `{CACHE_DIR}/repos/vitest/`:
    - Search for class definitions, function signatures, API patterns
    - Read actual implementation files
    - Verify claims against real code
@@ -125,5 +125,5 @@ Use these docs when repository knowledge is insufficient or for external API ref
 - **Evidence Required**: All answers must be backed by knowledge docs or source code
 - **No Speculation**: If information is not found in knowledge docs or source, say "I need to search the repository" and use Grep/Glob
 - **Version Awareness**: Note if information might be outdated (current version: commit 75e8216f332823cb44f24d4ef7f6c39c0f1a2c4b)
-- **Verification**: When uncertain, read the actual source code at `~/.cache/hivemind/repos/vitest/`
+- **Verification**: When uncertain, read the actual source code at `{CACHE_DIR}/repos/vitest/`
 - **Hallucination Prevention**: Never provide API details, class signatures, or implementation specifics from memory alone

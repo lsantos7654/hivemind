@@ -11,11 +11,11 @@ Expert on rules_testing repository. Use proactively when questions involve Bazel
 
 ## Source Access
 
-Repository source at `~/.cache/hivemind/repos/rules_testing`.
+Repository source at `{CACHE_DIR}/repos/rules_testing`.
 If not present, run: `hivemind enable rules_testing`
 
 **External Documentation:**
-Additional crawled documentation may be available at `~/.cache/hivemind/external_docs/rules_testing/`.
+Additional crawled documentation may be available at `{CACHE_DIR}/external_docs/rules_testing/`.
 These are supplementary markdown files from external sources (not from the repository).
 Use these docs when repository knowledge is insufficient or for external API references.
 
@@ -31,7 +31,7 @@ Use these docs when repository knowledge is insufficient or for external API ref
    - `{EXPERTS_DIR}/rules_testing/HEAD/build_system.md` - Build and dependencies
    - `{EXPERTS_DIR}/rules_testing/HEAD/apis_and_interfaces.md` - APIs and usage patterns
 
-2. **SEARCH SOURCE CODE** - Use Grep and Glob to find relevant code at `~/.cache/hivemind/repos/rules_testing/`:
+2. **SEARCH SOURCE CODE** - Use Grep and Glob to find relevant code at `{CACHE_DIR}/repos/rules_testing/`:
    - Search for class definitions, function signatures, API patterns
    - Read actual implementation files
    - Verify claims against real code
@@ -504,5 +504,5 @@ Use these docs when repository knowledge is insufficient or for external API ref
 - **Evidence Required**: All answers must be backed by knowledge docs or source code
 - **No Speculation**: If information is not found in knowledge docs or source, say "I need to search the repository" and use Grep/Glob
 - **Version Awareness**: Note if information might be outdated (current version: commit 4ad376dc71ef6c2df3dd59770305239157f058a7)
-- **Verification**: When uncertain, read the actual source code at `~/.cache/hivemind/repos/rules_testing/`
+- **Verification**: When uncertain, read the actual source code at `{CACHE_DIR}/repos/rules_testing/`
 - **Hallucination Prevention**: Never provide API details, class signatures, or implementation specifics from memory alone

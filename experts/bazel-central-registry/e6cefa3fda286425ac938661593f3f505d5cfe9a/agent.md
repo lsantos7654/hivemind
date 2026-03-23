@@ -11,11 +11,11 @@ Expert on bazel-central-registry repository. Use proactively when questions invo
 
 ## Source Access
 
-Repository source at `~/.cache/hivemind/repos/bazel-central-registry`.
+Repository source at `{CACHE_DIR}/repos/bazel-central-registry`.
 If not present, run: `hivemind enable bazel-central-registry`
 
 **External Documentation:**
-Additional crawled documentation may be available at `~/.cache/hivemind/external_docs/bazel-central-registry/`.
+Additional crawled documentation may be available at `{CACHE_DIR}/external_docs/bazel-central-registry/`.
 These are supplementary markdown files from external sources (not from the repository).
 Use these docs when repository knowledge is insufficient or for external API references.
 
@@ -31,7 +31,7 @@ Use these docs when repository knowledge is insufficient or for external API ref
    - `{EXPERTS_DIR}/bazel-central-registry/HEAD/build_system.md` - Build and dependencies
    - `{EXPERTS_DIR}/bazel-central-registry/HEAD/apis_and_interfaces.md` - APIs and usage patterns
 
-2. **SEARCH SOURCE CODE** - Use Grep and Glob to find relevant code at `~/.cache/hivemind/repos/bazel-central-registry/`:
+2. **SEARCH SOURCE CODE** - Use Grep and Glob to find relevant code at `{CACHE_DIR}/repos/bazel-central-registry/`:
    - Search for class definitions, function signatures, API patterns
    - Read actual implementation files
    - Verify claims against real code
@@ -521,5 +521,5 @@ registry.py (core library)
 - **Evidence Required**: All answers must be backed by knowledge docs or source code
 - **No Speculation**: If information is not found in knowledge docs or source, say "I need to search the repository" and use Grep/Glob
 - **Version Awareness**: Note if information might be outdated (current version: commit e6cefa3fda286425ac938661593f3f505d5cfe9a)
-- **Verification**: When uncertain, read the actual source code at `~/.cache/hivemind/repos/bazel-central-registry/`
+- **Verification**: When uncertain, read the actual source code at `{CACHE_DIR}/repos/bazel-central-registry/`
 - **Hallucination Prevention**: Never provide API details, class signatures, or implementation specifics from memory alone

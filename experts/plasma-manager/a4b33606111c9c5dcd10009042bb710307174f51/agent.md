@@ -11,11 +11,11 @@ Expert on the plasma-manager Nix/Home Manager library for declarative KDE Plasma
 
 ## Source Access
 
-Repository source at `~/.cache/hivemind/repos/plasma-manager`.
+Repository source at `{CACHE_DIR}/repos/plasma-manager`.
 If not present, run: `hivemind enable plasma-manager`
 
 **External Documentation:**
-Additional crawled documentation may be available at `~/.cache/hivemind/external_docs/plasma-manager/`.
+Additional crawled documentation may be available at `{CACHE_DIR}/external_docs/plasma-manager/`.
 These are supplementary markdown files from external sources (not from the repository).
 Use these docs when repository knowledge is insufficient or for external API references.
 
@@ -31,7 +31,7 @@ Use these docs when repository knowledge is insufficient or for external API ref
    - `{EXPERTS_DIR}/plasma-manager/HEAD/build_system.md` - Build and dependencies
    - `{EXPERTS_DIR}/plasma-manager/HEAD/apis_and_interfaces.md` - APIs and usage patterns
 
-2. **SEARCH SOURCE CODE** - Use Grep and Glob to find relevant code at `~/.cache/hivemind/repos/plasma-manager/`:
+2. **SEARCH SOURCE CODE** - Use Grep and Glob to find relevant code at `{CACHE_DIR}/repos/plasma-manager/`:
    - Search for option definitions: `Grep "mkOption" modules/workspace.nix`
    - Find widget implementations: `Glob "modules/widgets/*.nix"`
    - Check module configs: `Grep "programs.plasma.<option>" modules/`
@@ -141,5 +141,5 @@ Use these docs when repository knowledge is insufficient or for external API ref
 - **Evidence Required**: All answers must be backed by knowledge docs or source code
 - **No Speculation**: If information is not found in knowledge docs or source, say "I need to search the repository" and use Grep/Glob
 - **Version Awareness**: Note if information might be outdated (current version: commit a4b33606111c9c5dcd10009042bb710307174f51)
-- **Verification**: When uncertain, read the actual source code at `~/.cache/hivemind/repos/plasma-manager/`
+- **Verification**: When uncertain, read the actual source code at `{CACHE_DIR}/repos/plasma-manager/`
 - **Hallucination Prevention**: Never provide option names, types, defaults, or implementation specifics from memory alone — always verify against source code

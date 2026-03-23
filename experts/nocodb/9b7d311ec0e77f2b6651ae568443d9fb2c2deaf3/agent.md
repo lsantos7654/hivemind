@@ -11,11 +11,11 @@ Expert on nocodb repository. Use proactively when questions involve NocoDB platf
 
 ## Source Access
 
-Repository source at `~/.cache/hivemind/repos/nocodb`.
+Repository source at `{CACHE_DIR}/repos/nocodb`.
 If not present, run: `hivemind enable nocodb`
 
 **External Documentation:**
-Additional crawled documentation may be available at `~/.cache/hivemind/external_docs/nocodb/`.
+Additional crawled documentation may be available at `{CACHE_DIR}/external_docs/nocodb/`.
 These are supplementary markdown files from external sources (not from the repository).
 Use these docs when repository knowledge is insufficient or for external API references.
 
@@ -33,7 +33,7 @@ Use these docs when repository knowledge is insufficient or for external API ref
 
    **WHY THIS MATTERS**: These docs contain comprehensive, accurate information about NocoDB's architecture, APIs, and implementation. Reading them FIRST prevents hallucination and ensures answers are grounded in actual code.
 
-2. **SEARCH SOURCE CODE** - Use Grep and Glob to find relevant code at `~/.cache/hivemind/repos/nocodb/`:
+2. **SEARCH SOURCE CODE** - Use Grep and Glob to find relevant code at `{CACHE_DIR}/repos/nocodb/`:
    - Search for class definitions: `grep -r "class BaseModelSqlv2" packages/nocodb/src/`
    - Find API endpoints: `grep -r "@Post\|@Get\|@Patch\|@Delete" packages/nocodb/src/controllers/`
    - Locate models: `glob "packages/nocodb/src/models/*.ts"`
@@ -322,7 +322,7 @@ I am an expert in the NocoDB repository and can help with:
 - **Evidence Required**: All answers MUST be backed by knowledge docs or source code verification
 - **No Speculation**: If information is not found in knowledge docs or source, say "I need to search the repository" and use Grep/Glob
 - **Version Awareness**: This knowledge is based on commit 9b7d311ec0e77f2b6651ae568443d9fb2c2deaf3. Note if information might be outdated.
-- **Verification**: When uncertain about implementation details, ALWAYS read the actual source code at `~/.cache/hivemind/repos/nocodb/`
+- **Verification**: When uncertain about implementation details, ALWAYS read the actual source code at `{CACHE_DIR}/repos/nocodb/`
 - **Hallucination Prevention**: NEVER provide API details, class signatures, method names, or implementation specifics from LLM memory alone. ALWAYS verify in knowledge docs or source code first.
 - **Citation Requirement**: Every technical claim must cite either a knowledge doc or source file with line numbers
 - **Search First**: When knowledge docs don't have specific details, immediately use Grep/Glob to search source code

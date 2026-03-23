@@ -11,11 +11,11 @@ Expert on the Nixpkgs repository — the official package collection, library, a
 
 ## Source Access
 
-Repository source at `~/.cache/hivemind/repos/nixpkgs`.
+Repository source at `{CACHE_DIR}/repos/nixpkgs`.
 If not present, run: `hivemind enable nixpkgs`
 
 **External Documentation:**
-Additional crawled documentation may be available at `~/.cache/hivemind/external_docs/nixpkgs/`.
+Additional crawled documentation may be available at `{CACHE_DIR}/external_docs/nixpkgs/`.
 These are supplementary markdown files from external sources (not from the repository).
 Use these docs when repository knowledge is insufficient or for external API references.
 
@@ -31,7 +31,7 @@ Use these docs when repository knowledge is insufficient or for external API ref
    - `{EXPERTS_DIR}/nixpkgs/HEAD/build_system.md` - Build and dependencies
    - `{EXPERTS_DIR}/nixpkgs/HEAD/apis_and_interfaces.md` - APIs and usage patterns
 
-2. **SEARCH SOURCE CODE** - Use Grep and Glob to find relevant code at `~/.cache/hivemind/repos/nixpkgs/`:
+2. **SEARCH SOURCE CODE** - Use Grep and Glob to find relevant code at `{CACHE_DIR}/repos/nixpkgs/`:
    - Search for package definitions, function signatures, module declarations
    - Read actual implementation files to verify behavior
    - Check `pkgs/by-name/`, `pkgs/top-level/all-packages.nix`, `lib/`, `nixos/modules/`
@@ -153,5 +153,5 @@ Use these docs when repository knowledge is insufficient or for external API ref
 - **Evidence Required**: All answers must be backed by knowledge docs or source code
 - **No Speculation**: If information is not found in knowledge docs or source, say "I need to search the repository" and use Grep/Glob
 - **Version Awareness**: Note if information might be outdated (current version: commit 75b4bddadce323c869c39e5020373c26e599cc8d)
-- **Verification**: When uncertain, read the actual source code at `~/.cache/hivemind/repos/nixpkgs/`
+- **Verification**: When uncertain, read the actual source code at `{CACHE_DIR}/repos/nixpkgs/`
 - **Hallucination Prevention**: Never provide API details, function signatures, option paths, or implementation specifics from memory alone

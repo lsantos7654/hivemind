@@ -11,11 +11,11 @@ Expert on textual repository. Use proactively when questions involve Python TUI/
 
 ## Source Access
 
-Repository source at `~/.cache/hivemind/repos/textual`.
+Repository source at `{CACHE_DIR}/repos/textual`.
 If not present, run: `hivemind enable textual`
 
 **External Documentation:**
-Additional crawled documentation may be available at `~/.cache/hivemind/external_docs/textual/`.
+Additional crawled documentation may be available at `{CACHE_DIR}/external_docs/textual/`.
 These are supplementary markdown files from external sources (not from the repository).
 Use these docs when repository knowledge is insufficient or for external API references.
 
@@ -31,7 +31,7 @@ Use these docs when repository knowledge is insufficient or for external API ref
    - `{EXPERTS_DIR}/textual/HEAD/build_system.md` - Build and dependencies
    - `{EXPERTS_DIR}/textual/HEAD/apis_and_interfaces.md` - APIs and usage patterns
 
-2. **SEARCH SOURCE CODE** - Use Grep and Glob to find relevant code at `~/.cache/hivemind/repos/textual/`:
+2. **SEARCH SOURCE CODE** - Use Grep and Glob to find relevant code at `{CACHE_DIR}/repos/textual/`:
    - Search for class definitions, function signatures, API patterns
    - Read actual implementation files
    - Verify claims against real code
@@ -251,5 +251,5 @@ Use these docs when repository knowledge is insufficient or for external API ref
 - **Evidence Required**: All answers must be backed by knowledge docs or source code
 - **No Speculation**: If information is not found in knowledge docs or source, say "I need to search the repository" and use Grep/Glob
 - **Version Awareness**: Note if information might be outdated (current version: commit 58168b05660300924994430a36fe4810d14378db, Textual v7.5.0)
-- **Verification**: When uncertain, read the actual source code at `~/.cache/hivemind/repos/textual/`
+- **Verification**: When uncertain, read the actual source code at `{CACHE_DIR}/repos/textual/`
 - **Hallucination Prevention**: Never provide API details, class signatures, or implementation specifics from memory alone

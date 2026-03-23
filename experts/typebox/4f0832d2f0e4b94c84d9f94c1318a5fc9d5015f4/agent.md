@@ -11,11 +11,11 @@ Expert on the TypeBox repository — a JSON Schema type builder with static Type
 
 ## Source Access
 
-Repository source at `~/.cache/hivemind/repos/typebox`.
+Repository source at `{CACHE_DIR}/repos/typebox`.
 If not present, run: `hivemind enable typebox`
 
 **External Documentation:**
-Additional crawled documentation may be available at `~/.cache/hivemind/external_docs/typebox/`.
+Additional crawled documentation may be available at `{CACHE_DIR}/external_docs/typebox/`.
 These are supplementary markdown files from external sources (not from the repository).
 Use these docs when repository knowledge is insufficient or for external API references.
 
@@ -31,7 +31,7 @@ Use these docs when repository knowledge is insufficient or for external API ref
    - `{EXPERTS_DIR}/typebox/HEAD/build_system.md` - Build and dependencies
    - `{EXPERTS_DIR}/typebox/HEAD/apis_and_interfaces.md` - APIs and usage patterns
 
-2. **SEARCH SOURCE CODE** - Use Grep and Glob to find relevant code at `~/.cache/hivemind/repos/typebox/`:
+2. **SEARCH SOURCE CODE** - Use Grep and Glob to find relevant code at `{CACHE_DIR}/repos/typebox/`:
    - Search for type definitions, function signatures, and API patterns
    - Read actual implementation files in `src/type/`, `src/value/`, `src/schema/`, `src/compile/`
    - Verify all claims against real source code, not assumptions
@@ -196,7 +196,7 @@ Use these docs when repository knowledge is insufficient or for external API ref
 ## Constraints
 
 - **Scope**: Only answer questions directly related to the TypeBox repository (`typebox` v1.x, commit `4f0832d2f0e4b94c84d9f94c1318a5fc9d5015f4`)
-- **Evidence Required**: All answers must be backed by knowledge docs or actual source code from `~/.cache/hivemind/repos/typebox/`
+- **Evidence Required**: All answers must be backed by knowledge docs or actual source code from `{CACHE_DIR}/repos/typebox/`
 - **No Speculation**: If information is not found in knowledge docs or source, say "I need to search the repository" and use Grep/Glob to find it
 - **Version Awareness**: This is TypeBox v1.1.6 (`typebox` npm package). Note differences from legacy `@sinclair/typebox` 0.34.x when relevant
 - **Verification**: When uncertain about any API detail, read the actual source at `src/type/types/`, `src/value/value.ts`, `src/compile/validator.ts`, or `src/schema/schema.ts`

@@ -148,23 +148,30 @@ class Provider(ABC):
 
     @property
     def experts_base_path(self) -> str:
-        """Base path for experts as it appears in agent bodies.
+        """Absolute base path for experts as it appears in agent bodies.
 
         Used for path replacement at deploy time.
-        E.g. "~/.claude/experts" or "~/.config/opencode/experts"
+        Uses expanded absolute path so AI tools don't need to resolve ~.
         """
-        home = self._config.get("home_dir", "")
-        return f"{home}/experts"
+        return str(self._home_dir / "experts")
 
     @property
     def hivemind_base_path(self) -> str:
-        """Base path for hivemind dir as it appears in agent bodies.
+        """Absolute base path for hivemind dir as it appears in agent bodies.
 
         Used for path replacement at deploy time.
-        E.g. "~/.claude/hivemind" or "~/.config/opencode/hivemind"
+        Uses expanded absolute path so AI tools don't need to resolve ~.
         """
-        home = self._config.get("home_dir", "")
-        return f"{home}/hivemind"
+        return str(self._home_dir / "hivemind")
+
+    @property
+    def cache_base_path(self) -> str:
+        """Absolute base path for hivemind cache directory.
+
+        Used for path replacement at deploy time.
+        E.g. "/home/user/.cache/hivemind"
+        """
+        return str(Path.home() / ".cache" / "hivemind")
 
     # --- Context injection ---
 
@@ -445,10 +452,6 @@ class ClaudeProvider(Provider):
     def rules_file_name(self) -> str:
         return "CLAUDE.md"
 
-    @property
-    def experts_base_path(self) -> str:
-        return "~/.claude/experts"
-
     def format_lead_md(self, agent_name: str, description: str, body: str) -> str:
         """Format lead agent with Edit tool added for self-management."""
         tools = list(self._settings.get("tools", []))
@@ -473,6 +476,7 @@ class ClaudeProvider(Provider):
             new_base=self.experts_base_path,
         )
         transformed = transformed.replace("{HIVEMIND_DIR}", self.hivemind_base_path)
+        transformed = transformed.replace("{CACHE_DIR}", self.cache_base_path)
 
         return frontmatter + transformed
 
@@ -499,6 +503,7 @@ class ClaudeProvider(Provider):
             old_base="{EXPERTS_DIR}",
             new_base=self.experts_base_path,
         )
+        transformed = transformed.replace("{CACHE_DIR}", self.cache_base_path)
 
         return frontmatter + transformed
 
@@ -644,10 +649,6 @@ class OpenCodeProvider(Provider):
     def rules_file_name(self) -> str:
         return "AGENTS.md"
 
-    @property
-    def experts_base_path(self) -> str:
-        return "~/.config/opencode/experts"
-
     def _format_agent_md_internal(
         self, agent_name: str, description: str, body: str
     ) -> str:
@@ -672,7 +673,7 @@ class OpenCodeProvider(Provider):
         # Generic permissions for hivemind paths
         lines.append("permission:")
         lines.append("  external_directory:")
-        lines.append(f'    "~/.cache/hivemind/**": allow')
+        lines.append(f'    "{self.cache_base_path}/**": allow')
         lines.append(f'    "{self.experts_base_path}/**": allow')
 
         lines.append("---")
@@ -686,6 +687,7 @@ class OpenCodeProvider(Provider):
             old_base="{EXPERTS_DIR}",
             new_base=self.experts_base_path,
         )
+        transformed = transformed.replace("{CACHE_DIR}", self.cache_base_path)
 
         return frontmatter + transformed
 
@@ -715,14 +717,12 @@ class OpenCodeProvider(Provider):
                 lines.append(f"  {tool_name}: {str(enabled).lower()}")
 
         # Permissions for hivemind paths including teams/projects context
-        home = self._config.get("home_dir", "~/.config/opencode")
-        hivemind_subdir = f"{home}/hivemind"
         lines.append("permission:")
         lines.append("  external_directory:")
-        lines.append(f'    "~/.cache/hivemind/**": allow')
+        lines.append(f'    "{self.cache_base_path}/**": allow')
         lines.append(f'    "{self.experts_base_path}/**": allow')
-        lines.append(f'    "{hivemind_subdir}/teams/**": allow')
-        lines.append(f'    "{hivemind_subdir}/projects/**": allow')
+        lines.append(f'    "{self.hivemind_base_path}/teams/**": allow')
+        lines.append(f'    "{self.hivemind_base_path}/projects/**": allow')
 
         lines.append("---")
         lines.append("")
@@ -736,6 +736,7 @@ class OpenCodeProvider(Provider):
             new_base=self.experts_base_path,
         )
         transformed = transformed.replace("{HIVEMIND_DIR}", self.hivemind_base_path)
+        transformed = transformed.replace("{CACHE_DIR}", self.cache_base_path)
 
         return frontmatter + transformed
 
@@ -847,29 +848,29 @@ class OpenCodeProvider(Provider):
 
         results: list[tuple[str, str]] = []
 
-        home = self._config.get("home_dir", "~/.config/opencode")
-        experts_path = f"{home}/experts"
-        hivemind_path = f"{home}/hivemind"
+        cache_path = self.cache_base_path
+        experts_path = self.experts_base_path
+        hivemind_path = self.hivemind_base_path
 
         hivemind_permissions = {
             "external_directory": {
-                "~/.cache/hivemind/**": "allow",
+                f"{cache_path}/**": "allow",
                 f"{experts_path}/**": "allow",
                 f"{hivemind_path}/teams/**": "allow",
                 f"{hivemind_path}/projects/**": "allow",
             },
             "read": {
-                "~/.cache/hivemind/**": "allow",
+                f"{cache_path}/**": "allow",
                 f"{experts_path}/**": "allow",
                 f"{hivemind_path}/teams/**": "allow",
                 f"{hivemind_path}/projects/**": "allow",
             },
             "grep": {
-                "~/.cache/hivemind/**": "allow",
+                f"{cache_path}/**": "allow",
                 f"{experts_path}/**": "allow",
             },
             "glob": {
-                "~/.cache/hivemind/**": "allow",
+                f"{cache_path}/**": "allow",
                 f"{experts_path}/**": "allow",
             },
             "edit": {

@@ -11,11 +11,11 @@ Expert on the pi-mono repository — a TypeScript monorepo by Mario Zechner (`ba
 
 ## Source Access
 
-Repository source at `~/.cache/hivemind/repos/pi-mono`.
+Repository source at `{CACHE_DIR}/repos/pi-mono`.
 If not present, run: `hivemind enable pi-mono`
 
 **External Documentation:**
-Additional crawled documentation may be available at `~/.cache/hivemind/external_docs/pi-mono/`.
+Additional crawled documentation may be available at `{CACHE_DIR}/external_docs/pi-mono/`.
 These are supplementary markdown files from external sources (not from the repository).
 Use these docs when repository knowledge is insufficient or for external API references.
 
@@ -31,7 +31,7 @@ Use these docs when repository knowledge is insufficient or for external API ref
    - `{EXPERTS_DIR}/pi-mono/HEAD/build_system.md` - Build, test, and dependency details
    - `{EXPERTS_DIR}/pi-mono/HEAD/apis_and_interfaces.md` - All public APIs and usage patterns
 
-2. **SEARCH SOURCE CODE** - Use Grep and Glob to find relevant code at `~/.cache/hivemind/repos/pi-mono/`:
+2. **SEARCH SOURCE CODE** - Use Grep and Glob to find relevant code at `{CACHE_DIR}/repos/pi-mono/`:
    - Search for class definitions, function signatures, interface declarations
    - Read actual implementation files for the specific package in question
    - Verify all API signatures, parameter types, and return types against real code
@@ -188,5 +188,5 @@ Use these docs when repository knowledge is insufficient or for external API ref
 - **Evidence Required**: All answers must be backed by knowledge docs or source code
 - **No Speculation**: If information is not found in knowledge docs or source, say "I need to search the repository" and use Grep/Glob
 - **Version Awareness**: Note if information might be outdated (current version: commit 970774ec3ce2756f45b892ec1208bc73ba6f612d, package version 0.60.0 for coding-agent)
-- **Verification**: When uncertain, read the actual source code at `~/.cache/hivemind/repos/pi-mono/`
+- **Verification**: When uncertain, read the actual source code at `{CACHE_DIR}/repos/pi-mono/`
 - **Hallucination Prevention**: Never provide API details, class signatures, or implementation specifics from memory alone

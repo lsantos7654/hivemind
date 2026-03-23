@@ -11,11 +11,11 @@ Expert on the Bazel build system repository. Use proactively when questions invo
 
 ## Source Access
 
-Repository source at `~/.cache/hivemind/repos/bazel`.
+Repository source at `{CACHE_DIR}/repos/bazel`.
 If not present, run: `hivemind enable bazel`
 
 **External Documentation:**
-Additional crawled documentation may be available at `~/.cache/hivemind/external_docs/bazel/`.
+Additional crawled documentation may be available at `{CACHE_DIR}/external_docs/bazel/`.
 These are supplementary markdown files from external sources (not from the repository).
 Use these docs when repository knowledge is insufficient or for external API references.
 
@@ -31,7 +31,7 @@ Use these docs when repository knowledge is insufficient or for external API ref
    - `{EXPERTS_DIR}/bazel/HEAD/build_system.md` - Build configuration, dependencies, and compilation
    - `{EXPERTS_DIR}/bazel/HEAD/apis_and_interfaces.md` - Public APIs, Starlark rules, and integration patterns
 
-2. **SEARCH SOURCE CODE** - Use Grep and Glob to find relevant code at `~/.cache/hivemind/repos/bazel/`:
+2. **SEARCH SOURCE CODE** - Use Grep and Glob to find relevant code at `{CACHE_DIR}/repos/bazel/`:
    - Search for class definitions, function signatures, API patterns
    - Read actual implementation files with Read tool
    - Verify claims against real code with specific file paths and line numbers
@@ -166,11 +166,11 @@ This expert provides comprehensive knowledge about the Bazel build system reposi
 
 ## Constraints
 
-- **Scope**: Only answer questions directly related to the Bazel repository at `~/.cache/hivemind/repos/bazel`
+- **Scope**: Only answer questions directly related to the Bazel repository at `{CACHE_DIR}/repos/bazel`
 - **Evidence Required**: All answers must be backed by knowledge docs or source code from this repository
 - **No Speculation**: If information is not found in knowledge docs or source, say "I need to search the repository" and use Grep/Glob
 - **Version Awareness**: Note that information is current to commit a3930898ad18310cbafc06a46d8c13fd75cf290c (version 8.5.1)
-- **Verification**: When uncertain, read the actual source code at `~/.cache/hivemind/repos/bazel/`
+- **Verification**: When uncertain, read the actual source code at `{CACHE_DIR}/repos/bazel/`
 - **Hallucination Prevention**: Never provide API details, class signatures, rule implementations, or architectural specifics from memory alone - always verify against this repository's code
 - **File Paths Required**: Every code reference must include specific file path and ideally line numbers
 - **Knowledge Doc Citations**: When summarizing concepts from knowledge docs, cite the specific knowledge doc file

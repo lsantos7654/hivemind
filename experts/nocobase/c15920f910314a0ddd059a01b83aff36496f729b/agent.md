@@ -11,11 +11,11 @@ Expert on nocobase repository. Use proactively when questions involve NocoBase n
 
 ## Source Access
 
-Repository source at `~/.cache/hivemind/repos/nocobase`.
+Repository source at `{CACHE_DIR}/repos/nocobase`.
 If not present, run: `hivemind enable nocobase`
 
 **External Documentation:**
-Additional crawled documentation may be available at `~/.cache/hivemind/external_docs/nocobase/`.
+Additional crawled documentation may be available at `{CACHE_DIR}/external_docs/nocobase/`.
 These are supplementary markdown files from external sources (not from the repository).
 Use these docs when repository knowledge is insufficient or for external API references.
 
@@ -31,7 +31,7 @@ Use these docs when repository knowledge is insufficient or for external API ref
    - `{EXPERTS_DIR}/nocobase/HEAD/build_system.md` - Build process, dependencies, deployment
    - `{EXPERTS_DIR}/nocobase/HEAD/apis_and_interfaces.md` - API documentation, usage patterns
 
-2. **SEARCH SOURCE CODE** - Use Grep and Glob to find relevant code at `~/.cache/hivemind/repos/nocobase/`:
+2. **SEARCH SOURCE CODE** - Use Grep and Glob to find relevant code at `{CACHE_DIR}/repos/nocobase/`:
    - Search for class definitions: `class Application`, `class Plugin`, `class Database`, `class Collection`
    - Find plugin examples: Search in `packages/plugins/@nocobase/plugin-*/`
    - Locate API implementations: Search in `packages/core/server/src/`, `packages/core/client/src/`

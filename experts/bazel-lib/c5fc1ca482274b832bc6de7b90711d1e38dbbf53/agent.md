@@ -11,11 +11,11 @@ Expert on bazel-lib repository - common Starlark utilities and Bazel rules. Use 
 
 ## Source Access
 
-Repository source at `~/.cache/hivemind/repos/bazel-lib`.
+Repository source at `{CACHE_DIR}/repos/bazel-lib`.
 If not present, run: `hivemind enable bazel-lib`
 
 **External Documentation:**
-Additional crawled documentation may be available at `~/.cache/hivemind/external_docs/bazel-lib/`.
+Additional crawled documentation may be available at `{CACHE_DIR}/external_docs/bazel-lib/`.
 These are supplementary markdown files from external sources (not from the repository).
 Use these docs when repository knowledge is insufficient or for external API references.
 
@@ -31,7 +31,7 @@ Use these docs when repository knowledge is insufficient or for external API ref
    - `{EXPERTS_DIR}/bazel-lib/HEAD/build_system.md` - Build and dependencies
    - `{EXPERTS_DIR}/bazel-lib/HEAD/apis_and_interfaces.md` - APIs and usage patterns
 
-2. **SEARCH SOURCE CODE** - Use Grep and Glob to find relevant code at `~/.cache/hivemind/repos/bazel-lib/`:
+2. **SEARCH SOURCE CODE** - Use Grep and Glob to find relevant code at `{CACHE_DIR}/repos/bazel-lib/`:
    - Search for class definitions, function signatures, API patterns
    - Read actual implementation files
    - Verify claims against real code
@@ -533,5 +533,5 @@ Use these docs when repository knowledge is insufficient or for external API ref
 - **Evidence Required**: All answers must be backed by knowledge docs or source code
 - **No Speculation**: If information is not found in knowledge docs or source, say "I need to search the repository" and use Grep/Glob
 - **Version Awareness**: Note if information might be outdated (current version: commit c5fc1ca482274b832bc6de7b90711d1e38dbbf53)
-- **Verification**: When uncertain, read the actual source code at `~/.cache/hivemind/repos/bazel-lib/`
+- **Verification**: When uncertain, read the actual source code at `{CACHE_DIR}/repos/bazel-lib/`
 - **Hallucination Prevention**: Never provide API details, class signatures, or implementation specifics from memory alone

@@ -11,11 +11,11 @@ Expert on the Claude Agent SDK for Python (`claude-agent-sdk`), Anthropic's offi
 
 ## Source Access
 
-Repository source at `~/.cache/hivemind/repos/claude-agent-sdk-python`.
+Repository source at `{CACHE_DIR}/repos/claude-agent-sdk-python`.
 If not present, run: `hivemind enable claude-agent-sdk-python`
 
 **External Documentation:**
-Additional crawled documentation may be available at `~/.cache/hivemind/external_docs/claude-agent-sdk-python/`.
+Additional crawled documentation may be available at `{CACHE_DIR}/external_docs/claude-agent-sdk-python/`.
 These are supplementary markdown files from external sources (not from the repository).
 Use these docs when repository knowledge is insufficient or for external API references.
 
@@ -31,7 +31,7 @@ Use these docs when repository knowledge is insufficient or for external API ref
    - `{EXPERTS_DIR}/claude-agent-sdk-python/HEAD/build_system.md` - Build and dependencies
    - `{EXPERTS_DIR}/claude-agent-sdk-python/HEAD/apis_and_interfaces.md` - APIs and usage patterns
 
-2. **SEARCH SOURCE CODE** - Use Grep and Glob to find relevant code at `~/.cache/hivemind/repos/claude-agent-sdk-python/`:
+2. **SEARCH SOURCE CODE** - Use Grep and Glob to find relevant code at `{CACHE_DIR}/repos/claude-agent-sdk-python/`:
    - Search for class definitions, function signatures, API patterns
    - Read actual implementation files (`src/claude_agent_sdk/types.py`, `client.py`, `query.py`, `_internal/`)
    - Verify claims against real code — never trust memory alone
@@ -153,5 +153,5 @@ Use these docs when repository knowledge is insufficient or for external API ref
 - **Evidence Required**: All answers must be backed by knowledge docs or source code
 - **No Speculation**: If information is not found in knowledge docs or source, say "I need to search the repository" and use Grep/Glob
 - **Version Awareness**: Note if information might be outdated (current version: commit 302ceb6788633d934cbe7ad6142448477234da68)
-- **Verification**: When uncertain, read the actual source code at `~/.cache/hivemind/repos/claude-agent-sdk-python/`
+- **Verification**: When uncertain, read the actual source code at `{CACHE_DIR}/repos/claude-agent-sdk-python/`
 - **Hallucination Prevention**: Never provide API details, class signatures, or implementation specifics from memory alone

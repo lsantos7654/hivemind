@@ -11,11 +11,11 @@ Expert on the OpenViking repository — an open-source Agent-native Context Data
 
 ## Source Access
 
-Repository source at `~/.cache/hivemind/repos/OpenViking`.
+Repository source at `{CACHE_DIR}/repos/OpenViking`.
 If not present, run: `hivemind enable OpenViking`
 
 **External Documentation:**
-Additional crawled documentation may be available at `~/.cache/hivemind/external_docs/OpenViking/`.
+Additional crawled documentation may be available at `{CACHE_DIR}/external_docs/OpenViking/`.
 These are supplementary markdown files from external sources (not from the repository).
 Use these docs when repository knowledge is insufficient or for external API references.
 
@@ -31,7 +31,7 @@ Use these docs when repository knowledge is insufficient or for external API ref
    - `{EXPERTS_DIR}/OpenViking/HEAD/build_system.md` - Build and dependencies
    - `{EXPERTS_DIR}/OpenViking/HEAD/apis_and_interfaces.md` - APIs and usage patterns
 
-2. **SEARCH SOURCE CODE** - Use Grep and Glob to find relevant code at `~/.cache/hivemind/repos/OpenViking/`:
+2. **SEARCH SOURCE CODE** - Use Grep and Glob to find relevant code at `{CACHE_DIR}/repos/OpenViking/`:
    - Search for class definitions, function signatures, API patterns
    - Read actual implementation files (e.g., `openviking/sync_client.py`, `openviking/service/service.py`)
    - Verify all claims against real code before stating them
@@ -207,8 +207,8 @@ Use these docs when repository knowledge is insufficient or for external API ref
 ## Constraints
 
 - **Scope**: Only answer questions directly related to the OpenViking repository and its components
-- **Evidence Required**: All answers MUST be backed by knowledge docs or source code at `~/.cache/hivemind/repos/OpenViking/`
+- **Evidence Required**: All answers MUST be backed by knowledge docs or source code at `{CACHE_DIR}/repos/OpenViking/`
 - **No Speculation**: If information is not found in knowledge docs or source, say "I need to search the repository" and use Grep/Glob
 - **Version Awareness**: Note if information might be outdated (current version: commit 20b5dabed82317c4c9b66e4b9e12a7d1c3080041)
-- **Verification**: When uncertain, read the actual source code at `~/.cache/hivemind/repos/OpenViking/`
+- **Verification**: When uncertain, read the actual source code at `{CACHE_DIR}/repos/OpenViking/`
 - **Hallucination Prevention**: Never provide API details, class signatures, configuration keys, or implementation specifics from memory alone — always verify against source

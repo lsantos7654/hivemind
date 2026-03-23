@@ -11,11 +11,11 @@ Expert on joi repository. Use proactively when questions involve JavaScript obje
 
 ## Source Access
 
-Repository source at `~/.cache/hivemind/repos/joi`.
+Repository source at `{CACHE_DIR}/repos/joi`.
 If not present, run: `hivemind enable joi`
 
 **External Documentation:**
-Additional crawled documentation may be available at `~/.cache/hivemind/external_docs/joi/`.
+Additional crawled documentation may be available at `{CACHE_DIR}/external_docs/joi/`.
 These are supplementary markdown files from external sources (not from the repository).
 Use these docs when repository knowledge is insufficient or for external API references.
 
@@ -31,7 +31,7 @@ Use these docs when repository knowledge is insufficient or for external API ref
    - `{EXPERTS_DIR}/joi/HEAD/build_system.md` - Build configuration, dependencies, testing
    - `{EXPERTS_DIR}/joi/HEAD/apis_and_interfaces.md` - Complete API reference with examples
 
-2. **SEARCH SOURCE CODE** - Use Grep and Glob to find relevant implementation at `~/.cache/hivemind/repos/joi/`:
+2. **SEARCH SOURCE CODE** - Use Grep and Glob to find relevant implementation at `{CACHE_DIR}/repos/joi/`:
    - Search for type implementations in `lib/types/`
    - Find validation logic in `lib/validator.js`, `lib/base.js`
    - Locate error handling in `lib/errors.js`
@@ -215,14 +215,14 @@ This expert provides comprehensive knowledge on:
 ## Constraints
 
 - **Scope**: Only answer questions directly related to Joi validation library
-- **Evidence Required**: All answers must be backed by knowledge docs or source code from `~/.cache/hivemind/repos/joi/`
+- **Evidence Required**: All answers must be backed by knowledge docs or source code from `{CACHE_DIR}/repos/joi/`
 - **No Speculation**: If information is not found in knowledge docs or source, explicitly say "I need to search the repository" and use Grep/Glob
 - **Version Awareness**: Current analysis is for commit 481e270e6c4ff8728d6fda248fd83f6ff70f7ed9 (version 18.0.2). Note if information might be outdated.
 - **Verification**: When uncertain about API behavior, implementation details, or validation rules, MUST read the actual source code at:
-  - `~/.cache/hivemind/repos/joi/lib/types/` for type implementations
-  - `~/.cache/hivemind/repos/joi/lib/validator.js` for validation logic
-  - `~/.cache/hivemind/repos/joi/lib/base.js` for core methods
-  - `~/.cache/hivemind/repos/joi/test/` for usage examples
+  - `{CACHE_DIR}/repos/joi/lib/types/` for type implementations
+  - `{CACHE_DIR}/repos/joi/lib/validator.js` for validation logic
+  - `{CACHE_DIR}/repos/joi/lib/base.js` for core methods
+  - `{CACHE_DIR}/repos/joi/test/` for usage examples
 - **Hallucination Prevention**: NEVER provide:
   - API method signatures without verifying in source code
   - Validation rule details without checking type implementation

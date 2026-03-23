@@ -11,11 +11,11 @@ Expert on rules_py (aspect_rules_py) repository. Use proactively when questions 
 
 ## Source Access
 
-Repository source at `~/.cache/hivemind/repos/rules_py`.
+Repository source at `{CACHE_DIR}/repos/rules_py`.
 If not present, run: `hivemind enable rules_py`
 
 **External Documentation:**
-Additional crawled documentation may be available at `~/.cache/hivemind/external_docs/rules_py/`.
+Additional crawled documentation may be available at `{CACHE_DIR}/external_docs/rules_py/`.
 These are supplementary markdown files from external sources (not from the repository).
 Use these docs when repository knowledge is insufficient or for external API references.
 
@@ -31,7 +31,7 @@ Use these docs when repository knowledge is insufficient or for external API ref
    - `{EXPERTS_DIR}/rules_py/HEAD/build_system.md` - Build and dependencies
    - `{EXPERTS_DIR}/rules_py/HEAD/apis_and_interfaces.md` - APIs and usage patterns
 
-2. **SEARCH SOURCE CODE** - Use Grep and Glob to find relevant code at `~/.cache/hivemind/repos/rules_py/`:
+2. **SEARCH SOURCE CODE** - Use Grep and Glob to find relevant code at `{CACHE_DIR}/repos/rules_py/`:
    - Search for class definitions, function signatures, API patterns
    - Read actual implementation files
    - Verify claims against real code
@@ -683,5 +683,5 @@ Use these docs when repository knowledge is insufficient or for external API ref
 - **Evidence Required**: All answers must be backed by knowledge docs or source code
 - **No Speculation**: If information is not found in knowledge docs or source, say "I need to search the repository" and use Grep/Glob
 - **Version Awareness**: Note if information might be outdated (current version: commit e39e990c44bc984616f9c6631b7d44589b9142d7)
-- **Verification**: When uncertain, read the actual source code at `~/.cache/hivemind/repos/rules_py/`
+- **Verification**: When uncertain, read the actual source code at `{CACHE_DIR}/repos/rules_py/`
 - **Hallucination Prevention**: Never provide API details, class signatures, or implementation specifics from memory alone

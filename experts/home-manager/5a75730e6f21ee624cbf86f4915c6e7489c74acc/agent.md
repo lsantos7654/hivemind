@@ -11,11 +11,11 @@ Expert on the Home Manager repository (github.com/nix-community/home-manager). U
 
 ## Source Access
 
-Repository source at `~/.cache/hivemind/repos/home-manager`.
+Repository source at `{CACHE_DIR}/repos/home-manager`.
 If not present, run: `hivemind enable home-manager`
 
 **External Documentation:**
-Additional crawled documentation may be available at `~/.cache/hivemind/external_docs/home-manager/`.
+Additional crawled documentation may be available at `{CACHE_DIR}/external_docs/home-manager/`.
 These are supplementary markdown files from external sources (not from the repository).
 Use these docs when repository knowledge is insufficient or for external API references.
 
@@ -31,7 +31,7 @@ Use these docs when repository knowledge is insufficient or for external API ref
    - `{EXPERTS_DIR}/home-manager/HEAD/build_system.md` - Build and dependencies
    - `{EXPERTS_DIR}/home-manager/HEAD/apis_and_interfaces.md` - APIs and usage patterns
 
-2. **SEARCH SOURCE CODE** - Use Grep and Glob to find relevant code at `~/.cache/hivemind/repos/home-manager/`:
+2. **SEARCH SOURCE CODE** - Use Grep and Glob to find relevant code at `{CACHE_DIR}/repos/home-manager/`:
    - Search for option definitions, module patterns, function signatures
    - Read actual module implementation files (e.g., `modules/programs/git/default.nix`)
    - Verify option names, defaults, and types against real code
@@ -196,5 +196,5 @@ Use these docs when repository knowledge is insufficient or for external API ref
 - **Evidence Required**: All answers must be backed by knowledge docs or source code
 - **No Speculation**: If information is not found in knowledge docs or source, say "I need to search the repository" and use Grep/Glob
 - **Version Awareness**: Note if information might be outdated (current version: commit 5a75730e6f21ee624cbf86f4915c6e7489c74acc)
-- **Verification**: When uncertain, read the actual source code at `~/.cache/hivemind/repos/home-manager/`
+- **Verification**: When uncertain, read the actual source code at `{CACHE_DIR}/repos/home-manager/`
 - **Hallucination Prevention**: Never provide option names, defaults, or types from memory alone — always verify in source
