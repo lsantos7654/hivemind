@@ -12,6 +12,7 @@ from __future__ import annotations
 import os
 import re
 import shlex
+import json
 import shutil
 from abc import ABC, abstractmethod
 from pathlib import Path
@@ -164,6 +165,48 @@ class Provider(ABC):
         """
         home = self._config.get("home_dir", "")
         return f"{home}/hivemind"
+
+    # --- Context injection ---
+
+    def get_context_append(self, agent_type: str) -> str:
+        """Get provider-specific context to append to an agent body.
+
+        Loads from providers/{name}/context.json and providers/{name}/overrides.json.
+        The overrides file is for user customizations (not committed to git).
+
+        Args:
+            agent_type: One of "expert", "team_lead", "project_lead"
+
+        Returns:
+            Markdown text to append, or empty string
+        """
+        from hivemind_cli.core import PROVIDERS_DIR
+
+        parts: list[str] = []
+
+        # Provider defaults
+        context_path = PROVIDERS_DIR / self.name / "context.json"
+        if context_path.exists():
+            try:
+                data = json.loads(context_path.read_text())
+                append = data.get(agent_type, {}).get("append", "")
+                if append:
+                    parts.append(append)
+            except (json.JSONDecodeError, AttributeError):
+                pass
+
+        # User overrides (not committed)
+        overrides_path = PROVIDERS_DIR / self.name / "overrides.json"
+        if overrides_path.exists():
+            try:
+                data = json.loads(overrides_path.read_text())
+                append = data.get(agent_type, {}).get("append", "")
+                if append:
+                    parts.append(append)
+            except (json.JSONDecodeError, AttributeError):
+                pass
+
+        return "".join(parts)
 
     # --- Agent formatting ---
 

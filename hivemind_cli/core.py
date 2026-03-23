@@ -289,6 +289,7 @@ def _deploy_agent(name: str) -> bool:
     # Read canonical body and strip any frontmatter
     raw_content = head_agent.read_text()
     body = strip_frontmatter(raw_content)
+    body += provider.get_context_append("expert")
     description = extract_description(body)
 
     # Generate provider-specific content
@@ -1966,6 +1967,7 @@ def _deploy_team_lead(team_name: str) -> bool:
 
     provider = _get_provider()
     body = strip_frontmatter(lead_md.read_text())
+    body += provider.get_context_append("team_lead")
     description = extract_description(body)
 
     content = provider.format_lead_md(f"team-lead-{team_name}", description, body)
@@ -2024,6 +2026,7 @@ def _deploy_team_expert(team_name: str, expert_name: str) -> bool:
         body += "\n\n".join(team_context_parts)
         body += "\n"
 
+    body += provider.get_context_append("expert")
     description = extract_description(body)
     agent_name = f"{expert_name}_{team_name}"
     content = provider.format_agent_md(agent_name, description, body)
@@ -2435,6 +2438,7 @@ def _deploy_project_lead(project_name: str) -> bool:
 
     provider = _get_provider()
     body = strip_frontmatter(lead_md.read_text())
+    body += provider.get_context_append("project_lead")
     description = extract_description(body)
 
     content = provider.format_lead_md(f"project-lead-{project_name}", description, body)

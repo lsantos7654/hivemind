@@ -19,6 +19,9 @@ projects/
 private-experts/
 private-repos.json
 
+# User-specific provider overrides
+providers/*/overrides.json
+
 # Python
 __pycache__/
 *.pyc
