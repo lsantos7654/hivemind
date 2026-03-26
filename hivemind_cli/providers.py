@@ -853,6 +853,9 @@ class OpenCodeProvider(Provider):
         hivemind_path = self.hivemind_base_path
 
         hivemind_permissions = {
+            "bash": {
+                "sudo *": "deny",
+            },
             "external_directory": {
                 f"{cache_path}/**": "allow",
                 f"{experts_path}/**": "allow",

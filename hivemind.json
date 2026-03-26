@@ -317,7 +317,7 @@
     },
     "sequelize": {
       "remote": "https://github.com/sequelize/sequelize.git",
-      "commit": "df4a631ba792a4bcae0212776c062a2165861ca9",
+      "commit": "cb8ea88c9aa37b14c908fd34dff1afc603de2ea7",
       "ref_name": ""
     }
   }
