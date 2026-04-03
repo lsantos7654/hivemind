@@ -80,7 +80,6 @@ class TeamsPane(BasePane):
                     data["name"],
                     data["description"],
                     data["experts"],
-                    skip_analysis=True,
                 )
                 if result["success"]:
                     self.notify(f"Created team: {data['name']}", severity="information")

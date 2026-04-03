@@ -994,9 +994,6 @@ def team_create(
     experts: str = typer.Option(
         ..., "--experts", "-e", help="Comma-separated expert names"
     ),
-    skip_analysis: bool = typer.Option(
-        False, "--skip-analysis", help="Use template instead of AI-generated lead"
-    ),
 ) -> None:
     """Create a new team with AI-generated lead agent."""
     expert_list = [e.strip() for e in experts.split(",") if e.strip()]
@@ -1005,13 +1002,10 @@ def team_create(
     console.print(f"  Description: {description}")
     console.print(f"  Experts: {', '.join(expert_list)}")
 
-    if not skip_analysis:
-        with console.status(
-            "[heading]Generating team lead agent...[/heading]", spinner="dots"
-        ):
-            result = core_create_team(name, description, expert_list)
-    else:
-        result = core_create_team(name, description, expert_list, skip_analysis=True)
+    with console.status(
+        "[heading]Generating team lead agent...[/heading]", spinner="dots"
+    ):
+        result = core_create_team(name, description, expert_list)
 
     if not result["success"]:
         console.print(f"[error]Error: {result['error']}[/error]")
@@ -1058,19 +1052,13 @@ def team_show(
 def team_add_expert(
     team: str = typer.Argument(help="Team name", autocompletion=_complete_team),
     expert: str = typer.Argument(help="Expert name", autocompletion=_complete_expert),
-    skip_analysis: bool = typer.Option(
-        False, "--skip-analysis", help="Use description instead of AI-generated section"
-    ),
 ) -> None:
     """Add an expert to a team's roster."""
-    if not skip_analysis:
-        with console.status(
-            f"[heading]Generating expert section for {expert}...[/heading]",
-            spinner="dots",
-        ):
-            result = core_add_expert_to_team(team, expert)
-    else:
-        result = core_add_expert_to_team(team, expert, skip_analysis=True)
+    with console.status(
+        f"[heading]Generating expert section for {expert}...[/heading]",
+        spinner="dots",
+    ):
+        result = core_add_expert_to_team(team, expert)
     if not result["success"]:
         console.print(f"[error]Error: {result['error']}[/error]")
         raise typer.Exit(1)

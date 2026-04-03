@@ -2099,7 +2099,6 @@ def create_team(
     name: str,
     description: str,
     experts: list[str],
-    skip_analysis: bool = False,
 ) -> dict:
     """Create a new team.
 
@@ -2107,7 +2106,6 @@ def create_team(
         name: Team name
         description: Team description
         experts: List of expert names for the roster
-        skip_analysis: Skip AI generation of team lead (use template directly)
 
     Returns:
         dict with keys: success (bool), error (str | None)
@@ -2131,24 +2129,14 @@ def create_team(
     for expert_name in experts:
         _create_expert_notes_stub(name, expert_name)
 
-        if skip_analysis:
-            # Use a simple placeholder section
-            expert_dir = _get_expert_dir(expert_name)
-            head_agent = expert_dir / "HEAD" / "agent.md"
-            desc = ""
-            if head_agent.exists():
-                desc = extract_description(strip_frontmatter(head_agent.read_text()))
-            expert_sections.append(f"## expert-{expert_name}\n\n{desc}")
-        else:
-            section = _generate_expert_section(expert_name, name)
-            if not section:
-                # Clean up on failure
-                shutil.rmtree(team_dir)
-                return {
-                    "success": False,
-                    "error": f"AI generation failed for expert section: {expert_name}",
-                }
-            expert_sections.append(section)
+        section = _generate_expert_section(expert_name, name)
+        if not section:
+            shutil.rmtree(team_dir)
+            return {
+                "success": False,
+                "error": f"AI generation failed for expert section: {expert_name}",
+            }
+        expert_sections.append(section)
 
     # Assemble lead.md
     from hivemind_cli.templates import team_lead_template
@@ -2244,11 +2232,7 @@ def update_team(
     return {"success": True}
 
 
-def add_expert_to_team(
-    team_name: str,
-    expert_name: str,
-    skip_analysis: bool = False,
-) -> dict:
+def add_expert_to_team(team_name: str, expert_name: str) -> dict:
     """Add an expert to a team's roster.
 
     AI-generates a new ## expert-{name} section in lead.md,
@@ -2273,20 +2257,12 @@ def add_expert_to_team(
         return {"success": False, "error": f"Expert '{expert_name}' does not exist"}
 
     # Generate expert section for lead.md
-    if skip_analysis:
-        expert_dir = _get_expert_dir(expert_name)
-        head_agent = expert_dir / "HEAD" / "agent.md"
-        desc = ""
-        if head_agent.exists():
-            desc = extract_description(strip_frontmatter(head_agent.read_text()))
-        section = f"## expert-{expert_name}\n\n{desc}"
-    else:
-        section = _generate_expert_section(expert_name, team_name)
-        if not section:
-            return {
-                "success": False,
-                "error": f"AI generation failed for expert section: {expert_name}",
-            }
+    section = _generate_expert_section(expert_name, team_name)
+    if not section:
+        return {
+            "success": False,
+            "error": f"AI generation failed for expert section: {expert_name}",
+        }
 
     # Append section to lead.md
     lead_md = TEAMS_DIR / team_name / "lead.md"
