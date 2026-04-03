@@ -1840,12 +1840,15 @@ def redeploy_all_agents() -> dict:
         else:
             failed.append(name)
 
-    # Redeploy team leads
+    # Refresh team templates and redeploy team leads
     teams_deployed: list[str] = []
     teams = _load_teams()
-    for team_name in teams:
+    for team_name, team_data in teams.items():
+        _refresh_team_lead_body(team_name)
         if _deploy_team_lead(team_name):
             teams_deployed.append(f"team-lead-{team_name}")
+        for expert_name in team_data.get("experts", []):
+            _refresh_expert_notes_header(team_name, expert_name)
 
     # Regenerate librarian and HIVEMIND.md
     _update_librarian()
@@ -2022,6 +2025,74 @@ def _create_expert_notes_stub(team_name: str, expert_name: str) -> None:
     notes_file = notes_dir / "notes.md"
     if not notes_file.exists():
         notes_file.write_text(expert_notes_template(expert_name, team_name))
+
+
+def _refresh_expert_notes_header(team_name: str, expert_name: str) -> None:
+    """Regenerate the template header in notes.md, preserving entries below ---."""
+    from hivemind_cli.templates import expert_notes_template
+
+    notes_file = TEAMS_DIR / team_name / f"expert-{expert_name}" / "notes.md"
+    if not notes_file.exists():
+        _create_expert_notes_stub(team_name, expert_name)
+        return
+
+    content = notes_file.read_text()
+    template = expert_notes_template(expert_name, team_name)
+
+    # Template ends with "---\n", entries live below that
+    separator = "\n---\n"
+    if separator in content:
+        _, entries = content.split(separator, 1)
+        # Template already ends with "---\n", append preserved entries
+        notes_file.write_text(template + entries)
+    else:
+        # No entries yet — rewrite from template
+        notes_file.write_text(template)
+
+
+def _refresh_team_lead_body(team_name: str) -> None:
+    """Regenerate lead.md wrapper from template, preserving ## expert-{name} sections."""
+    from hivemind_cli.templates import team_lead_template
+
+    lead_md = TEAMS_DIR / team_name / "lead.md"
+    if not lead_md.exists():
+        return
+
+    teams = _load_teams()
+    if team_name not in teams:
+        return
+
+    team_data = teams[team_name]
+    description = team_data.get("description", "")
+
+    # Extract existing ## expert-{name} sections from current lead.md
+    content = lead_md.read_text()
+    lines = content.split("\n")
+    expert_sections: list[str] = []
+    current_section: list[str] = []
+    in_expert_section = False
+
+    for line in lines:
+        if line.startswith("## expert-"):
+            if current_section:
+                expert_sections.append("\n".join(current_section))
+            current_section = [line]
+            in_expert_section = True
+        elif line.startswith("## ") and in_expert_section:
+            if current_section:
+                expert_sections.append("\n".join(current_section))
+                current_section = []
+            in_expert_section = False
+        elif in_expert_section:
+            current_section.append(line)
+
+    if current_section:
+        expert_sections.append("\n".join(current_section))
+
+    # Regenerate wrapper with preserved expert sections
+    expert_content = "\n\n".join(s.rstrip() for s in expert_sections) if expert_sections else ""
+    lead_body = team_lead_template(team_name, description, expert_content)
+    lead_md.write_text(lead_body)
 
 
 def create_team(

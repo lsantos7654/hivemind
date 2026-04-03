@@ -11,9 +11,8 @@ external_docs
 # User-specific config (enabled/disabled state)
 config.json
 
-# User-specific teams and projects (track on your own branch)
+# User-specific teams (track on your own branch)
 teams/
-projects/
 
 # Private experts (NEVER commit)
 private-experts/
