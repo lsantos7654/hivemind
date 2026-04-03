@@ -112,7 +112,10 @@ HIVEMIND_MD = HIVEMIND_ROOT / "HIVEMIND.md"
 def _load_json(path: Path) -> dict:
     if not path.exists():
         return {}
-    return json.loads(path.read_text())
+    text = path.read_text()
+    if not text.strip():
+        return {}
+    return json.loads(text)
 
 
 def _save_json(path: Path, data: dict) -> None:
