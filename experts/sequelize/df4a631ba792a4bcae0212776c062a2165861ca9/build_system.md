@@ -75,7 +75,7 @@
 
 Each dialect package includes database-specific drivers:
 
-**PostgreSQL**: 
+**PostgreSQL**:
 - `pg` (latest) - Native PostgreSQL client for Node.js
 - `pg-native` (optional) - Native C++ bindings for enhanced performance
 

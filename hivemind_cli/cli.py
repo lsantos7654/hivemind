@@ -87,7 +87,7 @@ THEME = Theme(
         "info": "cyan",
         "heading": "bold",
         "commit": "cyan",
-    }
+    },
 )
 
 app = typer.Typer(
@@ -454,8 +454,7 @@ def show_expert(
 
     if expert_teams:
         lines.append("\n[heading]Teams:[/heading]")
-        for t in expert_teams:
-            lines.append(f"  - {t}")
+        lines.extend(f"  - {t}" for t in expert_teams)
 
     console.print(Panel("\n".join(lines), border_style="blue"))
 
@@ -505,7 +504,7 @@ def add(
     private_expert_dir = PRIVATE_EXPERTS_DIR / name
     if public_expert_dir.is_dir() or private_expert_dir.is_dir():
         console.print(
-            f"[error]Error: expert '{name}' already exists. Use [bold]hivemind update {name}[/bold] instead.[/error]"
+            f"[error]Error: expert '{name}' already exists. Use [bold]hivemind update {name}[/bold] instead.[/error]",
         )
         raise typer.Exit(1)
 
@@ -684,7 +683,7 @@ def add(
                 "\n".join(summary_lines),
                 title="[bold success]Expert created successfully[/bold success]",
                 border_style="green",
-            )
+            ),
         )
 
     finally:
@@ -1024,8 +1023,7 @@ def team_show(
     lines.append(f"Description: {team.get('description', '')}")
     experts = team.get("experts", [])
     lines.append(f"\n[heading]Roster ({len(experts)}):[/heading]")
-    for expert in experts:
-        lines.append(f"  - {expert}")
+    lines.extend(f"  - {expert}" for expert in experts)
 
     # Show files
     team_dir = TEAMS_DIR / name
@@ -1107,17 +1105,20 @@ def redeploy() -> None:
 
     deployed = result.get("deployed", [])
     failed = result.get("failed", [])
+    experts_deployed = result.get("experts_deployed", [])
     teams_deployed = result.get("teams_deployed", [])
 
     for name in deployed:
         console.print(f"  [success]✓[/success] {name}: redeployed")
     for name in failed:
         console.print(f"  [warning]![/warning] {name}: failed to redeploy")
+    for name in experts_deployed:
+        console.print(f"  [success]✓[/success] {name}: expert dir deployed")
     for name in teams_deployed:
         console.print(f"  [success]✓[/success] {name}: redeployed")
 
     total = len(deployed) + len(teams_deployed)
-    console.print(f"\n[bold success]Redeployed {total} agent(s).[/bold success]")
+    console.print(f"\n[bold success]Redeployed {total} agent(s), {len(experts_deployed)} expert dir(s).[/bold success]")
 
 
 @expert_app.command()
@@ -1252,7 +1253,7 @@ def crawl(
                         urls=discovered_urls,
                         output_dir=str(output_dir),
                         on_page_callback=on_page,
-                    )
+                    ),
                 )
             elif strategy_name == "sitemap":
                 # Sitemap-based browser crawl
@@ -1262,7 +1263,7 @@ def crawl(
                         max_pages=len(discovered_urls),
                         output_dir=str(output_dir),
                         on_page_callback=on_page,
-                    )
+                    ),
                 )
             else:  # browser
                 # Browser crawl with BFS
@@ -1272,7 +1273,7 @@ def crawl(
                         max_pages=len(discovered_urls),
                         output_dir=str(output_dir),
                         on_page_callback=on_page,
-                    )
+                    ),
                 )
         except Exception as e:
             console.print(f"\n[error]✗ Crawl failed: {e}[/error]")
@@ -1317,7 +1318,7 @@ def status() -> None:
     teams = _load_teams()
     overview_lines.append(
         f"Experts: [success]{len(enabled)} enabled[/success]"
-        + (f", [warning]{len(disabled)} disabled[/warning]" if disabled else "")
+        + (f", [warning]{len(disabled)} disabled[/warning]" if disabled else ""),
     )
     overview_lines.append(f"Teams: {len(teams)}")
 

@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import contextlib
 import json
-import os
 import shlex
 import shutil
 from abc import ABC, abstractmethod
@@ -107,10 +106,10 @@ class Provider(ABC):
         Args:
             config: Provider config dict with keys: engine, home_dir, settings
         """
-        self._config = config
-        self._home_dir = Path(os.path.expanduser(config.get("home_dir", "")))
-        self._engine = config.get("engine", "")
-        self._settings = config.get("settings", {})
+        self._config: dict = config
+        self._home_dir = Path(config.get("home_dir", "")).expanduser()
+        self._engine: str = config.get("engine", "")
+        self._settings: dict = config.get("settings", {})
 
     @property
     @abstractmethod
@@ -355,7 +354,7 @@ class Provider(ABC):
                 rules_source,
                 self._home_dir / self.rules_file_name,
                 self.rules_file_name,
-            )
+            ),
         )
 
         # experts/ directory (real dir, not symlink)

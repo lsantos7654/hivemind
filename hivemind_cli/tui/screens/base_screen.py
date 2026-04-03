@@ -38,7 +38,6 @@ class BaseScreen(Screen):
 
     def action_handle_escape(self) -> None:
         """Override in subclass for screen-specific escape behavior."""
-        ...
 
     def action_go_back(self) -> None:
         """Go back one screen."""

@@ -19,7 +19,12 @@ target-version = "py310"
 line-length = 120
 
 [tool.ruff.lint]
-select = ["E", "W", "F", "I", "UP", "B", "SIM", "RUF"]
+select = [
+    "E", "W", "F", "I", "UP", "B", "SIM", "RUF",
+    # Tier 1: low-effort, high-value rules
+    "PIE", "PERF", "FURB", "RET", "PTH",
+    "C4", "RSE", "ICN", "ERA", "LOG", "G",
+]
 ignore = ["E501", "SIM108", "RUF012"]
 
 [tool.ruff.format]
@@ -28,18 +33,46 @@ indent-style = "space"
 
 [tool.mypy]
 python_version = "3.10"
-disallow_untyped_defs = false
+show_error_codes = true
+
+# Strict by default — enforced on new/clean modules
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
 check_untyped_defs = true
-ignore_missing_imports = true
 no_implicit_optional = true
-warn_return_any = false
-warn_unused_configs = true
+strict_optional = true
+warn_return_any = true
 warn_redundant_casts = true
 warn_unused_ignores = true
+warn_unused_configs = true
 
+# Third-party libs without stubs
+ignore_missing_imports = true
+
+# TUI: Textual mixin patterns produce false positives — defer entirely
 [[tool.mypy.overrides]]
 module = "hivemind_cli.tui.*"
-check_untyped_defs = false
+ignore_errors = true
+
+# core.py: large unannotated file — relax until incrementally annotated
+[[tool.mypy.overrides]]
+module = "hivemind_cli.core"
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+warn_return_any = false
+allow_untyped_globals = true
+
+# cli.py: thin layer over core, mostly unannotated
+[[tool.mypy.overrides]]
+module = "hivemind_cli.cli"
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+
+# crawler.py: unannotated
+[[tool.mypy.overrides]]
+module = "hivemind_cli.crawler"
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
 
 [build-system]
 requires = ["hatchling"]

@@ -71,9 +71,7 @@ def url_to_filename(url: str) -> str:
         path = "index"
 
     # Replace non-alphanumeric characters (except hyphens) with underscores
-    filename = re.sub(r"[^\w\-]", "_", path)
-
-    return filename
+    return re.sub(r"[^\w\-]", "_", path)
 
 
 def create_path_filter(url: str) -> FilterChain:
@@ -106,7 +104,7 @@ def is_sitemap_url(url: str) -> bool:
         True if the URL appears to be a sitemap, False otherwise
     """
     url_lower = url.lower()
-    return url_lower.endswith(".xml") or url_lower.endswith(".xml.gz") or "sitemap" in url_lower
+    return url_lower.endswith((".xml", ".xml.gz")) or "sitemap" in url_lower
 
 
 def extract_domain_from_sitemap_url(sitemap_url: str) -> str:
@@ -171,7 +169,7 @@ def create_clean_docs_config(stream: bool = False) -> dict:
                 threshold=0.48,  # Balanced threshold (default)
                 threshold_type="dynamic",  # Adapts based on tag importance
                 min_word_threshold=10,  # Skip very short blocks
-            )
+            ),
         ),
     }
 

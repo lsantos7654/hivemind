@@ -15,6 +15,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
+from typing import IO
 
 from hivemind_cli.providers import (
     Provider,
@@ -80,8 +81,8 @@ class AnalysisHandle:
     expected_files: list[str]
     stderr_path: Path
     stdout_path: Path
-    _stderr_file: object = None  # kept open until finish
-    _stdout_file: object = None
+    _stderr_file: IO[str] | None = None  # kept open until finish
+    _stdout_file: IO[str] | None = None
 
 
 # --- Paths (shared configuration) ---
@@ -120,7 +121,7 @@ def _save_json(path: Path, data: dict) -> None:
 
 def _load_config() -> dict:
     """Load config.json (local user state: enabled/disabled, active_provider)."""
-    default = {"enabled": [], "disabled": []}
+    default: dict[str, list[str]] = {"enabled": [], "disabled": []}
     if not CONFIG_JSON.exists():
         return default
     data = _load_json(CONFIG_JSON)
@@ -214,7 +215,7 @@ def _get_repos_for_expert(name: str) -> tuple[dict, bool]:
 
 def _expert_names() -> list[str]:
     """List all expert names from experts/ and private-experts/ directories."""
-    experts = []
+    experts: list[str] = []
     if EXPERTS_DIR.exists():
         experts.extend(d.name for d in EXPERTS_DIR.iterdir() if d.is_dir())
     if PRIVATE_EXPERTS_DIR.exists():
@@ -227,7 +228,7 @@ def _get_head_commit(expert_dir: Path) -> str | None:
     head = expert_dir / "HEAD"
     if not head.is_symlink():
         return None
-    return os.readlink(head)
+    return str(head.readlink())
 
 
 def _count_versions(expert_dir: Path) -> int:
@@ -417,7 +418,7 @@ def _analyze_repo(
     *,
     is_update: bool = False,
     background: bool = False,
-) -> subprocess.Popen | tuple[subprocess.Popen, Path, Path, object, object] | bool:
+) -> subprocess.Popen | tuple[subprocess.Popen, Path, Path, IO[str], IO[str]] | bool:
     """Run AI analysis on a repo via the active provider's engine.
 
     For create (is_update=False): generates 5 files (4 knowledge + agent.md).
@@ -471,49 +472,49 @@ def _analyze_repo(
             stderr=stderr_file,
             cwd=str(cwd),
         )
+        assert proc.stdin is not None
         proc.stdin.write(prompt.encode())
         proc.stdin.close()
         # Don't close files yet - process needs them
         return proc, stderr_path, stdout_path, stderr_file, stdout_file
-    else:
-        proc = subprocess.Popen(
-            cmd,
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            cwd=str(cwd),
-        )
-        stdout, stderr = proc.communicate(input=prompt.encode())
-        if proc.returncode != 0:
-            err_output = (stderr or stdout or b"").decode().strip()
-            if err_output:
-                print(f"Analysis error: {err_output}", file=sys.stderr)
-            else:
-                print(
-                    f"Analysis failed with exit code {proc.returncode}",
-                    file=sys.stderr,
-                )
-            return False
-
-        # Validate expected output files exist (engine may exit 0 despite
-        # failing to write, e.g. OpenCode rejecting external directory access)
-        expected = [
-            "summary.md",
-            "code_structure.md",
-            "build_system.md",
-            "apis_and_interfaces.md",
-        ]
-        if not is_update:
-            expected.append("agent.md")
-        missing = [f for f in expected if not (commit_dir / f).exists()]
-        if missing:
+    proc = subprocess.Popen(
+        cmd,
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        cwd=str(cwd),
+    )
+    stdout, stderr = proc.communicate(input=prompt.encode())
+    if proc.returncode != 0:
+        err_output = (stderr or stdout or b"").decode().strip()
+        if err_output:
+            print(f"Analysis error: {err_output}", file=sys.stderr)
+        else:
             print(
-                f"Analysis produced no output — missing: {', '.join(missing)}",
+                f"Analysis failed with exit code {proc.returncode}",
                 file=sys.stderr,
             )
-            return False
+        return False
 
-        return True
+    # Validate expected output files exist (engine may exit 0 despite
+    # failing to write, e.g. OpenCode rejecting external directory access)
+    expected = [
+        "summary.md",
+        "code_structure.md",
+        "build_system.md",
+        "apis_and_interfaces.md",
+    ]
+    if not is_update:
+        expected.append("agent.md")
+    missing = [f for f in expected if not (commit_dir / f).exists()]
+    if missing:
+        print(
+            f"Analysis produced no output — missing: {', '.join(missing)}",
+            file=sys.stderr,
+        )
+        return False
+
+    return True
 
 
 def _expected_analysis_files(*, is_update: bool = False) -> list[str]:
@@ -579,6 +580,7 @@ def start_analysis(
         stderr=stderr_file,
         cwd=str(cwd),
     )
+    assert proc.stdin is not None
     proc.stdin.write(prompt.encode())
     proc.stdin.close()
 
@@ -601,10 +603,12 @@ def finish_analysis(handle: AnalysisHandle) -> bool:
     handle.proc.wait()
 
     # Close temp file handles
-    with contextlib.suppress(Exception):
-        handle._stderr_file.close()
-    with contextlib.suppress(Exception):
-        handle._stdout_file.close()
+    if handle._stderr_file is not None:
+        with contextlib.suppress(Exception):
+            handle._stderr_file.close()
+    if handle._stdout_file is not None:
+        with contextlib.suppress(Exception):
+            handle._stdout_file.close()
 
     if handle.proc.returncode != 0:
         err_output = ""
@@ -804,7 +808,7 @@ def update_expert(
                 f"Staging update from {old_commit[:12] if old_commit else 'none'} to {new_commit[:12]}...",
                 new_commit=new_commit,
                 old_commit=old_commit,
-            )
+            ),
         )
 
     tmpdir = tempfile.mkdtemp(prefix=f"hivemind-update-{name}-")
@@ -840,13 +844,20 @@ def update_expert(
                         progress_percent=0,
                         new_commit=new_commit,
                         old_commit=old_commit,
-                    )
+                    ),
                 )
 
             # Start analysis process
-            proc, stderr_path, stdout_path, stderr_file, stdout_file = _analyze_repo(
-                name, new_commit, repo_dir, tmp_expert, is_update=True, background=True
+            analysis_result = _analyze_repo(
+                name,
+                new_commit,
+                repo_dir,
+                tmp_expert,
+                is_update=True,
+                background=True,
             )
+            assert isinstance(analysis_result, tuple)
+            proc, stderr_path, stdout_path, stderr_file, stdout_file = analysis_result
 
             # Poll until complete (for progress updates)
             while proc.poll() is None:
@@ -860,7 +871,7 @@ def update_expert(
                             f"Analyzing {new_commit[:12]}...",
                             new_commit=new_commit,
                             old_commit=old_commit,
-                        )
+                        ),
                     )
 
             # Close files now that process is done
@@ -922,7 +933,7 @@ def update_expert(
                         "Skipping analysis (reusing existing docs)...",
                         new_commit=new_commit,
                         old_commit=old_commit,
-                    )
+                    ),
                 )
 
         # Phase 4: Commit results
@@ -1070,7 +1081,7 @@ async def update_expert_async_internal(
                     f"Staging update from {old_commit[:12] if old_commit else 'none'} to {new_commit[:12]}...",
                     new_commit=new_commit,
                     old_commit=old_commit,
-                )
+                ),
             )
 
         tmpdir = tempfile.mkdtemp(prefix=f"hivemind-update-{name}-")
@@ -1105,7 +1116,7 @@ async def update_expert_async_internal(
                     progress_percent=0,
                     new_commit=new_commit,
                     old_commit=old_commit,
-                )
+                ),
             )
 
         # Prepare prompt and command
@@ -1181,7 +1192,7 @@ async def update_expert_async_internal(
                         f"Analyzing {new_commit[:12]}...",
                         new_commit=new_commit,
                         old_commit=old_commit,
-                    )
+                    ),
                 )
 
         # Check exit code
@@ -1416,10 +1427,9 @@ def get_git_versions(name: str, expert_dir: Path) -> list:
         def sort_key(v):
             if v.is_active:
                 return (2, v.date)  # Highest priority with reverse=True
-            elif v.analyzed:
+            if v.analyzed:
                 return (1, v.date)
-            else:
-                return (0, v.date)  # Lowest priority with reverse=True
+            return (0, v.date)  # Lowest priority with reverse=True
 
         versions.sort(key=sort_key, reverse=True)
         return versions
@@ -1537,7 +1547,7 @@ async def switch_version_async(
                         f"Checking out {target_commit[:12]}...",
                         old_commit=old_commit,
                         new_commit=target_commit,
-                    )
+                    ),
                 )
 
             # Checkout target commit
@@ -1560,7 +1570,7 @@ async def switch_version_async(
                         f"Staging analysis for {target_commit[:12]}...",
                         old_commit=old_commit,
                         new_commit=target_commit,
-                    )
+                    ),
                 )
 
             tmpdir = tempfile.mkdtemp(prefix=f"hivemind-version-{name}-")
@@ -1580,7 +1590,7 @@ async def switch_version_async(
                         progress_percent=0,
                         old_commit=old_commit,
                         new_commit=target_commit,
-                    )
+                    ),
                 )
 
             # Prepare prompt for create (not update)
@@ -1658,7 +1668,7 @@ async def switch_version_async(
                             f"Analyzing {target_commit[:12]}...",
                             old_commit=old_commit,
                             new_commit=target_commit,
-                        )
+                        ),
                     )
 
             # Check exit code
@@ -1717,7 +1727,7 @@ async def switch_version_async(
                         "Committing changes...",
                         old_commit=old_commit,
                         new_commit=target_commit,
-                    )
+                    ),
                 )
 
             final_commit_dir = expert_dir / target_commit
@@ -1749,7 +1759,7 @@ async def switch_version_async(
                     "Updating HEAD symlink...",
                     old_commit=old_commit,
                     new_commit=target_commit,
-                )
+                ),
             )
 
         head_link = expert_dir / "HEAD"
@@ -1941,6 +1951,9 @@ def redeploy_all_agents() -> dict:
         else:
             failed.append(name)
 
+    # Deploy expert directories to provider's experts/ location
+    experts_deployed = [name for name in enabled if _deploy_expert(name)]
+
     # Refresh team templates and redeploy team leads
     teams_deployed: list[str] = []
     teams = _load_teams()
@@ -1959,6 +1972,7 @@ def redeploy_all_agents() -> dict:
         "success": True,
         "deployed": deployed,
         "failed": failed,
+        "experts_deployed": experts_deployed,
         "teams_deployed": teams_deployed,
     }
 

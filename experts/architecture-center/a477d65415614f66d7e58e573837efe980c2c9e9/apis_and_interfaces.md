@@ -254,9 +254,9 @@ Images are stored in section-level `images/` or `media/` directories. Browse cat
 Diagram references in articles use DocFX image syntax with alt text and optional lightbox:
 
 ```markdown
-:::image type="complex" border="false" 
-         source="./images/diagram.svg" 
-         alt-text="Descriptive alt text." 
+:::image type="complex" border="false"
+         source="./images/diagram.svg"
+         alt-text="Descriptive alt text."
          lightbox="./images/diagram.svg":::
    Long description of the diagram for accessibility.
 :::image-end:::

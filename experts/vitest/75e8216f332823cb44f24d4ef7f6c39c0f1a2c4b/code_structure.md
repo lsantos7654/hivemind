@@ -43,7 +43,7 @@ vitest/
 │   │   ├── src/                      # Browser test implementation
 │   │   └── context.js               # Browser context setup
 │   ├── browser-playwright/           # Playwright browser automation
-│   ├── browser-webdriverio/          # WebDriverIO browser automation  
+│   ├── browser-webdriverio/          # WebDriverIO browser automation
 │   ├── coverage-v8/                  # V8 code coverage provider
 │   ├── coverage-istanbul/            # Istanbul code coverage provider
 │   ├── expect/                       # Assertion library (Chai-based)
@@ -86,7 +86,7 @@ The Vitest monorepo follows a modular architecture where each package serves a s
 
 **Runtime Packages**: Core testing functionality is split into specialized packages:
 - `@vitest/runner` - Test execution engine and task management
-- `@vitest/expect` - Assertion library with Jest-compatible API  
+- `@vitest/expect` - Assertion library with Jest-compatible API
 - `@vitest/spy` - Mocking, stubbing, and spying capabilities
 - `@vitest/snapshot` - Snapshot testing implementation
 - `@vitest/mocker` - Advanced module mocking system
@@ -144,7 +144,7 @@ The Vitest monorepo follows a modular architecture where each package serves a s
 
 ### Framework Core
 
-- `packages/vitest/src/node/core.ts` - Main framework orchestration and lifecycle management  
+- `packages/vitest/src/node/core.ts` - Main framework orchestration and lifecycle management
 - `packages/vitest/src/runtime/runners/test.ts` - Test execution engine
 - `packages/vitest/src/node/project.ts` - Project configuration and management
 - `packages/vitest/src/node/pools/pool.ts` - Test execution pool abstraction

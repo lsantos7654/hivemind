@@ -76,7 +76,7 @@ import { buildRegistry } from 'ocx'
 
 interface BuildRegistryOptions {
   source: string    // Source directory with registry.jsonc
-  out: string       // Output directory for built registry  
+  out: string       // Output directory for built registry
   dryRun?: boolean  // Preview mode without file creation
 }
 
@@ -97,16 +97,16 @@ console.log(`Built ${result.componentsCount} components to ${result.outputPath}`
 
 #### Schema Validation
 ```typescript
-import { 
-  registrySchema, 
+import {
+  registrySchema,
   componentManifestSchema,
-  ocxConfigSchema 
+  ocxConfigSchema
 } from 'ocx'
 
 // Validate registry manifest
 const registry = registrySchema.parse(registryData)
 
-// Validate component manifest  
+// Validate component manifest
 const component = componentManifestSchema.parse(componentData)
 
 // Validate OCX configuration
@@ -183,7 +183,7 @@ abstract class ConfigProvider {
 // Local project configuration
 const localProvider = await LocalConfigProvider.requireInitialized('./project')
 
-// Global user configuration  
+// Global user configuration
 const globalProvider = await GlobalConfigProvider.requireInitialized()
 
 // Profile-based configuration
@@ -275,7 +275,7 @@ ocx init --global
 # Create development profile
 ocx profile add dev --clone default
 
-# Install profile-specific components  
+# Install profile-specific components
 ocx add kdco/debugging-tools -p dev
 
 # Launch OpenCode with profile
@@ -315,14 +315,14 @@ async function buildMyRegistry() {
     // Validate source registry
     const sourceData = await Bun.file('./registry.jsonc').json()
     const registry = registrySchema.parse(sourceData)
-    
+
     // Build registry
     const result = await buildRegistry({
       source: './src',
       out: './dist',
       dryRun: false
     })
-    
+
     console.log(`✅ Built ${result.componentsCount} components`)
     return result
   } catch (error) {
@@ -361,14 +361,14 @@ import { ConfigResolver } from 'ocx'
 class CustomOpenCodeManager {
   async setupEnvironment(profileName: string, projectPath: string) {
     // Resolve configuration with profile
-    const resolver = await ConfigResolver.create(projectPath, { 
-      profile: profileName 
+    const resolver = await ConfigResolver.create(projectPath, {
+      profile: profileName
     })
-    
+
     // Get merged configuration
     const registries = resolver.getRegistries()
     const componentPath = resolver.getComponentPath()
-    
+
     // Custom logic using resolved configuration
     return this.deployConfiguration(registries, componentPath)
   }
@@ -377,11 +377,11 @@ class CustomOpenCodeManager {
 
 ### Error Handling Patterns
 ```typescript
-import { 
-  ConflictError, 
-  ValidationError, 
+import {
+  ConflictError,
+  ValidationError,
   IntegrityError,
-  ProfileNotFoundError 
+  ProfileNotFoundError
 } from 'ocx'
 
 try {
@@ -446,7 +446,7 @@ Components can specify OpenCode configuration that gets merged into `opencode.js
 // Component manifest with OpenCode config
 const component: ComponentManifest = {
   name: "researcher",
-  type: "agent", 
+  type: "agent",
   description: "Research and analysis agent",
   files: ["agents/researcher.md"],
   opencode: {
@@ -466,9 +466,9 @@ const component: ComponentManifest = {
         model: "claude-3-5-sonnet",
         steps: 50,
         tools: { "web": true, "search": true },
-        permission: { 
+        permission: {
           bash: { "*": "deny" },  // Read-only agent
-          edit: "ask" 
+          edit: "ask"
         }
       }
     },

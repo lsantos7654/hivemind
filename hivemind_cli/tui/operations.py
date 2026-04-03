@@ -228,7 +228,7 @@ async def switch_version_async_tui(
                             header.update(
                                 f"Expert: {screen.expert.name}\n"
                                 f"Current HEAD: {target_commit[:12]}\n"
-                                f"Remote: {screen.expert.remote}"
+                                f"Remote: {screen.expert.remote}",
                             )
                         except Exception:
                             pass

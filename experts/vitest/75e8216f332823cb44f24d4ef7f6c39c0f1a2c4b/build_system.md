@@ -83,12 +83,12 @@ Vitest uses a sophisticated multi-tool build system designed to handle the compl
 
 ### Specialized Build Commands
 
-**Documentation**: 
+**Documentation**:
 - `pnpm docs` - Development server for documentation
 - `pnpm docs:build` - Static documentation site generation
 - `pnpm docs:serve` - Serve built documentation locally
 
-**UI Package**: 
+**UI Package**:
 - `pnpm ui:build` - Build the web-based test result viewer
 - `pnpm ui:dev` - Development mode for UI components
 
@@ -115,7 +115,7 @@ Each package has its own build configuration tailored to its purpose:
 
 ### Development Setup
 
-1. **Initial Setup**: 
+1. **Initial Setup**:
    ```bash
    pnpm install          # Install all dependencies
    pnpm build            # Build all packages
@@ -156,7 +156,7 @@ Each package has its own build configuration tailored to its purpose:
 
 **Build Artifacts**: Successful builds produce:
 - `dist/` directories in each package with compiled JavaScript
-- `.d.ts` files for TypeScript consumers  
+- `.d.ts` files for TypeScript consumers
 - Source maps for debugging
 - License files with dependency attribution
 
@@ -164,7 +164,7 @@ Each package has its own build configuration tailored to its purpose:
 
 **Release Preparation**:
 - Version bumping with `bumpp`
-- Changelog generation with `changelogithub` 
+- Changelog generation with `changelogithub`
 - Comprehensive testing across all environments
 - Documentation updates and verification
 

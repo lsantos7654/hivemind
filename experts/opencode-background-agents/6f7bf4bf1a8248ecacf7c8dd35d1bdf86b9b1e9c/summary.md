@@ -53,7 +53,7 @@ This plugin implements a "waiter model" approach to task delegation - similar to
 ### Tool Interface
 The plugin exposes three primary tools:
 - `delegate(prompt, agent)`: Launch background tasks with immediate ID return
-- `delegation_read(id)`: Retrieve completed results by readable ID  
+- `delegation_read(id)`: Retrieve completed results by readable ID
 - `delegation_list()`: List all delegations with titles and status
 
 ### Integration Points
@@ -81,7 +81,7 @@ The plugin exposes three primary tools:
 ### Plugin Architecture
 The plugin is structured as part of the kdco-primitives ecosystem, sharing common utilities for:
 - Project identification and git repository handling
-- Cross-platform shell command escaping  
+- Cross-platform shell command escaping
 - Timeout management and promise utilities
 - Logging integration with OpenCode's log panel
 - Terminal detection and environment handling

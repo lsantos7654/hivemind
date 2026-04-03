@@ -218,7 +218,7 @@ git commit -m "feat: new feature"  # Triggers commitlint + quality checks
 # Unit tests
 bun test packages/cli/tests/   # Individual function tests
 
-# Integration tests  
+# Integration tests
 bun test packages/cli/tests/   # Command workflow tests
 
 # Registry tests
@@ -260,7 +260,7 @@ The GitHub Actions workflow (`.github/workflows/ci.yml`) handles:
 
 1. **Quality Gates**:
    - Code formatting validation
-   - TypeScript type checking  
+   - TypeScript type checking
    - Comprehensive test suite execution
    - Dependency vulnerability scanning
 

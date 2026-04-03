@@ -36,7 +36,7 @@ delegate("Research OAuth2 PKCE best practices", "researcher")
 // Returns: "Delegation started: swift-amber-falcon\nAgent: researcher"
 ```
 
-#### **`delegation_read(id)` - Result Retrieval**  
+#### **`delegation_read(id)` - Result Retrieval**
 **Purpose**: Retrieve completed delegation results by ID
 **Parameters**:
 - `id` (string): Delegation ID (e.g., "swift-amber-falcon")
@@ -75,11 +75,11 @@ class DelegationManager {
   async delegate(input: DelegateInput): Promise<Delegation>
   async readOutput(sessionID: string, id: string): Promise<string>
   async listDelegations(sessionID: string): Promise<DelegationListItem[]>
-  
+
   // Event handling
   async handleSessionIdle(sessionID: string): Promise<void>
   handleMessageEvent(sessionID: string, messageText?: string): void
-  
+
   // Internal management
   private async persistOutput(delegation: Delegation, content: string): Promise<void>
   private async notifyParent(delegation: Delegation): Promise<void>
@@ -98,7 +98,7 @@ constructor(client: OpencodeClient, baseDir: string, log: Logger)
 ```typescript
 async function parseAgentWriteCapability(
   client: OpencodeClient,
-  agentName: string, 
+  agentName: string,
   log: Logger
 ): Promise<{ isReadOnly: boolean }>
 ```
@@ -164,7 +164,7 @@ interface ToolContext {
 ```typescript
 // User initiates delegation through OpenCode interface
 const result = await delegate(
-  "Research the latest OAuth2 security best practices and PKCE implementation patterns", 
+  "Research the latest OAuth2 security best practices and PKCE implementation patterns",
   "researcher"
 )
 console.log(result)
@@ -176,13 +176,13 @@ console.log(result)
 // After receiving completion notification
 const delegationResult = await delegation_read("elegant-blue-tiger")
 console.log(delegationResult)
-/* Output: 
+/* Output:
 # OAuth2 Security Best Practices
 
 Research on OAuth2 PKCE implementation patterns and security considerations...
 
 **ID:** elegant-blue-tiger
-**Agent:** researcher  
+**Agent:** researcher
 **Status:** complete
 **Started:** 2026-03-18T10:30:00.000Z
 **Completed:** 2026-03-18T10:32:45.000Z
@@ -243,11 +243,11 @@ try {
 **Purpose**: Injects delegation usage rules into every chat session
 **Content**: Guidelines for agent routing, completion notification expectations, and tool usage patterns
 
-#### **Context Compaction Preservation**  
+#### **Context Compaction Preservation**
 ```typescript
 "experimental.session.compacting": async (input, output) => {
   const running = manager.getRunningDelegations()
-  const completed = await manager.listDelegations(input.sessionID) 
+  const completed = await manager.listDelegations(input.sessionID)
   output.context.push(formatDelegationContext(running, completed))
 }
 ```
@@ -255,7 +255,7 @@ try {
 **Strategy**: Injects delegation status and recent results into compaction context
 
 #### **Tool Execution Interception**
-```typescript  
+```typescript
 "tool.execute.before": async (input, output) => {
   if (input.tool !== "task") return
   const { isReadOnly } = await parseAgentWriteCapability(client, agentName, log)
@@ -306,7 +306,7 @@ The plugin reads OpenCode's agent configuration to determine routing:
     "researcher": {
       permission: {
         edit: "deny",
-        write: "deny", 
+        write: "deny",
         bash: { "*": "deny" }
       }
     }

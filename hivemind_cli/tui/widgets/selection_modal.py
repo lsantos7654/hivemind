@@ -83,4 +83,4 @@ class SelectionListModal(FormModal):
     def _submit(self) -> None:
         sel_list = self.query_one("#selection-list", VimSelectionList)
         selected = list(sel_list.selected)
-        self.dismiss(selected if selected else None)
+        self.dismiss(selected or None)

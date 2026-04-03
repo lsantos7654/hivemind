@@ -32,7 +32,7 @@ Sequelize supports a comprehensive range of database systems:
 
 ### Advanced Features
 - **Read Replication**: Master-slave database configurations for performance
-- **Raw Queries**: Direct SQL execution when ORM limitations are reached  
+- **Raw Queries**: Direct SQL execution when ORM limitations are reached
 - **Data Types**: Comprehensive type system with database-specific optimizations
 - **JSON/JSONB Support**: Native handling of JSON data types
 - **Paranoid Mode**: Soft deletion with automatic filtering

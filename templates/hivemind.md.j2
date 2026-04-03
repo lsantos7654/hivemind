@@ -42,9 +42,13 @@ You (main) handle all implementation directly. Subagents are for domain research
 
 1. **Consult the team lead** — spawn `team-lead-{team}` to get routing advice. The team lead knows each expert's strengths and recent consultation history (via notes.md files). It will recommend which expert(s) to call and what to ask.
 
-2. **Spawn experts in parallel** — call the recommended experts with specific questions. Include which team they're part of so they can update their notes. Experts read their knowledge docs and source code, then report findings.
+2. **Spawn experts in parallel** — when spawning each expert, you MUST include these instructions in your prompt:
+   - The specific question to answer
+   - That they are being consulted as part of the `{team}` team
+   - The path to their notes file: `teams/{team}/expert-{name}/notes.md`
+   - That they must update their notes file with: date, what was asked, and a summary of their findings
 
-3. **Experts update their notes** — each expert writes to `teams/{team}/expert-{name}/notes.md` with what was asked and what they found. This builds institutional memory across sessions.
+3. **Experts update their notes** — each expert writes to `teams/{team}/expert-{name}/notes.md` with what was asked and what they found. This builds institutional memory across sessions. If an expert does not update its notes, remind it to do so.
 
 ### When you don't know which team or expert to use:
 

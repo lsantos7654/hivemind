@@ -181,7 +181,7 @@ class HivemindApp(App):
                     ref_name=ref_name,
                     is_private=is_private,
                     operation_status=None,
-                )
+                ),
             )
 
         self.experts.sort(key=lambda e: (0 if e.status == ExpertStatus.ENABLED else 1, e.name.lower()))

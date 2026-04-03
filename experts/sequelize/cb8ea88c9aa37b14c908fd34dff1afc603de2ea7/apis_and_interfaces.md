@@ -58,7 +58,7 @@ Model.drop(options)              // Drop table
 
 // Association definition
 Model.hasOne(target, options)        // One-to-one relationship
-Model.hasMany(target, options)       // One-to-many relationship  
+Model.hasMany(target, options)       // One-to-many relationship
 Model.belongsTo(target, options)     // Many-to-one relationship
 Model.belongsToMany(target, options) // Many-to-many relationship
 ```
@@ -103,7 +103,7 @@ DataTypes.CITEXT               // Case-insensitive text (PostgreSQL)
 **Numeric Types:**
 ```javascript
 DataTypes.INTEGER              // 32-bit integer
-DataTypes.BIGINT               // 64-bit integer  
+DataTypes.BIGINT               // 64-bit integer
 DataTypes.FLOAT                // Single precision floating point
 DataTypes.DOUBLE               // Double precision floating point
 DataTypes.REAL                 // Real number
@@ -127,7 +127,7 @@ DataTypes.NOW                 // Current timestamp default
 DataTypes.BOOLEAN             // Boolean value
 DataTypes.UUID                // UUID string
 DataTypes.UUIDV1             // UUID version 1
-DataTypes.UUIDV4             // UUID version 4  
+DataTypes.UUIDV4             // UUID version 4
 DataTypes.JSON               // JSON data (PostgreSQL, MySQL 5.7+)
 DataTypes.JSONB              // Binary JSON (PostgreSQL)
 DataTypes.BLOB               // Binary data
@@ -191,7 +191,7 @@ User.belongsTo(Company, { foreignKey: 'companyId', as: 'employer' });
 ```
 
 **HasOne** (`src/associations/has-one.js`):
-```javascript  
+```javascript
 // One-to-one relationship
 User.hasOne(Profile, { foreignKey: 'userId', as: 'profile' });
 // Adds: user.getProfile(), user.setProfile(), user.createProfile()
@@ -199,7 +199,7 @@ User.hasOne(Profile, { foreignKey: 'userId', as: 'profile' });
 
 **HasMany** (`src/associations/has-many.js`):
 ```javascript
-// One-to-many relationship  
+// One-to-many relationship
 User.hasMany(Post, { foreignKey: 'authorId', as: 'posts' });
 // Adds: user.getPosts(), user.setPosts(), user.addPost(), user.removePost()
 ```
@@ -506,7 +506,7 @@ const sequelize = new Sequelize(connectionString, {
   password: 'pass',
   database: 'mydb',
   dialect: 'postgres',
-  
+
   // Connection pooling
   pool: {
     max: 20,          // Maximum connections
@@ -520,7 +520,7 @@ const sequelize = new Sequelize(connectionString, {
   // Logging
   logging: console.log,              // Function or false
   benchmark: true,                   // Log query execution time
-  
+
   // Timezone handling
   timezone: '+00:00',                // UTC
   dialectOptions: {
@@ -533,7 +533,7 @@ const sequelize = new Sequelize(connectionString, {
   // Query options
   define: {
     timestamps: true,                // Add createdAt, updatedAt
-    paranoid: false,                 // Soft deletes with deletedAt  
+    paranoid: false,                 // Soft deletes with deletedAt
     underscored: false,             // Use camelCase vs snake_case
     freezeTableName: false,         // Use model name as table name
     charset: 'utf8',
@@ -549,7 +549,7 @@ const sequelize = new Sequelize(connectionString, {
 
   // Synchronization
   sync: { force: false, alter: false },
-  
+
   // Hooks
   hooks: {
     beforeConnect: (config) => {},

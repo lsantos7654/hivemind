@@ -9,7 +9,7 @@ Vitest provides a comprehensive set of APIs designed for different use cases, fr
 **Main Package (`vitest`)**: The primary entry point provides all essential testing APIs through multiple specialized exports:
 
 - `vitest` - Core testing framework with CLI functionality
-- `vitest/config` - Configuration utilities and type definitions  
+- `vitest/config` - Configuration utilities and type definitions
 - `vitest/node` - Node.js-specific APIs for programmatic usage
 - `vitest/browser` - Browser testing context and utilities
 - `vitest/runners` - Custom test runner implementations
@@ -66,7 +66,7 @@ describe('Calculator', () => {
   test('should add numbers correctly', () => {
     expect(1 + 1).toBe(2)
   })
-  
+
   // Alternative syntax
   it('should subtract numbers', () => {
     expect(5 - 3).toBe(2)
@@ -202,7 +202,7 @@ describe('Math utilities', () => {
     expect(add(2, 3)).toBe(5)
     expect(add(-1, 1)).toBe(0)
   })
-  
+
   test('multiply function', () => {
     expect(multiply(3, 4)).toBe(12)
     expect(multiply(0, 5)).toBe(0)
@@ -240,15 +240,15 @@ global.fetch = vi.fn()
 
 test('fetchUser returns user data', async () => {
   const mockUser = { id: 1, name: 'John Doe' }
-  
+
   // Setup mock response
   vi.mocked(fetch).mockResolvedValueOnce({
     ok: true,
     json: async () => mockUser,
   } as Response)
-  
+
   const user = await fetchUser(1)
-  
+
   expect(fetch).toHaveBeenCalledWith('/api/users/1')
   expect(user).toEqual(mockUser)
 })
@@ -265,7 +265,7 @@ import { test, expect } from 'vitest'
 test('DOM manipulation', () => {
   document.body.innerHTML = '<div id="app"></div>'
   const app = document.getElementById('app')
-  
+
   expect(app).toBeDefined()
   expect(app?.tagName).toBe('DIV')
 })
@@ -287,7 +287,7 @@ export default defineConfig({
     globals: true,
     setupFiles: ['./test/setup.ts']
   },
-  
+
   // Environment-specific configs
   environments: {
     jsdom: {
@@ -296,7 +296,7 @@ export default defineConfig({
         include: ['src/**/*.dom.test.ts']
       }
     },
-    
+
     node: {
       test: {
         environment: 'node',
@@ -322,8 +322,8 @@ export default defineWorkspace([
       include: ['src/**/*.test.ts']
     }
   },
-  
-  // Integration tests  
+
+  // Integration tests
   {
     extends: './vitest.config.ts',
     test: {
@@ -331,7 +331,7 @@ export default defineWorkspace([
       include: ['tests/integration/**/*.test.ts']
     }
   },
-  
+
   // Browser tests
   {
     extends: './vitest.config.ts',
@@ -359,7 +359,7 @@ export class CustomReporter implements Reporter {
   onTestResult(test: TestResult) {
     console.log(`Test ${test.name}: ${test.result}`)
   }
-  
+
   onFinished(files: File[], errors: unknown[]) {
     console.log(`Tests completed: ${files.length} files`)
   }
@@ -471,7 +471,7 @@ export default {
   setup(global) {
     // Setup custom global environment
     global.customAPI = new CustomAPI()
-    
+
     return {
       teardown() {
         // Cleanup

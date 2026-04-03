@@ -32,7 +32,7 @@ The main plugin file contains the complete background delegation system implemen
 
 **Key organizational patterns within the main module:**
 - **Type definitions** (lines 150-207): Interfaces for delegations, progress tracking, and input/output contracts
-- **Utility functions** (lines 25-147): ID generation, metadata creation, and helper utilities  
+- **Utility functions** (lines 25-147): ID generation, metadata creation, and helper utilities
 - **Core class** (lines 315-969): DelegationManager containing all business logic
 - **Tool creators** (lines 980-1078): Factory functions for OpenCode tool integration
 - **Hook handlers** (lines 1281-1342): Integration with OpenCode's plugin system
@@ -58,7 +58,7 @@ The kdco-primitives directory contains extracted, reusable utilities designed fo
 - Session management and event handling
 - Storage persistence and retrieval operations
 
-### `/src/plugin/kdco-primitives/` - Utility Layer  
+### `/src/plugin/kdco-primitives/` - Utility Layer
 **Purpose**: Shared primitives for cross-plugin consistency
 **Structure**: Focused single-purpose modules with unified exports
 **Responsibilities**:
@@ -77,7 +77,7 @@ The kdco-primitives directory contains extracted, reusable utilities designed fo
 - **DelegationManager class** (lines 315-969): Core orchestration logic
   - Session creation and management
   - Agent capability detection and routing
-  - Progress tracking and timeout handling  
+  - Progress tracking and timeout handling
   - Storage persistence and metadata generation
 - **Tool implementations** (lines 980-1078): OpenCode tool interfaces
   - `delegate()`: Task creation with immediate ID return
@@ -88,7 +88,7 @@ The kdco-primitives directory contains extracted, reusable utilities designed fo
   - Context compaction handling for result preservation
   - Tool execution interception for agent routing
 
-#### `registry.json` (30 lines) - Distribution Configuration  
+#### `registry.json` (30 lines) - Distribution Configuration
 **Role**: OCX registry metadata for plugin distribution
 **Key elements**:
 - Plugin component definition with TypeScript source mapping
@@ -101,7 +101,7 @@ The kdco-primitives directory contains extracted, reusable utilities designed fo
 **Role**: Stable project identification across git repository operations
 **Key features**:
 - Git root commit SHA extraction for stable identity
-- Worktree support with commondir resolution  
+- Worktree support with commondir resolution
 - Path-based fallback for non-git projects
 - Caching system with .git/opencode storage
 
@@ -141,7 +141,7 @@ The plugin uses explicit boundary parsing for external system integration:
 - **Permission validation**: Reads permission settings from configuration with fallback defaults
 - **Git system integration**: Safely handles git command execution with timeout and error recovery
 
-#### **Hook-Driven Architecture**  
+#### **Hook-Driven Architecture**
 OpenCode integration uses multiple hook points:
 - `tool.execute.before`: Intercepts tool calls for agent routing validation
 - `experimental.chat.system.transform`: Injects delegation rules into system prompts
@@ -162,7 +162,7 @@ Tool creation uses factory functions:
 - Consistent parameter validation and error handling
 - Unified tool metadata and schema definitions
 
-#### **Observer Pattern**  
+#### **Observer Pattern**
 Event-driven delegation updates:
 - Session idle events trigger completion processing
 - Message events update progress tracking

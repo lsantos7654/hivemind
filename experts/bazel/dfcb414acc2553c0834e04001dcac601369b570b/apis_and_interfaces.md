@@ -105,7 +105,7 @@ public final class BlazeRuntime {
       BlazeDirectories directories,
       BinTools binTools,
       Clock clock) {...}
-  
+
   // Execute a build command
   public BlazeCommandResult run(
       List<String> args,
@@ -122,7 +122,7 @@ Orchestrates analysis and execution phases:
 public final class BuildTool {
   // Main build execution method
   public BuildResult build(BuildRequest request) {...}
-  
+
   // Runs the analysis phase
   private AnalysisResult runAnalysisPhase(
       BuildRequest request,
@@ -138,10 +138,10 @@ Represents a parsed BUILD file:
 public class Package {
   // Get target by name
   public Target getTarget(String name) throws NoSuchTargetException {...}
-  
+
   // Get all targets
   public ImmutableMap<String, Target> getTargets() {...}
-  
+
   // Package metadata
   public PackageIdentifier getPackageIdentifier() {...}
 }
@@ -159,7 +159,7 @@ public class Starlark {
       ParserInput input,
       Module module,
       StarlarkThread thread) throws SyntaxError, EvalException {...}
-  
+
   // Call a Starlark function
   public static Object call(
       StarlarkThread thread,
@@ -192,11 +192,11 @@ public interface Action extends ActionExecutionMetadata {
   // Execute this action
   ActionResult execute(ActionExecutionContext actionExecutionContext)
       throws ActionExecutionException, InterruptedException;
-  
+
   // Get inputs
   NestedSet<Artifact> getInputs();
-  
-  // Get outputs  
+
+  // Get outputs
   ImmutableSet<Artifact> getOutputs();
 }
 ```
@@ -294,7 +294,7 @@ def _my_rule_impl(ctx):
     # Access attributes
     srcs = ctx.files.srcs
     out = ctx.actions.declare_file(ctx.label.name + ".out")
-    
+
     # Create an action
     ctx.actions.run_shell(
         inputs = srcs,
@@ -304,7 +304,7 @@ def _my_rule_impl(ctx):
             out.path,
         ),
     )
-    
+
     # Return providers
     return [
         DefaultInfo(files = depset([out])),
@@ -407,11 +407,11 @@ bazel build //... \
 public class MyBuildEventSubscriber {
   @Subscribe
   public void buildStarted(BuildStartingEvent event) {...}
-  
+
   @Subscribe
   public void targetComplete(TargetCompleteEvent event) {...}
-  
-  @Subscribe  
+
+  @Subscribe
   public void buildComplete(BuildCompleteEvent event) {...}
 }
 ```

@@ -99,7 +99,7 @@ Specifies the exact Bazel version required to build Bazel itself (for bootstrapp
 
 **Language Rule Dependencies**:
 - rules_java v9.1.0 - Java build rules
-- rules_python v1.7.0 - Python build rules  
+- rules_python v1.7.0 - Python build rules
 - rules_go v0.59.0 - Go build rules
 - rules_cc v0.2.16 - C++ build rules
 - apple_support v1.24.5 - Apple platform support

@@ -25,7 +25,7 @@ sequelize/
 ├── CONTRIBUTING.md              # General contribution guidelines
 ├── dev/                         # Development database containers
 │   ├── db2/11.5/               # IBM DB2 development setup
-│   ├── mariadb/10.3/           # MariaDB development setup  
+│   ├── mariadb/10.3/           # MariaDB development setup
 │   ├── mssql/2019/             # Microsoft SQL Server setup
 │   ├── mysql/                  # MySQL development setups
 │   │   ├── 5.7/
@@ -63,7 +63,7 @@ sequelize/
 │   │   ├── base.js             # Abstract association class
 │   │   ├── belongs-to-many.d.ts # Many-to-many association types
 │   │   ├── belongs-to-many.js  # Many-to-many association implementation
-│   │   ├── belongs-to.d.ts     # Many-to-one association types  
+│   │   ├── belongs-to.d.ts     # Many-to-one association types
 │   │   ├── belongs-to.js       # Many-to-one association implementation
 │   │   ├── has-many.d.ts       # One-to-many association types
 │   │   ├── has-many.js         # One-to-many association implementation
@@ -188,7 +188,7 @@ The Sequelize codebase follows a modular architecture with clear separation of c
 The association system (`src/associations/`) implements all SQL relationship patterns:
 - `base.js` - Abstract association class with common functionality
 - `belongs-to.js` - Many-to-one relationships
-- `has-one.js` - One-to-one relationships  
+- `has-one.js` - One-to-one relationships
 - `has-many.js` - One-to-many relationships
 - `belongs-to-many.js` - Many-to-many relationships with junction tables
 - `mixin.js` - Association methods mixed into Model prototype
@@ -298,7 +298,7 @@ Database-specific functionality follows a consistent pattern:
 dialects/
   abstract/
     ├── connection-manager.js    # Base connection handling
-    ├── query-generator.js       # Base SQL generation  
+    ├── query-generator.js       # Base SQL generation
     ├── query-interface.js       # Base query interface
     └── data-types.js           # Base type mappings
   postgres/

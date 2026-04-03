@@ -58,9 +58,8 @@ def get_head_commit(expert_dir: Path) -> str | None:
     head = expert_dir / "HEAD"
     if not head.is_symlink():
         return None
-    import os
 
-    return os.readlink(head)
+    return str(head.readlink())
 
 
 def regenerate_agent_md(name: str, commit: str, repo_dir: Path, expert_dir: Path, background: bool = False):
@@ -97,13 +96,12 @@ def regenerate_agent_md(name: str, commit: str, repo_dir: Path, expert_dir: Path
         proc.stdin.write(prompt.encode())
         proc.stdin.close()
         return proc
-    else:
-        proc = subprocess.run(
-            cmd,
-            input=prompt.encode(),
-            capture_output=True,
-        )
-        return proc.returncode == 0
+    proc = subprocess.run(
+        cmd,
+        input=prompt.encode(),
+        capture_output=True,
+    )
+    return proc.returncode == 0
 
 
 def main():

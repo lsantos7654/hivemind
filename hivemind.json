@@ -358,6 +358,21 @@
       "remote": "https://github.com/pallets/jinja.git",
       "commit": "5ef70112a1ff19c05324ff889dd30405b1002044",
       "ref_name": ""
+    },
+    "pre-commit": {
+      "remote": "https://github.com/pre-commit/pre-commit.git",
+      "commit": "129a1f5ca1eaee0c952a5e7a07faae305c5e15bc",
+      "ref_name": ""
+    },
+    "mypy": {
+      "remote": "https://github.com/python/mypy.git",
+      "commit": "d7e3268ddd200ff390989d7359dd1e1b42bb94df",
+      "ref_name": ""
+    },
+    "ruff": {
+      "remote": "https://github.com/astral-sh/ruff.git",
+      "commit": "ee9084695ec4d70bc66083ac2b3cf598cc45101a",
+      "ref_name": ""
     }
   }
 }

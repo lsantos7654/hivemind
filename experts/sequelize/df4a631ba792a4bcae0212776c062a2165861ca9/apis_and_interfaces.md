@@ -357,7 +357,7 @@ const activeUsersWithRecentPosts = await User.findAll({
   where: {
     id: {
       [Op.in]: literal(`
-        (SELECT DISTINCT user_id FROM posts 
+        (SELECT DISTINCT user_id FROM posts
          WHERE created_at > NOW() - INTERVAL '30 days')
       `)
     },
@@ -484,7 +484,7 @@ class UserRepository {
         ...profileData,
         userId: user.id
       }, { transaction: t });
-      
+
       return { user, profile };
     });
   }
@@ -556,7 +556,7 @@ const sequelize = new Sequelize('database', 'username', 'password', {
   host: 'localhost',
   port: 5432,
   dialect: 'postgres',
-  
+
   // Connection pool configuration
   pool: {
     max: 20,              // Maximum connections
@@ -611,17 +611,17 @@ class User extends Model {
   static init(attributes, options) {
     return super.init(attributes, {
       ...options,
-      
+
       // Table configuration
       tableName: 'users',
       underscored: true,    // Use snake_case for columns
       paranoid: true,       // Soft deletes
       timestamps: true,     // createdAt, updatedAt
-      
+
       // Validation
       validate: {
         bothNamesOrNone() {
-          if ((this.firstName || this.lastName) && 
+          if ((this.firstName || this.lastName) &&
               !(this.firstName && this.lastName)) {
             throw new Error('Either both names or none!');
           }
@@ -635,11 +635,11 @@ class User extends Model {
             user.email = user.email.toLowerCase().trim();
           }
         },
-        
+
         afterCreate: async (user) => {
           await EmailService.sendWelcomeEmail(user.email);
         },
-        
+
         beforeDestroy: async (user) => {
           await user.cleanupRelatedData();
         }

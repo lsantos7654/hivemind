@@ -146,7 +146,7 @@ npm run prepare        # Runs build + husky install (pre-installation hook)
 **Development and Testing:**
 ```bash
 npm run lint           # ESLint with automatic fixing
-npm run lint-docs      # Markdown documentation linting  
+npm run lint-docs      # Markdown documentation linting
 npm run test-typings   # TypeScript type checking without compilation
 npm run test           # Full test suite (prepare + typings + teaser + unit + integration)
 npm run teaser         # Quick validation test
@@ -158,7 +158,7 @@ Sequelize provides comprehensive testing commands for each supported database:
 **Unit Tests by Database:**
 ```bash
 npm run test-unit-mariadb     # MariaDB unit tests
-npm run test-unit-mysql       # MySQL unit tests  
+npm run test-unit-mysql       # MySQL unit tests
 npm run test-unit-postgres    # PostgreSQL unit tests
 npm run test-unit-sqlite      # SQLite unit tests
 npm run test-unit-mssql       # SQL Server unit tests
@@ -267,7 +267,7 @@ npm run lint-docs      # Markdown linting for documentation
 ```bash
 npm run cover          # Generate code coverage reports
 npm run cover-integration  # Integration test coverage
-npm run cover-unit     # Unit test coverage  
+npm run cover-unit     # Unit test coverage
 npm run merge-coverage # Merge coverage reports
 ```
 

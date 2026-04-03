@@ -11,7 +11,7 @@ The project's core mission is to solve the problem of OpenCode configuration por
 ### Profile-Based Configuration Management
 OCX introduces a powerful profile system that allows users to maintain consistent OpenCode configurations across different repositories. Profiles are isolated environments that contain:
 - Registry configurations for component sources
-- OpenCode settings and preferences  
+- OpenCode settings and preferences
 - Security patterns via include/exclude lists
 - Component installations and dependencies
 
@@ -49,7 +49,7 @@ Security is embedded throughout the system:
 - Install curated extensions from trusted registries
 - Manage different configuration profiles for different types of work
 
-### Teams and Organizations  
+### Teams and Organizations
 - Share standardized OpenCode configurations via profiles
 - Distribute internal tools and agents through private registries
 - Ensure consistent development environments across team members
@@ -98,7 +98,7 @@ The system maintains several key data structures:
 
 ### Core Runtime Dependencies
 - **Commander**: CLI framework for command structure and argument parsing
-- **Zod**: Schema validation and type safety throughout the system  
+- **Zod**: Schema validation and type safety throughout the system
 - **Chokidar**: File system watching for development workflows
 - **Ora**: Terminal spinners and progress indicators
 - **Kleur**: Terminal color output

@@ -27,7 +27,7 @@ The OpenCode Background Agents plugin uses a **zero-build architecture** that le
   "description": "Async background agents for OpenCode - lightweight delegation system",
   "components": [
     {
-      "name": "kdco-background-agents", 
+      "name": "kdco-background-agents",
       "type": "ocx:plugin",
       "files": [
         {
@@ -51,7 +51,7 @@ The plugin has minimal runtime dependencies that are resolved at execution time:
 - **Resolution**: Provided by OpenCode runtime environment
 - **Key imports**: `Plugin`, `ToolContext`, `tool`
 
-#### **@opencode-ai/sdk** - OpenCode Client SDK  
+#### **@opencode-ai/sdk** - OpenCode Client SDK
 - **Purpose**: OpenCode API client and type definitions
 - **Usage**: Session management, agent queries, and system integration
 - **Resolution**: Available in OpenCode plugin context
@@ -71,7 +71,7 @@ When installed via OCX, dependencies are automatically managed:
 ocx add kdco/background-agents --from https://registry.kdco.dev
 ```
 - **Automatic resolution**: OCX handles dependency installation
-- **Version management**: Registry-backed versioning and updates  
+- **Version management**: Registry-backed versioning and updates
 - **Isolation**: Plugin-scoped dependency resolution
 
 #### **Manual Installation Requirements**
@@ -134,7 +134,7 @@ OpenCode supports plugin hot reloading during development:
 #### **Integration Testing**
 No automated test suite exists; testing relies on integration testing:
 - **Manual delegation testing**: Create delegations and verify completion
-- **Agent routing validation**: Test read-only vs write-capable agent handling  
+- **Agent routing validation**: Test read-only vs write-capable agent handling
 - **Storage verification**: Confirm delegation persistence across sessions
 - **Error condition testing**: Validate timeout and error handling
 
@@ -197,7 +197,7 @@ The plugin provides several extension points for customization:
 - **Incremental loading**: Modules loaded on demand
 - **Memory efficiency**: No bundled code duplication
 
-#### **Development Performance** 
+#### **Development Performance**
 - **Instant reload**: Changes reflected immediately without build time
 - **Direct debugging**: Source maps not needed for debugging TypeScript
 - **Minimal toolchain**: Fewer tools in development environment

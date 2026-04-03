@@ -96,7 +96,7 @@ Use these docs when repository knowledge is insufficient or for external API ref
 **Installation and Dependency Management:**
 - Receipt-based tracking with canonical component identifiers
 - Hash-based revision system for content verification
-- Topological dependency resolution across multiple registries  
+- Topological dependency resolution across multiple registries
 - Atomic installation transactions with conflict detection and resolution
 - npm plugin integration via npm: protocol syntax
 - File-level integrity tracking with individual content hashes
