@@ -5,7 +5,11 @@
       "home_dir": "~/.claude",
       "settings": {
         "model": "sonnet",
-        "tools": ["Read", "Grep", "Glob"]
+        "tools": [
+          "Read",
+          "Grep",
+          "Glob"
+        ]
       },
       "permissions": {
         "defaultMode": "acceptEdits",
@@ -319,6 +323,36 @@
     "bun": {
       "remote": "https://github.com/oven-sh/bun.git",
       "commit": "3ed4186bc8db8357c670307f192991bfc263f141",
+      "ref_name": ""
+    },
+    "system-design-primer": {
+      "remote": "https://github.com/donnemartin/system-design-primer.git",
+      "commit": "ae9bbd7b02d90b9866215de185217d33f39ab733",
+      "ref_name": ""
+    },
+    "design-patterns-for-humans": {
+      "remote": "https://github.com/kamranahmedse/design-patterns-for-humans.git",
+      "commit": "7023f30d183b6502fe8945d705f2eafdd07dcf4a",
+      "ref_name": ""
+    },
+    "node.js-clean-architecture": {
+      "remote": "https://github.com/panagiop/node.js-clean-architecture.git",
+      "commit": "5248815b761261ca269c3d7e45f32e5f82c3ad31",
+      "ref_name": ""
+    },
+    "realworld": {
+      "remote": "https://github.com/realworld-apps/realworld.git",
+      "commit": "e75fef393e23c6499ce3660716c0a8cb332f1f51",
+      "ref_name": ""
+    },
+    "api-guidelines": {
+      "remote": "https://github.com/microsoft/api-guidelines.git",
+      "commit": "577874dc49093ae8f6c4a5996a8f030d3ffbda7b",
+      "ref_name": ""
+    },
+    "architecture-center": {
+      "remote": "https://github.com/MicrosoftDocs/architecture-center.git",
+      "commit": "a477d65415614f66d7e58e573837efe980c2c9e9",
       "ref_name": ""
     }
   }
