@@ -336,13 +336,12 @@ class Provider(ABC):
         commands_dir: Path,
         rules_source: Path,
         teams_dir: Path | None = None,
-        projects_dir: Path | None = None,
         permissions: dict | None = None,
     ) -> list[tuple[str, str]]:
         """Initialize provider directory structure and deploy symlinks.
 
         Shared logic for all providers: agents/, commands/, rules file,
-        experts/ directory, and hivemind/teams/ + hivemind/projects/ symlinks.
+        experts/ directory, and hivemind/teams/ symlinks.
         Provider-specific steps go in _post_init_dirs().
         """
         results: list[tuple[str, str]] = []
@@ -367,7 +366,7 @@ class Provider(ABC):
         experts_dir.mkdir(parents=True, exist_ok=True)
         results.append(("experts/", "directory ready"))
 
-        # teams/ and projects/ under hivemind/ subdirectory
+        # teams/ under hivemind/ subdirectory
         # (avoids conflicts with provider-owned directories)
         hivemind_subdir = self._home_dir / "hivemind"
         hivemind_subdir.mkdir(parents=True, exist_ok=True)
@@ -375,13 +374,6 @@ class Provider(ABC):
         if teams_dir:
             results.append(
                 _setup_symlink(teams_dir, hivemind_subdir / "teams", "hivemind/teams/")
-            )
-
-        if projects_dir:
-            results.append(
-                _setup_symlink(
-                    projects_dir, hivemind_subdir / "projects", "hivemind/projects/"
-                )
             )
 
         # Provider-specific hook
@@ -402,7 +394,6 @@ class Provider(ABC):
         commands_dir: Path,
         rules_source: Path,
         teams_dir: Path | None = None,
-        projects_dir: Path | None = None,
     ) -> list[tuple[str, Path, Path]]:
         """Return symlink checks for the status dashboard.
 
@@ -426,14 +417,6 @@ class Provider(ABC):
         if teams_dir:
             checks.append(
                 (f"{hivemind_subdir}/teams/", teams_dir, hivemind_subdir / "teams")
-            )
-        if projects_dir:
-            checks.append(
-                (
-                    f"{hivemind_subdir}/projects/",
-                    projects_dir,
-                    hivemind_subdir / "projects",
-                )
             )
         return checks
 

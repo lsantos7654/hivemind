@@ -4,8 +4,5 @@
   },
   "team_lead": {
     "append": "\n\n## Provider-Specific Instructions\n\nYou CANNOT spawn subagents directly — the orchestrator does that. When you need domain-specific answers, recommend which expert(s) the orchestrator should consult and provide specific context for the question."
-  },
-  "project_lead": {
-    "append": "\n\n## Provider-Specific Instructions\n\nYou CANNOT spawn subagents directly — the orchestrator does that. When scoping work, recommend which teams and experts should be involved and the orchestrator will coordinate."
   }
 }

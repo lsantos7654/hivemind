@@ -14,13 +14,12 @@ from textual.widgets import ContentSwitcher, Footer, Static
 from hivemind_cli.tui.models import ExpertRow, ExpertStatus
 from hivemind_cli.tui.screens.experts_pane import ExpertsPane
 from hivemind_cli.tui.screens.teams_screen import TeamsPane
-from hivemind_cli.tui.screens.projects_screen import ProjectsPane
 from hivemind_cli.tui.widgets import SearchBar
 from hivemind_cli.tui.widgets.vim_data_table import VimDataTable
 
 
-TAB_ORDER = ["pane-experts", "pane-teams", "pane-projects"]
-TAB_NAMES = {"pane-experts": "Experts", "pane-teams": "Teams", "pane-projects": "Projects"}
+TAB_ORDER = ["pane-experts", "pane-teams"]
+TAB_NAMES = {"pane-experts": "Experts", "pane-teams": "Teams"}
 
 
 class HivemindApp(App):
@@ -38,7 +37,6 @@ class HivemindApp(App):
         Binding("shift+tab", "previous_tab", "Prev Tab", show=False, priority=True),
         Binding("1", "show_tab('pane-experts')", "Experts", show=False),
         Binding("2", "show_tab('pane-teams')", "Teams", show=False),
-        Binding("3", "show_tab('pane-projects')", "Projects", show=False),
     ]
 
     def __init__(self, **kwargs):
@@ -54,14 +52,12 @@ class HivemindApp(App):
         self.hivemind_json = self.hivemind_root / "hivemind.json"
 
         self._teams_loaded = False
-        self._projects_loaded = False
 
     def compose(self) -> ComposeResult:
         yield Static("", id="tab-indicator")
         with ContentSwitcher(initial="pane-experts", id="switcher"):
             yield ExpertsPane(self.experts, id="pane-experts")
             yield TeamsPane(id="pane-teams")
-            yield ProjectsPane(id="pane-projects")
         yield Footer()
 
     def on_mount(self) -> None:
@@ -109,13 +105,6 @@ class HivemindApp(App):
             self._teams_loaded = True
             try:
                 self.query_one(TeamsPane).load_teams()
-            except NoMatches:
-                pass
-
-        elif active == "pane-projects" and not self._projects_loaded:
-            self._projects_loaded = True
-            try:
-                self.query_one(ProjectsPane).load_projects()
             except NoMatches:
                 pass
 
@@ -220,12 +209,6 @@ class HivemindApp(App):
     def load_teams(self) -> dict:
         config = self._load_config()
         return config.get("teams", {})
-
-    def load_projects(self) -> tuple[dict, str | None]:
-        config = self._load_config()
-        projects = config.get("projects", {})
-        active = config.get("active_project")
-        return projects, active
 
     def _load_config(self) -> dict:
         default = {"enabled": [], "disabled": []}

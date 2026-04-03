@@ -32,34 +32,18 @@ hivemind team remove-expert <team> <expert> # Remove an expert from a team
 hivemind team delete <name>                 # Delete a team
 ```
 
-## Managing Projects
-
-```
-hivemind project list                       # List all projects
-hivemind project create <name>              # Create a project with AI-generated lead
-hivemind project show <name>                # Show project details
-hivemind project set <name>                 # Set the active project (updates HIVEMIND.md)
-hivemind project clear                      # Clear the active project
-hivemind project add-team <project> <team>  # Assign a team to a project
-hivemind project remove-team <project> <team> # Remove a team from a project
-hivemind project add-repo <project> <repo>  # Associate a repo with a project
-hivemind project delete <name>              # Delete a project
-```
-
 ## Architecture
 
 Hivemind supports multiple AI coding platforms via a provider abstraction. The active
 provider determines where agents are deployed and how analysis commands are built.
 
-- Shared config: `hivemind.json` → `providers.<name>.settings` + `repos` + `teams` + `projects`
-- Local state: `config.json` → `enabled`, `disabled`, `active_provider`, `active_project`
+- Shared config: `hivemind.json` → `providers.<name>.settings` + `repos` + `teams`
+- Local state: `config.json` → `enabled`, `disabled`, `active_provider`
 - Expert definitions: `experts/<name>/HEAD/agent.md` (platform-neutral body, no frontmatter)
 - Versioned knowledge: `experts/<name>/<commit>/` (HEAD symlink points to active version)
 - Agent files: Generated at deploy time with provider-specific frontmatter
-- Team-scoped experts: `agents/expert-{name}_{team}.md` — when experts join a team, hivemind deploys a variant with team context (general.md, per-expert notes) baked in. Prefer `expert-{name}_{team}` over `expert-{name}` when working within a team's scope.
-- Librarian: `agents/librarian.md` — auto-generated catalog of all experts, teams, and projects
-- Team context: `teams/<team>/` — general.md, private.md, experts/*.md (managed by team lead)
-- Project context: `projects/<project>/` — overview.md, context.md, project.md
+- Librarian: `agents/librarian.md` — auto-generated catalog of all experts and teams
+- Team context: `teams/<team>/` — general.md, lead.md (managed by team lead)
 - Slash commands: `commands/`
 - Fetched repos: `~/.cache/hivemind/repos/<name>`
 
@@ -99,69 +83,99 @@ NEVER use `builtin` with any other command. `builtin uv`, `builtin python`, `bui
 Correct: `uv run ...`, `python ...`, `git ...` — no `builtin` prefix.
 The ONLY reason `cd` needs `builtin` is because zoxide overrides it.
 
-## Orchestration model
+## Orchestration models
 
-**The orchestrator (primary agent) is a coordinator, not a worker.** Never write code directly. Delegate ALL work to experts via the `task` tool and stay available for user conversation.
+Two orchestration modes are available. Choose based on task complexity:
 
-### Workflow
+| | Subagents (default) | Agent Teams |
+|---|---|---|
+| **How** | Agent tool spawns focused workers | Full Claude Code sessions with shared task list |
+| **Communication** | Results return to orchestrator only | Teammates message each other directly |
+| **Best for** | Focused tasks, quick lookups, isolated work | Cross-domain work, parallel exploration, debate |
+| **Cost** | Lower — results summarized back | Higher — each teammate is a separate session |
 
-For each user request, follow this delegation chain. Each step depends on the previous step's output.
+### Subagent model
 
-**1. Read team context** — read `teams/<team>/general.md` directly for domain patterns and constraints.
+**The orchestrator (main Claude) IS the team lead for all teams.** Subagents cannot spawn other subagents (depth limited to 1), so the orchestrator must spawn experts directly.
 
-**2. Consult project lead** — spawn `project-lead-{project}` via `task`:
-   - Project lead scopes objectives and breaks work into tasks
-   - Writes updates to project files (context.md, overview.md, project.md)
-   - Returns: affected teams + task breakdown
+**Workflow:**
 
-**3. Consult affected team leads** — spawn team leads via `task` (parallel if multiple):
-   - Each team lead reviews the plan against team patterns
-   - Writes updates to team files (general.md, private.md, experts/*.md, lead.md)
-   - Returns: expert recommendations (which experts to spawn and what to ask them)
+1. **Read team context** (`teams/<team>/general.md`) for domain patterns and constraints
+2. **On plan approval**, begin implementation via background agent(s) — delegate ALL code changes. Optionally consult team lead(s) (background) for routing advice on which experts to spawn.
+3. **Spawn experts directly** for domain questions. Launch parallel background agents.
+4. **On work completion**, simultaneously:
+   a. Report results to user (foreground)
+   b. Notify affected `team-lead-{team}` (background) with what changed — team lead reviews against patterns in general.md, updates general.md with new lessons
 
-**4. Launch experts** — spawn recommended experts via `task` (parallel):
-   - Experts do the actual implementation work
-   - Prefer team-scoped variants (`expert-{name}_{team}`) over generic experts
+**Key principles:**
 
-**5. Report to user** — show routing decisions as they happen (e.g., "project lead says teams X, Y affected; team lead recommends expert-A, expert-B") but auto-launch without waiting for user approval.
+- **Orchestrator is a coordinator, not a worker** — NEVER write code directly. Delegate ALL implementation to background agents and stay free for user conversation.
+- **Team leads NEVER block implementation** — always notify in background, never wait for a response before starting work
+- **Team leads review completed work** — after implementation agents finish, notify affected team leads (background) so they can review changes against team patterns and update general.md
+- **Experts are the core value** — they answer domain questions grounded in real source code. Spawn them freely.
 
-**6. Post-work cycle** — after experts complete, repeat the same chain for outcomes:
-   - `task` → project lead: record outcomes in context.md, return affected teams
-   - `task` → affected team leads (parallel): review changes against patterns, update team files with new lessons
+**Execution rules:**
 
-Repeat steps 2–6 for each major step in a multi-step task.
+- **Always run ALL agents in the background** (`run_in_background: true`) — implementation agents, experts, team leads
+- **Maximize parallel agents** — launch as many independent agents as possible in a single message
+- The orchestrator stays conversational with the user while agents work asynchronously
+- Only use foreground agents when the result is required before responding
 
-### Execution rules
+### Agent teams model
 
-- **Use the `task` tool** to spawn ALL hivemind agents (experts, team leads, project leads)
-- **Maximize parallel tasks** — launch independent tasks simultaneously in a single message
-- **Orchestrator never writes code** — delegate ALL implementation to experts
-- **Project lead is the router** — it knows which teams a change touches and returns which team leads to notify
-- **Team leads are advisors AND context keepers** — they recommend experts, and they write their own team files (general.md, private.md, experts/*.md, lead.md)
-- **Project lead consulted after every plan AND after each major step** — not just at the start and end
-- **Show routing, auto-launch** — display the coordination chain to the user but don't wait for approval at each step
-- **Prefer team-scoped expert variants** (`expert-{name}_{team}`) over generic experts (`expert-{name}`) when working within a team's domain
-- All agents are discovered automatically from the `agents/` directory
+Use agent teams when the task benefits from **lateral communication** between workers — not just results flowing back to you.
+
+**When to create an agent team:**
+
+- Work spans multiple hivemind teams or expert domains
+- Debugging with competing hypotheses — teammates investigate and challenge each other's theories
+- Large features where teammates each own a separate module and need to coordinate interfaces
+- Research or review where parallel perspectives add real value (security + performance + testing)
+
+**How to structure teammates using hivemind context:**
+
+Every teammate auto-loads `CLAUDE.md`, which includes all hivemind instructions and active project context. Teammates automatically know about available experts, teams, and project objectives.
+
+- **Assign roles that map to hivemind experts or teams** — e.g., "You own the TUI layer (see the tui-dev team context)" or "You're the Nix infrastructure specialist"
+- **Include domain context in spawn prompts** — reference `teams/<team>/general.md` for team-specific patterns and constraints
+- **Break project objectives into tasks** — use the shared task list so teammates self-claim work
+- **Teammates can spawn hivemind experts as subagents** within their own session for domain-specific knowledge
+
+**Coordination patterns:**
+
+- On plan approval, create agent team and assign tasks from objectives
+- Teammates discuss interfaces and dependencies directly via messages
+- Require plan approval for risky work — teammates plan in read-only mode until the lead approves
+- Team leads can be consulted (as subagents within a teammate) for cross-cutting architectural guidance
+- After all tasks complete, notify affected team leads (background) to review and update general.md
+
+**Team sizing:** Start with 3-5 teammates. Aim for 5-6 tasks per teammate. Three focused teammates outperform five scattered ones.
+
+**Avoid file conflicts:** Break work so each teammate owns different files. Two teammates editing the same file leads to overwrites.
 
 ### Metadata update timing
 
 | When | Who | What |
 |------|-----|------|
-| Before work | Orchestrator reads | teams/\<team\>/general.md — domain context |
-| Plan created | Project lead (task) | Scopes objectives, writes context.md |
-| Plan created | Team lead(s) (task) | Reviews plan, updates team files, recommends experts |
-| Work in progress | Expert(s) (task) | Implementation |
-| Step completed | Project lead (task) | Records progress in context.md |
-| Step completed | Team lead(s) (task) | Reviews changes, updates general.md with lessons |
-| All work complete | Project lead (task) | Final outcomes in context.md |
-| All work complete | Team lead(s) (task) | Final review, updates all team files |
+| During work | Implementation agent(s) (bg) | Execute code changes delegated by orchestrator |
+| During work | Orchestrator reads | teams/\<team\>/general.md — domain context |
+| Work complete | Team lead(s) (bg) | Review changes against patterns in general.md, update with new lessons |
 
-## Active Project: databridge
+### Orchestrator operational notes
 
-Project lead: `project-lead-databridge`
+**Subagent permissions and scope:**
+- Spawn implementation agents with `mode: "acceptEdits"` — they can read and edit files but NEVER run bash commands
+- NEVER use `mode: "bypassPermissions"` — it bypasses all governance
+- If an agent's work requires a bash command (e.g., `hivemind redeploy`, import verification), the agent reports back and the orchestrator runs it
+- Responsibility split: subagents edit files → orchestrator runs commands → user handles git/deploys
+- The session MUST be in `acceptEdits` mode for agents to edit files — set globally via `hivemind.json` → `providers.claude.permissions.defaultMode`, then `hivemind init` to propagate
 
-**Current Phase**: Planning complete for Python CLI rewrite — replacing TypeScript admin prototype with modern Click/Rich/httpx-based tool.
+**Template vs deployed agents:**
+- `hivemind_cli/templates.py` templates only affect NEW leads created after changes
+- Existing leads deploy from `teams/<team>/lead.md` — update these files directly for current teams
+- Always update BOTH the template (future) and existing `lead.md` files (current), then run `hivemind redeploy`
 
-**Key Architecture**: 11 commands in 5 groups (full/ui/schema/data/template/plugin) with unified timestamped backup structure. SDK + httpx hybrid client approach. TOML configuration with intelligent schema convergence.
-
-**Coordination Focus**: Python-cli team implementation, SDK endpoint coverage validation, NocoBase plugin API dependencies, Docker dev environment integration.
+**Orchestrator responsibilities:**
+- Run `hivemind redeploy` after agents edit template, lead, or provider instruction files
+- Run import verification (`uv run python -c "..."`) after implementation agents complete
+- Never write code directly — delegate ALL file changes to background agents

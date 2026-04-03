@@ -9,7 +9,6 @@ from hivemind_cli.tui.widgets.confirmation_modal import ConfirmationModal
 from hivemind_cli.tui.widgets.form_modal import FormModal
 from hivemind_cli.tui.widgets.add_expert_modal import AddExpertModal
 from hivemind_cli.tui.widgets.edit_team_modal import EditTeamModal
-from hivemind_cli.tui.widgets.edit_project_modal import EditProjectModal
 from hivemind_cli.tui.widgets.selection_modal import SelectionListModal
 
 __all__ = [
@@ -23,6 +22,5 @@ __all__ = [
     "FormModal",
     "AddExpertModal",
     "EditTeamModal",
-    "EditProjectModal",
     "SelectionListModal",
 ]

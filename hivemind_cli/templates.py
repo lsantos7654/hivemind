@@ -55,34 +55,18 @@ hivemind team remove-expert <team> <expert> # Remove an expert from a team
 hivemind team delete <name>                 # Delete a team
 ```
 
-## Managing Projects
-
-```
-hivemind project list                       # List all projects
-hivemind project create <name>              # Create a project with AI-generated lead
-hivemind project show <name>                # Show project details
-hivemind project set <name>                 # Set the active project (updates HIVEMIND.md)
-hivemind project clear                      # Clear the active project
-hivemind project add-team <project> <team>  # Assign a team to a project
-hivemind project remove-team <project> <team> # Remove a team from a project
-hivemind project add-repo <project> <repo>  # Associate a repo with a project
-hivemind project delete <name>              # Delete a project
-```
-
 ## Architecture
 
 Hivemind supports multiple AI coding platforms via a provider abstraction. The active
 provider determines where agents are deployed and how analysis commands are built.
 
-- Shared config: `hivemind.json` → `providers.<name>.settings` + `repos` + `teams` + `projects`
-- Local state: `config.json` → `enabled`, `disabled`, `active_provider`, `active_project`
+- Shared config: `hivemind.json` → `providers.<name>.settings` + `repos` + `teams`
+- Local state: `config.json` → `enabled`, `disabled`, `active_provider`
 - Expert definitions: `experts/<name>/HEAD/agent.md` (platform-neutral body, no frontmatter)
 - Versioned knowledge: `experts/<name>/<commit>/` (HEAD symlink points to active version)
 - Agent files: Generated at deploy time with provider-specific frontmatter
-- Team-scoped experts: `agents/expert-{name}_{team}.md` — when experts join a team, hivemind deploys a variant with team context (general.md, per-expert notes) baked in. Prefer `expert-{name}_{team}` over `expert-{name}` when working within a team's scope.
-- Librarian: `agents/librarian.md` — auto-generated catalog of all experts, teams, and projects
-- Team context: `teams/<team>/` — general.md, private.md, experts/*.md (managed by team lead)
-- Project context: `projects/<project>/` — overview.md, context.md, project.md
+- Librarian: `agents/librarian.md` — auto-generated catalog of all experts and teams
+- Team context: `teams/<team>/` — general.md, lead.md (managed by team lead)
 - Slash commands: `commands/`
 - Fetched repos: `~/.cache/hivemind/repos/<name>`
 
@@ -162,12 +146,10 @@ Team lead for the {team_name} team. {description} Coordinates work across the te
 
 These files are YOUR responsibility to maintain:
 
-- **General context** (shared with all team experts): `{{HIVEMIND_DIR}}/teams/{team_name}/general.md`
-- **Private notes** (only you see this): `{{HIVEMIND_DIR}}/teams/{team_name}/private.md`
-- **Per-expert context**: `{{HIVEMIND_DIR}}/teams/{team_name}/experts/<expert-name>.md`
+- **General context** (high-level team notes): `{{HIVEMIND_DIR}}/teams/{team_name}/general.md`
 
-The general.md content is appended to every team expert's agent file at deploy time.
-Per-expert files in experts/ are appended only to that specific expert's team copy.
+The general.md file contains team-wide patterns, conventions, and architectural decisions.
+Update it with lessons learned from consultations.
 
 ## Self-Management
 
@@ -190,8 +172,8 @@ You are consulted by the orchestrator for architectural guidance and to coordina
 
 1. **ROUTE** technical questions to the right expert(s) — tell the orchestrator which expert to spawn and what to ask
 2. **ADVISE** on architectural decisions that span multiple experts on your team
-3. **MAINTAIN** team context files — update general.md with lessons learned, update per-expert files with specific notes
-4. **REVIEW** outcomes and update context files with new patterns or decisions
+3. **MAINTAIN** general.md — update with lessons learned and new patterns
+4. **REVIEW** outcomes and update general.md with new patterns or decisions
 5. **UPDATE** your own lead.md when team processes or knowledge evolves
 
 ### Response Format When Consulted
@@ -207,25 +189,18 @@ Why: {{what this expert knows that's relevant}}
 
 You MAY provide general architectural context from your team's patterns (general.md), but technical API details MUST come from the expert.
 
-### MANDATORY: File Updates on Every Consultation
+### MANDATORY: Context Updates
 
-**Every time you are consulted, you MUST write to at least one context file.** This is your primary value to the system — maintaining fresh context that persists across sessions.
+**Every time you are consulted, update general.md if you learn something new about the team's domain.** This is your primary value to the system — maintaining fresh context that persists across sessions.
 
-**Context cost awareness:** Both `general.md` and `experts/<name>.md` are injected into deployed expert agents under a `## Team Context` heading. Every line in these files consumes expert context tokens at runtime. Keep them focused on what's currently relevant and actionable.
-
-- **private.md**: ALWAYS update with a dated note about what you were consulted on and your assessment. This is your append-only internal log — never deployed, write freely.
-- **general.md**: Team-wide patterns and conventions deployed to ALL team experts. Update when cross-cutting concerns are discovered (integration standards, shared conventions, project context). Do NOT put expert-specific notes here.
-- **experts/<name>.md**: Curated reference card for one specific expert, deployed only to that expert's team copy. Update after reviewing outcomes from expert consultations with capabilities learned, gotchas, integration patterns, and things the expert is particularly good or bad at in this team's context. **Replace stale content rather than appending** — this is a living reference, not a log. If information is no longer relevant, remove it.
-
-If you have nothing substantive to add to general.md or experts/, still write a note in private.md. The goal is an audit trail of every consultation in private.md, and curated, current knowledge in the deployed files.
+- **general.md**: Team-wide patterns, conventions, and architectural decisions. Update when cross-cutting concerns are discovered. Keep it focused on what's currently relevant and actionable.
 
 ### Rules
 
 - ALWAYS maintain awareness of which experts are on your roster
-- NEVER skip file updates — a consultation without a file write is a failed consultation
 - NEVER answer technical API questions about libraries yourself — ALWAYS defer to the relevant expert
 - When asked "which expert should handle X?", recommend by name AND provide specific context for the question
-- Focus on maintaining high-quality context files — they are your primary value to the system
+- Focus on maintaining high-quality general.md — it is your primary value to the system
 """
 
 
@@ -270,145 +245,6 @@ Enhance the template by:
 2. Adding common cross-expert workflows
 3. Adding specific delegation patterns based on the experts' domains
 4. Keeping the self-management and context file sections exactly as shown
-
-Write ONLY the lead.md file.\
-"""
-
-
-# --- Project Lead Templates ---
-
-
-def project_lead_template(
-    project_name: str,
-    description: str,
-    teams: list[dict[str, str]],
-    repos: list[str],
-    objectives: list[str],
-) -> str:
-    """Template for project lead agent body (no frontmatter).
-
-    Args:
-        project_name: Project name
-        description: Project description
-        teams: List of dicts with "name" and "description" keys
-        repos: List of repo names
-        objectives: List of project objectives
-
-    Returns:
-        Project lead markdown body (no frontmatter)
-    """
-    teams_table = "\n".join(
-        f"| {t['name']} | team-lead-{t['name']} | {t['description']} |" for t in teams
-    )
-    objectives_list = "\n".join(f"- {obj}" for obj in objectives)
-    repos_list = "\n".join(f"- {repo}" for repo in repos)
-
-    return f"""\
-# Project Lead: {project_name}
-
-Project lead for the {project_name} project. {description} Maintains the high-level architecture map and coordinates across teams. Consult this project lead for cross-team coordination, project-wide decisions, and tracking overall progress.
-
-## Objectives
-
-{objectives_list}
-
-## Teams
-
-| Team | Lead | Focus |
-|------|------|-------|
-{teams_table}
-
-## Related Repos
-
-{repos_list}
-
-## Project Files
-
-These files are YOUR responsibility to maintain:
-
-- **Overview** (high-level architecture map): `{{HIVEMIND_DIR}}/projects/{project_name}/overview.md`
-- **Context** (project notes, todos, decisions): `{{HIVEMIND_DIR}}/projects/{project_name}/context.md`
-- **Project brief** (appended to HIVEMIND.md when active): `{{HIVEMIND_DIR}}/projects/{project_name}/project.md`
-
-The project.md content is appended to HIVEMIND.md when this project is set as active via `hivemind project set {project_name}`,
-making it visible to every session.
-
-## Self-Management
-
-You can update your own agent definition at: `{{HIVEMIND_DIR}}/projects/{project_name}/lead.md`
-After editing, ask the orchestrator to run `hivemind redeploy` to apply changes.
-
-## Instructions
-
-**Your role as project lead — coordinator and progress tracker:**
-
-You are consulted by the orchestrator to scope work and track progress.
-The orchestrator consults you bookend-style: before starting work (to scope) and after completing work (to record outcomes).
-
-1. **SCOPE** objectives when consulted — define what needs to be done, break into tasks
-2. **MAINTAIN** the high-level project map in overview.md
-3. **TRACK** project objectives and progress in context.md
-4. **UPDATE** project.md with information all sessions should see
-5. **UPDATE** your own lead.md as the project evolves
-6. **RECOMMEND** which teams/experts the orchestrator should involve
-
-### Rules
-
-- ALWAYS maintain the high-level project overview
-- ALWAYS track decisions and progress in context.md
-- ALWAYS keep project.md updated with information relevant to all sessions
-- When consulted for scoping, be specific about which teams and experts are needed
-"""
-
-
-def project_lead_prompt(
-    project_name: str,
-    description: str,
-    teams: list[dict[str, str]],
-    repos: list[str],
-    objectives: list[str],
-    project_dir: Path,
-) -> str:
-    """Prompt for AI to generate a project lead agent.
-
-    Args:
-        project_name: Project name
-        description: Project description
-        teams: List of dicts with "name" and "description" keys
-        repos: List of repo names
-        objectives: List of project objectives
-        project_dir: Path to project directory
-
-    Returns:
-        Complete prompt for AI generation
-    """
-    template = project_lead_template(
-        project_name, description, teams, repos, objectives
-    )
-
-    return f"""\
-You are creating a project lead agent definition for the "{project_name}" project.
-
-Project description: {description}
-Teams: {", ".join(t["name"] for t in teams)}
-Repos: {", ".join(repos)}
-Objectives: {", ".join(objectives)}
-
-Write the file: {project_dir}/lead.md
-
-Use this template as a starting point, but enhance it with specific project coordination strategies:
-
-```markdown
-{template}
-```
-
-**CRITICAL: Do NOT include YAML frontmatter (---) in lead.md.** The file must start directly with `# Project Lead:`. Frontmatter is added automatically at deploy time.
-
-Enhance the template by:
-1. Adding specific coordination strategies for this project's domain
-2. Adding cross-team workflow patterns
-3. Adding project-specific delegation guidelines
-4. Keeping the self-management and file sections exactly as shown
 
 Write ONLY the lead.md file.\
 """

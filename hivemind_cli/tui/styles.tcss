@@ -13,8 +13,7 @@ Screen {
 
 /* Pane widgets fill available space */
 ExpertsPane,
-TeamsPane,
-ProjectsPane {
+TeamsPane {
     height: 1fr;
     layers: base overlay;
 }
