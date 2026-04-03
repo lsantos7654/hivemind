@@ -1,7 +1,7 @@
 {
   "providers": {
     "claude": {
-      "engine": "claude -p --verbose --dangerously-skip-permissions",
+      "engine": "claude -p --verbose",
       "home_dir": "~/.claude",
       "settings": {
         "model": "sonnet",
@@ -17,8 +17,7 @@
           "Read(~/.cache/hivemind/**)",
           "Grep(~/.cache/hivemind/**)",
           "Glob(~/.cache/hivemind/**)",
-          "Edit(~/.claude/hivemind/teams/**)",
-          "Edit(~/.claude/hivemind/projects/**)"
+          "Edit(~/.claude/hivemind/teams/**)"
         ]
       }
     },

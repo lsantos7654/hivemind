@@ -273,11 +273,13 @@ class Provider(ABC):
         self,
         *,
         extra_dirs: list[Path] | None = None,
+        write: bool = False,
     ) -> list[str]:
         """Build subprocess command for AI analysis.
 
         Args:
             extra_dirs: Additional directories to make available to the engine
+            write: Whether the task needs file write access
 
         Returns:
             Command list suitable for subprocess.Popen
@@ -522,15 +524,18 @@ class ClaudeProvider(Provider):
         self,
         *,
         extra_dirs: list[Path] | None = None,
+        write: bool = False,
     ) -> list[str]:
         """Build claude -p command for analysis."""
         # Parse engine string into base command
         cmd = shlex.split(self._engine)
 
-        # Add tools (analysis needs Write too)
+        # Add tools — only include Write when the task needs file access
         analysis_tools = list(self._settings.get("tools", []))
-        if "Write" not in analysis_tools:
+        if write and "Write" not in analysis_tools:
             analysis_tools.append("Write")
+        if not write:
+            analysis_tools = [t for t in analysis_tools if t != "Write"]
         # Strip MCP tools for analysis (they're for runtime, not analysis)
         analysis_tools = [t for t in analysis_tools if not t.startswith("mcp__")]
         cmd.extend(["--allowedTools", ",".join(analysis_tools)])
@@ -751,6 +756,7 @@ class OpenCodeProvider(Provider):
         self,
         *,
         extra_dirs: list[Path] | None = None,
+        write: bool = False,
     ) -> list[str]:
         """Build opencode run command for analysis."""
         cmd = shlex.split(self._engine)

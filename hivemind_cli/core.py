@@ -419,6 +419,7 @@ def _analyze_repo(
     provider = _get_provider()
     cmd = provider.build_analysis_command(
         extra_dirs=[repo_dir, expert_dir],
+        write=True,
     )
 
     # Run from common parent so the engine has filesystem access to both
@@ -1010,6 +1011,7 @@ async def update_expert_async_internal(
         provider = _get_provider()
         cmd = provider.build_analysis_command(
             extra_dirs=[repo_dir, staged_path],
+            write=True,
         )
 
         # Start async subprocess
@@ -1499,6 +1501,7 @@ async def switch_version_async(
             provider = _get_provider()
             cmd = provider.build_analysis_command(
                 extra_dirs=[repo_dir, staged_path],
+                write=True,
             )
 
             # Start async subprocess
@@ -1869,7 +1872,7 @@ def _regenerate_hivemind_md() -> None:
     """Regenerate HIVEMIND.md from base template + provider instructions."""
     from hivemind_cli.templates import hivemind_md_base
 
-    content = hivemind_md_base()
+    content = hivemind_md_base(str(HIVEMIND_ROOT))
 
     config = _load_config()
 
