@@ -50,6 +50,8 @@ from hivemind_cli.core import (
     _undeploy_expert,
     _clone_repo,
     _analyze_repo,
+    start_analysis,
+    finish_analysis,
     _update_librarian,
     _regenerate_hivemind_md,
     update_expert,
@@ -244,10 +246,45 @@ def _update_librarian_cli() -> None:
 @app.command()
 def init() -> None:
     """Set up provider directory symlinks and enable agents."""
+    from hivemind_cli.providers import PROVIDER_CLASSES
+
+    config = _load_config()
+    if not config.get("active_provider"):
+        # Bootstrap: no provider set yet
+        hivemind = _load_hivemind()
+        available = [
+            name
+            for name in hivemind.get("providers", {})
+            if name in PROVIDER_CLASSES
+        ]
+        if not available:
+            console.print(
+                "[error]No providers configured in hivemind.json[/error]"
+            )
+            raise typer.Exit(1)
+        if len(available) == 1:
+            chosen = available[0]
+            console.print(f"[info]Auto-selecting provider: {chosen}[/info]")
+        else:
+            console.print("[heading]Select a provider:[/heading]")
+            for i, name in enumerate(available, 1):
+                console.print(f"  {i}. {name}")
+            choice = typer.prompt("Provider number", type=int)
+            if choice < 1 or choice > len(available):
+                console.print("[error]Invalid selection[/error]")
+                raise typer.Exit(1)
+            chosen = available[choice - 1]
+        config["active_provider"] = chosen
+        _save_config(config)
+
     provider = _get_provider()
     console.print(
         f"[heading]Initializing hivemind (provider: {provider.name})...[/heading]\n"
     )
+
+    # Generate HIVEMIND.md before symlink setup (it's the symlink target)
+    _regenerate_hivemind_md()
+    console.print(f"  [success]✓[/success] HIVEMIND.md generated")
 
     # Use provider to initialize directory structure
     results = provider.init_dirs(
@@ -463,6 +500,33 @@ def show_expert(
     console.print(Panel("\n".join(lines), border_style="blue"))
 
 
+_SPINNER_FRAMES = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+
+
+def _render_analysis_progress(
+    name: str,
+    expected: list[str],
+    found: set[str],
+    tick: int,
+) -> str:
+    """Render analysis progress as a Rich-compatible string."""
+    spinner = _SPINNER_FRAMES[tick % len(_SPINNER_FRAMES)]
+    lines = [f"  [heading]Analyzing {name}...[/heading]"]
+    hit_first_pending = False
+    for f in expected:
+        if f in found:
+            lines.append(f"    [success]✓[/success] {f}")
+        elif not hit_first_pending:
+            hit_first_pending = True
+            lines.append(f"    [info]{spinner}[/info] {f}")
+        else:
+            lines.append(f"    [dim]·[/dim] {f}")
+    lines.append(
+        f"    [dim]{len(found)}/{len(expected)} files generated[/dim]"
+    )
+    return "\n".join(lines)
+
+
 @expert_app.command()
 def add(
     url: str = typer.Argument(help="Git remote URL"),
@@ -573,11 +637,39 @@ def add(
             f"  [success]✓[/success] Created staging experts/{name}/{commit[:12]}/"
         )
 
-        # Run AI analysis — writes into temp dirs
-        with console.status(
-            f"[heading]Running AI analysis of {name}...[/heading]", spinner="dots"
-        ):
-            success = _analyze_repo(name, commit, tmp_repo, tmp_expert)
+        # Run AI analysis — writes into temp dirs, with live progress
+        handle = start_analysis(name, commit, tmp_repo, tmp_expert)
+        found: set[str] = set()
+        tick = 0
+
+        with Live(
+            _render_analysis_progress(name, handle.expected_files, found, tick),
+            console=console,
+            refresh_per_second=4,
+        ) as live:
+            while handle.proc.poll() is None:
+                for f in handle.expected_files:
+                    if f not in found and (handle.commit_dir / f).exists():
+                        found.add(f)
+                tick += 1
+                live.update(
+                    _render_analysis_progress(
+                        name, handle.expected_files, found, tick
+                    )
+                )
+                time.sleep(0.25)
+
+            # Final check for files written just before exit
+            for f in handle.expected_files:
+                if f not in found and (handle.commit_dir / f).exists():
+                    found.add(f)
+            live.update(
+                _render_analysis_progress(
+                    name, handle.expected_files, found, tick
+                )
+            )
+
+        success = finish_analysis(handle)
         if not success:
             console.print(f"[error]Error: AI analysis failed for {name}[/error]")
             raise typer.Exit(1)

@@ -1,4 +1,5 @@
-# Generated agent files (recreated by hivemind sync)
+# Generated files (recreated by hivemind init/redeploy)
+HIVEMIND.md
 agents/*
 !agents/.gitkeep
 

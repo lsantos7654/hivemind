@@ -353,6 +353,11 @@
       "remote": "https://github.com/MicrosoftDocs/architecture-center.git",
       "commit": "a477d65415614f66d7e58e573837efe980c2c9e9",
       "ref_name": ""
+    },
+    "jinja": {
+      "remote": "https://github.com/pallets/jinja.git",
+      "commit": "5ef70112a1ff19c05324ff889dd30405b1002044",
+      "ref_name": ""
     }
   }
 }

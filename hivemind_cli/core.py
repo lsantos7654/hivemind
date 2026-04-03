@@ -57,6 +57,19 @@ class ProgressInfo:
 ProgressCallback = Callable[[ProgressInfo], None]
 
 
+@dataclass
+class AnalysisHandle:
+    """Handle for a running analysis subprocess, allowing progress monitoring."""
+
+    proc: subprocess.Popen
+    commit_dir: Path
+    expected_files: list[str]
+    stderr_path: Path
+    stdout_path: Path
+    _stderr_file: object = None  # kept open until finish
+    _stdout_file: object = None
+
+
 # --- Paths (shared configuration) ---
 
 # Allow override for testing, otherwise use the same paths as cli.py
@@ -494,6 +507,130 @@ def _analyze_repo(
             return False
 
         return True
+
+
+def _expected_analysis_files(*, is_update: bool = False) -> list[str]:
+    """Return the list of files an analysis run is expected to produce."""
+    files = [
+        "summary.md",
+        "code_structure.md",
+        "build_system.md",
+        "apis_and_interfaces.md",
+    ]
+    if not is_update:
+        files.append("agent.md")
+    return files
+
+
+def start_analysis(
+    name: str,
+    commit: str,
+    repo_dir: Path,
+    expert_dir: Path,
+    *,
+    is_update: bool = False,
+) -> AnalysisHandle:
+    """Start an AI analysis subprocess and return a handle for monitoring.
+
+    The caller should poll handle.proc and check handle.commit_dir for files,
+    then call finish_analysis() when the process exits.
+    """
+    commit_dir = expert_dir / commit
+
+    if is_update:
+        prompt = update_expert_prompt(name, commit, repo_dir, commit_dir)
+    else:
+        from hivemind_cli.templates import create_expert_prompt
+
+        prompt = create_expert_prompt(name, commit, repo_dir, commit_dir)
+
+    provider = _get_provider()
+    cmd = provider.build_analysis_command(
+        extra_dirs=[repo_dir, expert_dir],
+        write=True,
+    )
+
+    cwd = Path(os.path.commonpath([repo_dir.resolve(), expert_dir.resolve()]))
+
+    stderr_file = tempfile.NamedTemporaryFile(
+        mode="w",
+        prefix=f"hivemind-{name}-stderr-",
+        suffix=".log",
+        delete=False,
+    )
+    stdout_file = tempfile.NamedTemporaryFile(
+        mode="w",
+        prefix=f"hivemind-{name}-stdout-",
+        suffix=".log",
+        delete=False,
+    )
+
+    proc = subprocess.Popen(
+        cmd,
+        stdin=subprocess.PIPE,
+        stdout=stdout_file,
+        stderr=stderr_file,
+        cwd=str(cwd),
+    )
+    proc.stdin.write(prompt.encode())
+    proc.stdin.close()
+
+    return AnalysisHandle(
+        proc=proc,
+        commit_dir=commit_dir,
+        expected_files=_expected_analysis_files(is_update=is_update),
+        stderr_path=Path(stderr_file.name),
+        stdout_path=Path(stdout_file.name),
+        _stderr_file=stderr_file,
+        _stdout_file=stdout_file,
+    )
+
+
+def finish_analysis(handle: AnalysisHandle) -> bool:
+    """Wait for analysis to complete (if not already) and validate results.
+
+    Returns True on success, False on failure. Cleans up temp files.
+    """
+    handle.proc.wait()
+
+    # Close temp file handles
+    try:
+        handle._stderr_file.close()
+    except Exception:
+        pass
+    try:
+        handle._stdout_file.close()
+    except Exception:
+        pass
+
+    if handle.proc.returncode != 0:
+        err_output = ""
+        try:
+            err_output = handle.stderr_path.read_text().strip()
+            if not err_output:
+                err_output = handle.stdout_path.read_text().strip()
+        except Exception:
+            pass
+        if err_output:
+            print(f"Analysis error: {err_output}", file=sys.stderr)
+        else:
+            print(
+                f"Analysis failed with exit code {handle.proc.returncode}",
+                file=sys.stderr,
+            )
+        return False
+
+    missing = [
+        f for f in handle.expected_files if not (handle.commit_dir / f).exists()
+    ]
+    if missing:
+        print(
+            f"Analysis produced no output — missing: {', '.join(missing)}",
+            file=sys.stderr,
+        )
+        return False
+
+    return True
 
 
 def _update_librarian() -> None:
