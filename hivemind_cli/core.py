@@ -1888,7 +1888,8 @@ def _regenerate_hivemind_md() -> None:
 def _deploy_team_lead(team_name: str) -> bool:
     """Deploy team lead agent file with provider-specific frontmatter.
 
-    Reads teams/{team_name}/lead.md, applies frontmatter, writes to
+    Reads teams/{team_name}/lead.md, injects current roster from config,
+    appends provider context, applies frontmatter, writes to
     agents/team-lead-{team_name}.md.
 
     Returns False if lead.md doesn't exist.
@@ -1899,6 +1900,27 @@ def _deploy_team_lead(team_name: str) -> bool:
 
     provider = _get_provider()
     body = strip_frontmatter(lead_md.read_text())
+
+    # Inject current roster from config (always fresh)
+    teams = _load_teams()
+    if team_name in teams:
+        experts = teams[team_name].get("experts", [])
+        roster_lines = "\n".join(f"- expert-{e}" for e in experts)
+        roster_section = f"\n\n## Team Roster\n\n{roster_lines}\n"
+        # Insert after the first paragraph (before the first ## heading)
+        lines = body.split("\n")
+        insert_idx = 0
+        found_heading = False
+        for i, line in enumerate(lines):
+            if line.startswith("## ") and i > 0:
+                insert_idx = i
+                found_heading = True
+                break
+        if found_heading:
+            body = "\n".join(lines[:insert_idx]) + roster_section + "\n".join(lines[insert_idx:])
+        else:
+            body += roster_section
+
     body += provider.get_context_append("team_lead")
     description = extract_description(body)
 
@@ -1919,24 +1941,23 @@ def _undeploy_team_lead(team_name: str) -> None:
         agent_file.unlink()
 
 
-def _generate_team_lead(
-    team_name: str,
-    description: str,
-    roster: list[dict[str, str]],
-) -> bool:
-    """AI-generate a team lead agent definition.
+def _generate_expert_section(expert_name: str, team_name: str) -> str | None:
+    """AI-generate a ## expert-{name} section for a team lead.
 
-    Runs the provider's analysis engine to create teams/{team_name}/lead.md.
-
-    Returns True on success.
+    Calls the provider's analysis engine with the expert's knowledge docs.
+    Returns the generated markdown section, or None on failure.
     """
-    from hivemind_cli.templates import team_lead_prompt
+    from hivemind_cli.templates import expert_section_prompt
 
-    team_dir = TEAMS_DIR / team_name
-    prompt = team_lead_prompt(team_name, description, roster, team_dir)
+    expert_dir = _get_expert_dir(expert_name)
+    head_dir = expert_dir / "HEAD"
+    if not head_dir.exists():
+        return None
+
+    prompt = expert_section_prompt(expert_name, team_name, head_dir)
 
     provider = _get_provider()
-    cmd = provider.build_analysis_command(extra_dirs=[team_dir])
+    cmd = provider.build_analysis_command(extra_dirs=[head_dir])
 
     proc = subprocess.run(
         cmd,
@@ -1945,15 +1966,68 @@ def _generate_team_lead(
         capture_output=True,
     )
 
-    lead_path = team_dir / "lead.md"
-    return lead_path.exists() and lead_path.stat().st_size > 0
+    # The AI should write to stdout, not a file
+    output = proc.stdout.strip() if proc.stdout else ""
+    if output and f"## expert-{expert_name}" in output:
+        # Extract just the section (in case there's extra output)
+        idx = output.index(f"## expert-{expert_name}")
+        return output[idx:]
+    return None
+
+
+def _remove_expert_section(team_name: str, expert_name: str) -> bool:
+    """Remove ## expert-{name} section from lead.md.
+
+    Deletes everything from the ## expert-{name} heading to the next ## heading
+    or end of file. Returns True if section was found and removed.
+    """
+    lead_md = TEAMS_DIR / team_name / "lead.md"
+    if not lead_md.exists():
+        return False
+
+    content = lead_md.read_text()
+    heading = f"## expert-{expert_name}"
+
+    if heading not in content:
+        return False
+
+    lines = content.split("\n")
+    result: list[str] = []
+    skipping = False
+
+    for line in lines:
+        if line.strip() == heading:
+            skipping = True
+            continue
+        if skipping and line.startswith("## "):
+            skipping = False
+        if not skipping:
+            result.append(line)
+
+    # Clean up double blank lines
+    cleaned = "\n".join(result)
+    while "\n\n\n" in cleaned:
+        cleaned = cleaned.replace("\n\n\n", "\n\n")
+
+    lead_md.write_text(cleaned)
+    return True
+
+
+def _create_expert_notes_stub(team_name: str, expert_name: str) -> None:
+    """Create teams/{team}/expert-{name}/notes.md from template."""
+    from hivemind_cli.templates import expert_notes_template
+
+    notes_dir = TEAMS_DIR / team_name / f"expert-{expert_name}"
+    notes_dir.mkdir(parents=True, exist_ok=True)
+    notes_file = notes_dir / "notes.md"
+    if not notes_file.exists():
+        notes_file.write_text(expert_notes_template(expert_name, team_name))
 
 
 def create_team(
     name: str,
     description: str,
     experts: list[str],
-    max_roster: int | None = None,
     skip_analysis: bool = False,
 ) -> dict:
     """Create a new team.
@@ -1962,7 +2036,6 @@ def create_team(
         name: Team name
         description: Team description
         experts: List of expert names for the roster
-        max_roster: Optional roster size limit
         skip_analysis: Skip AI generation of team lead (use template directly)
 
     Returns:
@@ -1973,63 +2046,49 @@ def create_team(
         return {"success": False, "error": f"Team '{name}' already exists"}
 
     # Validate experts exist
-    config = _load_config()
-    enabled = set(config.get("enabled", []))
     all_experts = set(_expert_names())
     for expert in experts:
         if expert not in all_experts:
             return {"success": False, "error": f"Expert '{expert}' does not exist"}
 
-    # Check roster limit
-    defaults = config.get("defaults", {})
-    limit = max_roster or defaults.get("team_max_roster", 8)
-    if len(experts) > limit:
-        return {
-            "success": False,
-            "error": f"Roster size {len(experts)} exceeds limit {limit}",
-        }
-
     # Create team directory
     team_dir = TEAMS_DIR / name
     team_dir.mkdir(parents=True, exist_ok=True)
 
-    # Pre-populate context files
-    expert_list = "\n".join(f"- **{e}**" for e in experts)
-    (team_dir / "general.md").write_text(
-        f"# {name}\n\n{description}\n\n## Experts\n\n{expert_list}\n"
-    )
-
-    # Build roster info
-    roster = []
+    # Generate expert sections and notes stubs
+    expert_sections: list[str] = []
     for expert_name in experts:
-        expert_dir = _get_expert_dir(expert_name)
-        head_agent = expert_dir / "HEAD" / "agent.md"
-        desc = ""
-        if head_agent.exists():
-            desc = extract_description(strip_frontmatter(head_agent.read_text()))
-        roster.append({"name": expert_name, "description": desc})
+        _create_expert_notes_stub(name, expert_name)
 
-    # Generate or template the lead
-    if skip_analysis:
-        from hivemind_cli.templates import team_lead_template
+        if skip_analysis:
+            # Use a simple placeholder section
+            expert_dir = _get_expert_dir(expert_name)
+            head_agent = expert_dir / "HEAD" / "agent.md"
+            desc = ""
+            if head_agent.exists():
+                desc = extract_description(strip_frontmatter(head_agent.read_text()))
+            expert_sections.append(f"## expert-{expert_name}\n\n{desc}")
+        else:
+            section = _generate_expert_section(expert_name, name)
+            if not section:
+                # Clean up on failure
+                shutil.rmtree(team_dir)
+                return {
+                    "success": False,
+                    "error": f"AI generation failed for expert section: {expert_name}",
+                }
+            expert_sections.append(section)
 
-        lead_body = team_lead_template(name, description, roster)
-        (team_dir / "lead.md").write_text(lead_body)
-    else:
-        _generate_team_lead(name, description, roster)
+    # Assemble lead.md
+    from hivemind_cli.templates import team_lead_template
 
-    # Fallback: if AI generation didn't produce lead.md, use template
-    if not (team_dir / "lead.md").exists():
-        from hivemind_cli.templates import team_lead_template
+    lead_body = team_lead_template(name, description, "\n\n".join(expert_sections))
+    (team_dir / "lead.md").write_text(lead_body)
 
-        lead_body = team_lead_template(name, description, roster)
-        (team_dir / "lead.md").write_text(lead_body)
-
-    # Save to hivemind.json
+    # Save to config
     team_data: dict = {
         "description": description,
         "experts": experts,
-        "max_roster": limit,
     }
     teams[name] = team_data
     _save_teams(teams)
@@ -2114,8 +2173,15 @@ def update_team(
     return {"success": True}
 
 
-def add_expert_to_team(team_name: str, expert_name: str) -> dict:
+def add_expert_to_team(
+    team_name: str,
+    expert_name: str,
+    skip_analysis: bool = False,
+) -> dict:
     """Add an expert to a team's roster.
+
+    AI-generates a new ## expert-{name} section in lead.md,
+    creates a notes.md stub, and redeploys the team lead.
 
     Returns:
         dict with keys: success (bool), error (str | None)
@@ -2135,18 +2201,46 @@ def add_expert_to_team(team_name: str, expert_name: str) -> dict:
     if expert_name not in all_experts:
         return {"success": False, "error": f"Expert '{expert_name}' does not exist"}
 
-    # Check roster limit
-    limit = team.get("max_roster", 8)
-    if len(experts) >= limit:
-        return {
-            "success": False,
-            "error": f"Roster full ({len(experts)}/{limit})",
-        }
+    # Generate expert section for lead.md
+    if skip_analysis:
+        expert_dir = _get_expert_dir(expert_name)
+        head_agent = expert_dir / "HEAD" / "agent.md"
+        desc = ""
+        if head_agent.exists():
+            desc = extract_description(strip_frontmatter(head_agent.read_text()))
+        section = f"## expert-{expert_name}\n\n{desc}"
+    else:
+        section = _generate_expert_section(expert_name, team_name)
+        if not section:
+            return {
+                "success": False,
+                "error": f"AI generation failed for expert section: {expert_name}",
+            }
 
+    # Append section to lead.md
+    lead_md = TEAMS_DIR / team_name / "lead.md"
+    if lead_md.exists():
+        content = lead_md.read_text()
+        # Insert before ## Instructions or ## Expert Notes (whichever comes first)
+        for marker in ["## Expert Notes", "## Instructions"]:
+            if marker in content:
+                idx = content.index(marker)
+                content = content[:idx] + section + "\n\n" + content[idx:]
+                break
+        else:
+            content += "\n\n" + section + "\n"
+        lead_md.write_text(content)
+
+    # Create notes stub
+    _create_expert_notes_stub(team_name, expert_name)
+
+    # Update config
     experts.append(expert_name)
     team["experts"] = experts
     _save_teams(teams)
 
+    # Redeploy team lead (roster list updates automatically)
+    _deploy_team_lead(team_name)
     _update_librarian()
 
     return {"success": True}
@@ -2154,6 +2248,9 @@ def add_expert_to_team(team_name: str, expert_name: str) -> dict:
 
 def remove_expert_from_team(team_name: str, expert_name: str) -> dict:
     """Remove an expert from a team's roster.
+
+    Removes the ## expert-{name} section from lead.md,
+    deletes the expert's notes directory, and redeploys the team lead.
 
     Returns:
         dict with keys: success (bool), error (str | None)
@@ -2168,10 +2265,21 @@ def remove_expert_from_team(team_name: str, expert_name: str) -> dict:
     if expert_name not in experts:
         return {"success": False, "error": f"Expert '{expert_name}' not on team"}
 
+    # Remove expert section from lead.md
+    _remove_expert_section(team_name, expert_name)
+
+    # Remove expert notes directory
+    notes_dir = TEAMS_DIR / team_name / f"expert-{expert_name}"
+    if notes_dir.exists():
+        shutil.rmtree(notes_dir)
+
+    # Update config
     experts.remove(expert_name)
     team["experts"] = experts
     _save_teams(teams)
 
+    # Redeploy team lead (roster list updates automatically)
+    _deploy_team_lead(team_name)
     _update_librarian()
     return {"success": True}
 

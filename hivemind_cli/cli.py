@@ -979,10 +979,8 @@ def team_list() -> None:
 
     for name, data in sorted(teams.items()):
         experts = data.get("experts", [])
-        max_roster = data.get("max_roster", 8)
         roster_str = ", ".join(experts) if experts else "[dim]empty[/dim]"
-        size_str = f"{len(experts)}/{max_roster}"
-        table.add_row(name, data.get("description", ""), roster_str, size_str)
+        table.add_row(name, data.get("description", ""), roster_str, str(len(experts)))
 
     console.print(table)
 
@@ -995,9 +993,6 @@ def team_create(
     ),
     experts: str = typer.Option(
         ..., "--experts", "-e", help="Comma-separated expert names"
-    ),
-    max_roster: int | None = typer.Option(
-        None, "--max-roster", help="Maximum roster size"
     ),
     skip_analysis: bool = typer.Option(
         False, "--skip-analysis", help="Use template instead of AI-generated lead"
@@ -1014,24 +1009,15 @@ def team_create(
         with console.status(
             "[heading]Generating team lead agent...[/heading]", spinner="dots"
         ):
-            result = core_create_team(
-                name, description, expert_list, max_roster=max_roster
-            )
+            result = core_create_team(name, description, expert_list)
     else:
-        result = core_create_team(
-            name,
-            description,
-            expert_list,
-            max_roster=max_roster,
-            skip_analysis=True,
-        )
+        result = core_create_team(name, description, expert_list, skip_analysis=True)
 
     if not result["success"]:
         console.print(f"[error]Error: {result['error']}[/error]")
         raise typer.Exit(1)
 
     console.print(f"  [success]✓[/success] Team lead deployed: team-lead-{name}")
-    console.print(f"  [success]✓[/success] Team experts deployed")
     console.print(f"  [success]✓[/success] Librarian updated")
     console.print(f"\n[bold success]Team '{name}' created![/bold success]")
 
@@ -1050,29 +1036,20 @@ def team_show(
     lines: list[str] = []
     lines.append(f"[heading]Team: {name}[/heading]")
     lines.append(f"Description: {team.get('description', '')}")
-    lines.append(f"Max roster: {team.get('max_roster', 8)}")
-
     experts = team.get("experts", [])
     lines.append(f"\n[heading]Roster ({len(experts)}):[/heading]")
     for expert in experts:
         lines.append(f"  - {expert}")
 
-    # Show context files
+    # Show files
     team_dir = TEAMS_DIR / name
-    lines.append(f"\n[heading]Context files:[/heading]")
-    for fname in ["lead.md", "general.md", "private.md"]:
-        fpath = team_dir / fname
-        status = "[success]exists[/success]" if fpath.exists() else "[dim]empty[/dim]"
-        lines.append(f"  - {fname}: {status}")
-
-    # Expert overrides
-    experts_dir = team_dir / "experts"
-    if experts_dir.exists():
-        overrides = list(experts_dir.glob("*.md"))
-        if overrides:
-            lines.append(f"\n[heading]Expert overrides:[/heading]")
-            for f in overrides:
-                lines.append(f"  - {f.name}")
+    lead_status = "[success]exists[/success]" if (team_dir / "lead.md").exists() else "[dim]missing[/dim]"
+    lines.append(f"\n[heading]Files:[/heading]")
+    lines.append(f"  - lead.md: {lead_status}")
+    for expert in experts:
+        notes_path = team_dir / f"expert-{expert}" / "notes.md"
+        notes_status = "[success]exists[/success]" if notes_path.exists() else "[dim]missing[/dim]"
+        lines.append(f"  - expert-{expert}/notes.md: {notes_status}")
 
     console.print(Panel("\n".join(lines), border_style="blue"))
 
@@ -1081,9 +1058,19 @@ def team_show(
 def team_add_expert(
     team: str = typer.Argument(help="Team name", autocompletion=_complete_team),
     expert: str = typer.Argument(help="Expert name", autocompletion=_complete_expert),
+    skip_analysis: bool = typer.Option(
+        False, "--skip-analysis", help="Use description instead of AI-generated section"
+    ),
 ) -> None:
     """Add an expert to a team's roster."""
-    result = core_add_expert_to_team(team, expert)
+    if not skip_analysis:
+        with console.status(
+            f"[heading]Generating expert section for {expert}...[/heading]",
+            spinner="dots",
+        ):
+            result = core_add_expert_to_team(team, expert)
+    else:
+        result = core_add_expert_to_team(team, expert, skip_analysis=True)
     if not result["success"]:
         console.print(f"[error]Error: {result['error']}[/error]")
         raise typer.Exit(1)
@@ -1424,8 +1411,7 @@ def status() -> None:
 
         for name, data in sorted(teams.items()):
             experts_list = data.get("experts", [])
-            max_roster = data.get("max_roster", 8)
-            roster_str = f"{', '.join(experts_list)} ({len(experts_list)}/{max_roster})"
+            roster_str = ", ".join(experts_list) if experts_list else "[dim]empty[/dim]"
 
             table.add_row(name, roster_str)
 

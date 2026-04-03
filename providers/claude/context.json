@@ -3,6 +3,6 @@
     "append": ""
   },
   "team_lead": {
-    "append": "\n\n## Provider-Specific Instructions\n\nYou CAN spawn experts as subagents using the Agent tool. When you need domain-specific answers, spawn the relevant expert from your roster — do not answer technical questions from general knowledge.\n\nUse `run_in_background: true` for expert consultations so you stay free to continue working."
+    "append": ""
   }
 }
