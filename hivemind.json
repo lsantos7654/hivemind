@@ -5,11 +5,7 @@
       "home_dir": "~/.claude",
       "settings": {
         "model": "sonnet",
-        "tools": [
-          "Read",
-          "Grep",
-          "Glob"
-        ]
+        "tools": ["Read", "Grep", "Glob"]
       },
       "permissions": {
         "defaultMode": "acceptEdits",
@@ -318,6 +314,11 @@
     "sequelize": {
       "remote": "https://github.com/sequelize/sequelize.git",
       "commit": "cb8ea88c9aa37b14c908fd34dff1afc603de2ea7",
+      "ref_name": ""
+    },
+    "bun": {
+      "remote": "https://github.com/oven-sh/bun.git",
+      "commit": "3ed4186bc8db8357c670307f192991bfc263f141",
       "ref_name": ""
     }
   }
