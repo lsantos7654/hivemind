@@ -182,9 +182,8 @@ def _save_private_repos(repos: dict) -> None:
 
 
 def _is_private_expert(name: str) -> bool:
-    """Check if expert is private based on config."""
-    config = _load_config()
-    return name in config.get("private", [])
+    """Check if expert is private (lives in private-experts/)."""
+    return (PRIVATE_EXPERTS_DIR / name).is_dir()
 
 
 def _get_expert_dir(name: str) -> Path:
@@ -1929,8 +1928,6 @@ def delete_expert(name: str) -> dict:
         config["enabled"].remove(name)
     if name in config.get("disabled", []):
         config["disabled"].remove(name)
-    if name in config.get("private", []):
-        config["private"].remove(name)
     _save_config(config)
 
     # Remove from repos (hivemind.json or private-repos.json)

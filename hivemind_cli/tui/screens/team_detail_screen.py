@@ -6,6 +6,7 @@ from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.widgets import Footer, Static
 
+from hivemind_cli.core import _load_config
 from hivemind_cli.tui.screens.base_screen import BaseScreen
 from hivemind_cli.tui.widgets import SearchBar, VimDataTable
 from hivemind_cli.tui.widgets.search_mixin import SearchMixin
@@ -67,7 +68,7 @@ class TeamDetailScreen(SearchMixin, BaseScreen):
         table.clear()
         self._visible_names = []
 
-        config = self.app._load_config()
+        config = _load_config()
         enabled = set(config.get("enabled", []))
 
         for expert_name in sorted(self.team_data.get("experts", [])):

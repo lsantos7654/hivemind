@@ -343,7 +343,6 @@ def list_experts() -> None:
     config = _load_config()
     repos = _load_repos()
     private_repos = _load_private_repos()
-    private_experts = set(config.get("private", []))
     experts = _expert_names()
 
     if not experts:
@@ -353,8 +352,8 @@ def list_experts() -> None:
         return
 
     # Separate into public and private
-    public_expert_names = [name for name in experts if name not in private_experts]
-    private_expert_names = [name for name in experts if name in private_experts]
+    public_expert_names = [name for name in experts if not _is_private_expert(name)]
+    private_expert_names = [name for name in experts if _is_private_expert(name)]
 
     def create_table_for_experts(expert_names: list[str], title: str) -> Table | None:
         """Create a table for a list of experts."""
@@ -371,7 +370,7 @@ def list_experts() -> None:
         table.add_column("Remote")
 
         for name in expert_names:
-            is_private = name in private_experts
+            is_private = _is_private_expert(name)
 
             # Status
             if name in config["enabled"]:
@@ -436,10 +435,9 @@ def show_expert(
     config = _load_config()
     repos = _load_repos()
     private_repos = _load_private_repos()
-    private_experts = set(config.get("private", []))
     teams = _load_teams()
 
-    is_private = name in private_experts
+    is_private = _is_private_expert(name)
 
     # Status
     if name in config["enabled"]:
@@ -1440,8 +1438,6 @@ def status() -> None:
     # --- Experts table (enabled + disabled only, skip unlisted) ---
     repos = _load_repos()
     private_repos = _load_private_repos()
-    private_expert_set = set(config.get("private", []))
-
     listed_experts = [
         name for name in _expert_names() if name in enabled or name in disabled
     ]

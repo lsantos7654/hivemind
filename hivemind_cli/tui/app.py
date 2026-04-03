@@ -2,15 +2,22 @@
 
 from __future__ import annotations
 
-import json
-import os
-from pathlib import Path
-
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.css.query import NoMatches
 from textual.widgets import ContentSwitcher, Footer, Static
 
+from hivemind_cli.core import (
+    _is_private_expert,
+    _load_config,
+    _load_repos,
+    _load_private_repos,
+    _expert_names,
+    _get_expert_dir,
+    _get_head_commit,
+    _count_versions,
+    AGENTS_DIR,
+)
 from hivemind_cli.tui.models import ExpertRow, ExpertStatus
 from hivemind_cli.tui.screens.experts_pane import ExpertsPane
 from hivemind_cli.tui.screens.teams_screen import TeamsPane
@@ -42,15 +49,6 @@ class HivemindApp(App):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.experts: list[ExpertRow] = []
-
-        # Paths (same as CLI)
-        self.hivemind_root = Path(__file__).resolve().parent.parent.parent
-        self.experts_dir = self.hivemind_root / "experts"
-        self.private_experts_dir = self.hivemind_root / "private-experts"
-        self.agents_dir = self.hivemind_root / "agents"
-        self.config_json = self.hivemind_root / "config.json"
-        self.hivemind_json = self.hivemind_root / "hivemind.json"
-
         self._teams_loaded = False
 
     def compose(self) -> ComposeResult:
@@ -145,16 +143,15 @@ class HivemindApp(App):
     # --- Data loading ---
 
     def load_experts(self) -> None:
-        config = self._load_config()
-        repos = self._load_repos()
-        private_repos = self._load_private_repos()
-        private_experts = set(config.get("private", []))
-        expert_names = self._expert_names()
+        config = _load_config()
+        repos = _load_repos()
+        private_repos = _load_private_repos()
+        expert_names = _expert_names()
 
         self.experts = []
 
         for name in expert_names:
-            is_private = name in private_experts
+            is_private = _is_private_expert(name)
             if name in config["enabled"]:
                 status = ExpertStatus.ENABLED
             elif name in config["disabled"]:
@@ -162,13 +159,10 @@ class HivemindApp(App):
             else:
                 status = ExpertStatus.UNLISTED
 
-            expert_dir = (
-                self.private_experts_dir / name if is_private
-                else self.experts_dir / name
-            )
-            commit = self._get_head_commit(expert_dir)
-            version_count = self._count_versions(expert_dir)
-            has_agent = (self.agents_dir / f"expert-{name}.md").is_file()
+            expert_dir = _get_expert_dir(name)
+            commit = _get_head_commit(expert_dir)
+            version_count = _count_versions(expert_dir)
+            has_agent = (AGENTS_DIR / f"expert-{name}.md").is_file()
 
             remote = ""
             ref_name = ""
@@ -207,51 +201,6 @@ class HivemindApp(App):
             pass
 
     def load_teams(self) -> dict:
-        config = self._load_config()
+        config = _load_config()
         return config.get("teams", {})
 
-    def _load_config(self) -> dict:
-        default = {"enabled": [], "disabled": []}
-        if not self.config_json.exists():
-            return default
-        data = json.loads(self.config_json.read_text())
-        data.setdefault("enabled", [])
-        data.setdefault("disabled", [])
-        return data
-
-    def _load_hivemind(self) -> dict:
-        if not self.hivemind_json.exists():
-            return {}
-        return json.loads(self.hivemind_json.read_text())
-
-    def _load_repos(self) -> dict:
-        return self._load_hivemind().get("repos", {})
-
-    def _load_private_repos(self) -> dict:
-        private_repos_json = self.hivemind_root / "private-repos.json"
-        if not private_repos_json.exists():
-            return {}
-        return json.loads(private_repos_json.read_text())
-
-    def _expert_names(self) -> list[str]:
-        experts = []
-        if self.experts_dir.exists():
-            experts.extend(d.name for d in self.experts_dir.iterdir() if d.is_dir())
-        if self.private_experts_dir.exists():
-            experts.extend(d.name for d in self.private_experts_dir.iterdir() if d.is_dir())
-        return sorted(experts)
-
-    def _get_head_commit(self, expert_dir: Path) -> str | None:
-        head = expert_dir / "HEAD"
-        if not head.is_symlink():
-            return None
-        return os.readlink(head)
-
-    def _count_versions(self, expert_dir: Path) -> int:
-        if not expert_dir.exists():
-            return 0
-        return sum(
-            1
-            for d in expert_dir.iterdir()
-            if d.is_dir() and not d.is_symlink() and d.name != "__pycache__"
-        )
