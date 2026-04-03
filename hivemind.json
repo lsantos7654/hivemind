@@ -373,6 +373,26 @@
       "remote": "https://github.com/astral-sh/ruff.git",
       "commit": "ee9084695ec4d70bc66083ac2b3cf598cc45101a",
       "ref_name": ""
+    },
+    "koa": {
+      "remote": "https://github.com/koajs/koa.git",
+      "commit": "e0ba8ef39d27fe5dae5492f9fe753d155124f994",
+      "ref_name": ""
+    },
+    "ant-design": {
+      "remote": "https://github.com/ant-design/ant-design.git",
+      "commit": "d0cbac08855bc00fe918fafe782d3a9cbb26ac1a",
+      "ref_name": ""
+    },
+    "react": {
+      "remote": "https://github.com/facebook/react.git",
+      "commit": "1b45e2439289fd8e094c44161c89e06c5488671e",
+      "ref_name": ""
+    },
+    "TypeScript": {
+      "remote": "https://github.com/microsoft/TypeScript.git",
+      "commit": "7b8cb3bdf82f400642b73173f941335775d6f730",
+      "ref_name": ""
     }
   }
 }

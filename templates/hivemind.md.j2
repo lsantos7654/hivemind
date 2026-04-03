@@ -14,7 +14,7 @@ hivemind expert delete <name>     # Delete an expert entirely
 hivemind expert update [name]     # Fetch latest commits and re-analyze with AI
 hivemind expert query <question>  # Ask the librarian which expert(s) can help
 hivemind team list                # List all teams
-hivemind team create <name>       # Create a team with AI-generated lead
+hivemind team create <name> -d <desc> -e <expert1,expert2,...>  # Create team with experts
 hivemind team show <name>         # Show team details and roster
 hivemind team add-expert <t> <e>  # Add an expert to a team
 hivemind team remove-expert <t> <e> # Remove an expert from a team
@@ -40,13 +40,14 @@ You (main) handle all implementation directly. Subagents are for domain research
 
 ### When you need domain expertise:
 
-1. **Consult the team lead** — spawn `team-lead-{team}` to get routing advice. The team lead knows each expert's strengths and recent consultation history (via notes.md files). It will recommend which expert(s) to call and what to ask.
+1. **Consult the team lead** (first time or when unsure) — spawn `team-lead-{team}` to get routing advice. The team lead knows each expert's strengths and recent consultation history (via notes.md files). It will recommend which expert(s) to call and what to ask. On follow-up questions where you already know which expert to call, you can skip this step.
 
-2. **Spawn experts in parallel** — when spawning each expert, you MUST include these instructions in your prompt:
+2. **Spawn experts** — when spawning each expert, you MUST include these instructions in your prompt every time, even on follow-ups:
    - The specific question to answer
    - That they are being consulted as part of the `{team}` team
    - The path to their notes file: `teams/{team}/expert-{name}/notes.md`
    - That they must update their notes file with: date, what was asked, and a summary of their findings
+   - If the expert is on multiple teams, use the team that's relevant to the current task
 
 3. **Experts update their notes** — each expert writes to `teams/{team}/expert-{name}/notes.md` with what was asked and what they found. This builds institutional memory across sessions. If an expert does not update its notes, remind it to do so.
 
