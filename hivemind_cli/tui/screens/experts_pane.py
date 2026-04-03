@@ -2,18 +2,20 @@
 
 from __future__ import annotations
 
+import contextlib
+
 from textual.app import ComposeResult
-from textual.widgets import DataTable, Static
 from textual.binding import Binding
+from textual.widgets import DataTable, Static
 
 from hivemind_cli.tui.models import ExpertRow, ExpertStatus, OperationStatus
-from hivemind_cli.tui.widgets.base_pane import BasePane
-from hivemind_cli.tui.widgets import ExpertTable, SearchBar
 from hivemind_cli.tui.operations import (
-    update_expert_async,
-    enable_expert_async_op,
     disable_expert_async_op,
+    enable_expert_async_op,
+    update_expert_async,
 )
+from hivemind_cli.tui.widgets import ExpertTable, SearchBar
+from hivemind_cli.tui.widgets.base_pane import BasePane
 
 
 class ExpertsPane(BasePane):
@@ -166,6 +168,7 @@ class ExpertsPane(BasePane):
         async def _do_delete(confirmed: bool) -> None:
             if confirmed:
                 from hivemind_cli.tui.operations import delete_expert_async_op
+
                 self.notify(f"Deleting {name}...", severity="warning")
                 self.run_worker(delete_expert_async_op(self, name), exit_on_error=False)
 
@@ -190,6 +193,7 @@ class ExpertsPane(BasePane):
 
     async def _add_expert_wrapper(self, url: str):
         from hivemind_cli.tui.operations import add_expert_async
+
         await add_expert_async(self, url)
 
     def action_update(self) -> None:
@@ -208,6 +212,7 @@ class ExpertsPane(BasePane):
 
     async def _update_expert_wrapper(self, expert_name: str):
         from hivemind_cli.tui.operations import CancellationToken
+
         token = CancellationToken()
         self.register_worker(expert_name, token)
         await update_expert_async(self, expert_name, token)
@@ -255,10 +260,9 @@ class ExpertsPane(BasePane):
     def _force_kill_if_alive(self, pid: int):
         import os
         import signal
-        try:
+
+        with contextlib.suppress(ProcessLookupError):
             os.kill(pid, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
 
     def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
         if event.data_table.id == "expert-table":
@@ -268,7 +272,5 @@ class ExpertsPane(BasePane):
         if action == "cancel_update":
             table = self.query_one("#expert-table", ExpertTable)
             current = table.get_current_expert()
-            if current and current.operation_status == OperationStatus.IN_PROGRESS:
-                return True
-            return False
+            return bool(current and current.operation_status == OperationStatus.IN_PROGRESS)
         return True

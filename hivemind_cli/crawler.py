@@ -8,8 +8,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 import httpx
-
-from crawl4ai import AsyncWebCrawler, CrawlerRunConfig, AsyncUrlSeeder, SeedingConfig
+from crawl4ai import AsyncUrlSeeder, AsyncWebCrawler, CrawlerRunConfig, SeedingConfig
 from crawl4ai.content_filter_strategy import PruningContentFilter
 from crawl4ai.deep_crawling import BFSDeepCrawlStrategy
 from crawl4ai.deep_crawling.filters import FilterChain, URLPatternFilter
@@ -25,10 +24,7 @@ def normalize_url(url: str) -> str:
     """
     parsed = urlparse(url)
     normalized = parsed._replace(fragment="")
-    normalized = normalized._replace(
-        scheme=normalized.scheme.lower(),
-        netloc=normalized.netloc.lower()
-    )
+    normalized = normalized._replace(scheme=normalized.scheme.lower(), netloc=normalized.netloc.lower())
 
     path = normalized.path
     if len(path) > 1 and path.endswith("/"):
@@ -148,10 +144,8 @@ def create_clean_docs_config(stream: bool = False) -> dict:
         "stream": stream,
         "verbose": False,
         # NO css_selector - let full page through for robust extraction
-
         # Stage 1: Structural exclusion via tags
         "excluded_tags": ["nav", "header", "footer", "aside", "form", "button", "script", "style", "iframe"],
-
         # Stage 1: Structural exclusion via CSS selectors
         # Enhanced patterns based on crawl4ai expert recommendations
         "excluded_selector": """
@@ -165,21 +159,18 @@ def create_clean_docs_config(stream: bool = False) -> dict:
             .language-selector, .lang-switcher, .locale-selector,
             .breadcrumb, .breadcrumbs
         """,
-
         # Remove overlays and popups
         "remove_overlay_elements": True,
-
         # Content quality filters
         "word_count_threshold": 10,
         "exclude_external_links": True,
         "exclude_social_media_links": True,
-
         # Stage 2 & 3: Content filtering → fit_markdown generation
         "markdown_generator": DefaultMarkdownGenerator(
             content_filter=PruningContentFilter(
-                threshold=0.48,           # Balanced threshold (default)
-                threshold_type="dynamic", # Adapts based on tag importance
-                min_word_threshold=10,    # Skip very short blocks
+                threshold=0.48,  # Balanced threshold (default)
+                threshold_type="dynamic",  # Adapts based on tag importance
+                min_word_threshold=10,  # Skip very short blocks
             )
         ),
     }
@@ -278,10 +269,7 @@ async def crawl_website(
     config = CrawlerRunConfig(**create_clean_docs_config(stream=True))
 
     async with AsyncWebCrawler() as crawler:
-        async for page_result in await crawler.arun_many(
-            urls=discovered_urls,
-            config=config
-        ):
+        async for page_result in await crawler.arun_many(urls=discovered_urls, config=config):
             if on_page_callback:
                 on_page_callback(page_result.url, page_result.success)
 
@@ -443,10 +431,7 @@ async def crawl_with_fallback(
         config = CrawlerRunConfig(**create_clean_docs_config(stream=True))
 
         async with AsyncWebCrawler() as crawler:
-            async for page_result in await crawler.arun_many(
-                urls=failed_urls,
-                config=config
-            ):
+            async for page_result in await crawler.arun_many(urls=failed_urls, config=config):
                 if page_result.success and page_result.markdown:
                     filename = url_to_filename(page_result.url)
                     filepath = output_path / f"{filename}.md"

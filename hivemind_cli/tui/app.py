@@ -2,28 +2,29 @@
 
 from __future__ import annotations
 
+import contextlib
+
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.css.query import NoMatches
 from textual.widgets import ContentSwitcher, Footer, Static
 
 from hivemind_cli.core import (
-    _is_private_expert,
-    _load_config,
-    _load_repos,
-    _load_private_repos,
+    AGENTS_DIR,
+    _count_versions,
     _expert_names,
     _get_expert_dir,
     _get_head_commit,
-    _count_versions,
-    AGENTS_DIR,
+    _is_private_expert,
+    _load_config,
+    _load_private_repos,
+    _load_repos,
 )
 from hivemind_cli.tui.models import ExpertRow, ExpertStatus
 from hivemind_cli.tui.screens.experts_pane import ExpertsPane
 from hivemind_cli.tui.screens.teams_screen import TeamsPane
 from hivemind_cli.tui.widgets import SearchBar
 from hivemind_cli.tui.widgets.vim_data_table import VimDataTable
-
 
 TAB_ORDER = ["pane-experts", "pane-teams"]
 TAB_NAMES = {"pane-experts": "Experts", "pane-teams": "Teams"}
@@ -101,10 +102,8 @@ class HivemindApp(App):
 
         if active == "pane-teams" and not self._teams_loaded:
             self._teams_loaded = True
-            try:
+            with contextlib.suppress(NoMatches):
                 self.query_one(TeamsPane).load_teams()
-            except NoMatches:
-                pass
 
     def _focus_active_table(self) -> None:
         switcher = self.query_one("#switcher", ContentSwitcher)
@@ -185,10 +184,7 @@ class HivemindApp(App):
                 )
             )
 
-        self.experts.sort(key=lambda e: (
-            0 if e.status == ExpertStatus.ENABLED else 1,
-            e.name.lower()
-        ))
+        self.experts.sort(key=lambda e: (0 if e.status == ExpertStatus.ENABLED else 1, e.name.lower()))
 
     def refresh_experts(self) -> None:
         self.load_experts()
@@ -203,4 +199,3 @@ class HivemindApp(App):
     def load_teams(self) -> dict:
         config = _load_config()
         return config.get("teams", {})
-

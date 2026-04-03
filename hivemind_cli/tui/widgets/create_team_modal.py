@@ -27,10 +27,7 @@ class CreateTeamModal(FormModal):
             yield Input(placeholder="Team description", id="desc-input")
             yield Label("Experts:")
             yield VimSelectionList(
-                *[
-                    (expert.name, expert.name)
-                    for expert in self.app.experts
-                ],
+                *[(expert.name, expert.name) for expert in self.app.experts],
                 id="expert-list",
             )
             yield Label("", id="error-label", classes="error-label")

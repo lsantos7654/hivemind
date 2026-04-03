@@ -9,14 +9,13 @@ Each provider (Claude Code, OpenCode, etc.) defines how to:
 
 from __future__ import annotations
 
-import os
-import re
-import shlex
+import contextlib
 import json
+import os
+import shlex
 import shutil
 from abc import ABC, abstractmethod
 from pathlib import Path
-
 
 # --- Helpers ---
 
@@ -52,7 +51,7 @@ def extract_description(body: str) -> str:
         return " ".join(paragraph_lines)
 
     # Find h1 heading index
-    h1_idx = next((i for i, l in enumerate(lines) if l.startswith("# ")), None)
+    h1_idx = next((i for i, line in enumerate(lines) if line.startswith("# ")), None)
     if h1_idx is None:
         return ""
 
@@ -249,9 +248,7 @@ class Provider(ABC):
         # Subclasses can override if needed
         return self._format_agent_md_internal(agent_name, description, body)
 
-    def _format_agent_md_internal(
-        self, agent_name: str, description: str, body: str
-    ) -> str:
+    def _format_agent_md_internal(self, agent_name: str, description: str, body: str) -> str:
         """Internal formatting — override in subclasses."""
         raise NotImplementedError
 
@@ -352,9 +349,7 @@ class Provider(ABC):
 
         # Core symlinks: agents/, commands/, rules file
         results.append(_setup_symlink(agents_dir, self._home_dir / "agents", "agents/"))
-        results.append(
-            _setup_symlink(commands_dir, self._home_dir / "commands", "commands/")
-        )
+        results.append(_setup_symlink(commands_dir, self._home_dir / "commands", "commands/"))
         results.append(
             _setup_symlink(
                 rules_source,
@@ -374,18 +369,14 @@ class Provider(ABC):
         hivemind_subdir.mkdir(parents=True, exist_ok=True)
 
         if teams_dir:
-            results.append(
-                _setup_symlink(teams_dir, hivemind_subdir / "teams", "hivemind/teams/")
-            )
+            results.append(_setup_symlink(teams_dir, hivemind_subdir / "teams", "hivemind/teams/"))
 
         # Provider-specific hook
         results.extend(self._post_init_dirs(permissions=permissions))
 
         return results
 
-    def _post_init_dirs(
-        self, *, permissions: dict | None = None
-    ) -> list[tuple[str, str]]:
+    def _post_init_dirs(self, *, permissions: dict | None = None) -> list[tuple[str, str]]:
         """Provider-specific init steps. Override in subclasses."""
         return []
 
@@ -417,9 +408,7 @@ class Provider(ABC):
         ]
         hivemind_subdir = self._home_dir / "hivemind"
         if teams_dir:
-            checks.append(
-                (f"{hivemind_subdir}/teams/", teams_dir, hivemind_subdir / "teams")
-            )
+            checks.append((f"{hivemind_subdir}/teams/", teams_dir, hivemind_subdir / "teams"))
         return checks
 
 
@@ -447,12 +436,7 @@ class ClaudeProvider(Provider):
         tools_str = ", ".join(tools)
 
         frontmatter = (
-            f"---\n"
-            f"name: {agent_name}\n"
-            f"description: {description}\n"
-            f"tools: {tools_str}\n"
-            f"model: {model}\n"
-            f"---\n\n"
+            f"---\nname: {agent_name}\ndescription: {description}\ntools: {tools_str}\nmodel: {model}\n---\n\n"
         )
 
         transformed = replace_expert_paths(
@@ -465,9 +449,7 @@ class ClaudeProvider(Provider):
 
         return frontmatter + transformed
 
-    def _format_agent_md_internal(
-        self, agent_name: str, description: str, body: str
-    ) -> str:
+    def _format_agent_md_internal(self, agent_name: str, description: str, body: str) -> str:
         """Internal Claude Code agent formatting with custom name."""
         tools = self._settings.get("tools", [])
         model = self._settings.get("model", "sonnet")
@@ -475,12 +457,7 @@ class ClaudeProvider(Provider):
         tools_str = ", ".join(tools) if isinstance(tools, list) else str(tools)
 
         frontmatter = (
-            f"---\n"
-            f"name: {agent_name}\n"
-            f"description: {description}\n"
-            f"tools: {tools_str}\n"
-            f"model: {model}\n"
-            f"---\n\n"
+            f"---\nname: {agent_name}\ndescription: {description}\ntools: {tools_str}\nmodel: {model}\n---\n\n"
         )
 
         transformed = replace_expert_paths(
@@ -598,9 +575,7 @@ class ClaudeProvider(Provider):
             else:
                 expert_link.unlink()
 
-    def _post_init_dirs(
-        self, *, permissions: dict | None = None
-    ) -> list[tuple[str, str]]:
+    def _post_init_dirs(self, *, permissions: dict | None = None) -> list[tuple[str, str]]:
         """Generate settings.json from permissions config."""
         import json as _json
 
@@ -637,9 +612,7 @@ class OpenCodeProvider(Provider):
     def rules_file_name(self) -> str:
         return "AGENTS.md"
 
-    def _format_agent_md_internal(
-        self, agent_name: str, description: str, body: str
-    ) -> str:
+    def _format_agent_md_internal(self, agent_name: str, description: str, body: str) -> str:
         """Internal OpenCode agent formatting with custom name."""
         model = self._settings.get("model", "anthropic/claude-sonnet-4-20250514")
         temperature = self._settings.get("temperature", 0.1)
@@ -829,9 +802,7 @@ class OpenCodeProvider(Provider):
             else:
                 expert_link.unlink()
 
-    def _post_init_dirs(
-        self, *, permissions: dict | None = None
-    ) -> list[tuple[str, str]]:
+    def _post_init_dirs(self, *, permissions: dict | None = None) -> list[tuple[str, str]]:
         """Generate/merge global permissions into opencode.json."""
         import json as _json
 
@@ -874,10 +845,8 @@ class OpenCodeProvider(Provider):
         config_path = self._home_dir / "opencode.json"
         existing: dict = {}
         if config_path.exists() and not config_path.is_symlink():
-            try:
+            with contextlib.suppress(ValueError, OSError):
                 existing = _json.loads(config_path.read_text())
-            except (ValueError, OSError):
-                pass
 
         # Deep-merge hivemind permissions into existing permission key
         existing_perms = existing.get("permission", {})
@@ -922,9 +891,7 @@ def get_provider(name: str, provider_config: dict) -> Provider:
     """
     cls = PROVIDER_CLASSES.get(name)
     if cls is None:
-        raise ValueError(
-            f"Unknown provider '{name}'. Available: {', '.join(PROVIDER_CLASSES)}"
-        )
+        raise ValueError(f"Unknown provider '{name}'. Available: {', '.join(PROVIDER_CLASSES)}")
     return cls(provider_config)
 
 

@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from textual.app import ComposeResult
 from textual.containers import Horizontal
-from textual.widgets import Input, Static
 from textual.reactive import reactive
+from textual.widgets import Input, Static
 
 
 class SearchBar(Horizontal):

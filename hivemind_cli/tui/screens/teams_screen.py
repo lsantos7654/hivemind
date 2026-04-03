@@ -6,8 +6,8 @@ from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.widgets import DataTable, Static
 
+from hivemind_cli.tui.widgets import SearchBar, VimDataTable
 from hivemind_cli.tui.widgets.base_pane import BasePane
-from hivemind_cli.tui.widgets import VimDataTable, SearchBar
 
 
 class TeamsPane(BasePane):
@@ -65,7 +65,7 @@ class TeamsPane(BasePane):
 
         if not self._visible_names:
             if self._filter_query:
-                table.add_row(f"[dim]No results for \"{self._filter_query}\"[/dim]", "", "")
+                table.add_row(f'[dim]No results for "{self._filter_query}"[/dim]', "", "")
             elif not self._teams:
                 table.add_row("[dim]No teams[/dim]", "", "")
 
@@ -101,8 +101,8 @@ class TeamsPane(BasePane):
             self.action_show_details()
 
     def action_delete_team(self) -> None:
-        from hivemind_cli.tui.widgets import ConfirmationModal
         from hivemind_cli.core import delete_team
+        from hivemind_cli.tui.widgets import ConfirmationModal
 
         name = self.get_current_name()
         if not name:

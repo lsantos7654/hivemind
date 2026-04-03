@@ -72,16 +72,15 @@ class TeamDetailScreen(SearchMixin, BaseScreen):
         enabled = set(config.get("enabled", []))
 
         for expert_name in sorted(self.team_data.get("experts", [])):
-            if self._filter_query:
-                if self._filter_query.lower() not in expert_name.lower():
-                    continue
+            if self._filter_query and self._filter_query.lower() not in expert_name.lower():
+                continue
             status = "[green]enabled[/green]" if expert_name in enabled else "[dim]disabled[/dim]"
             table.add_row(expert_name, status)
             self._visible_names.append(expert_name)
 
         if not self._visible_names:
             if self._filter_query:
-                table.add_row(f"[dim]No results for \"{self._filter_query}\"[/dim]", "")
+                table.add_row(f'[dim]No results for "{self._filter_query}"[/dim]', "")
             elif not self.team_data.get("experts"):
                 table.add_row("[dim]No experts[/dim]", "")
 
@@ -94,8 +93,8 @@ class TeamDetailScreen(SearchMixin, BaseScreen):
         self.query_one("#team-header", Static).update(self._format_header())
 
     def action_edit_team(self) -> None:
-        from hivemind_cli.tui.widgets.edit_team_modal import EditTeamModal
         from hivemind_cli.core import update_team
+        from hivemind_cli.tui.widgets.edit_team_modal import EditTeamModal
 
         current_desc = self.team_data.get("description", "")
 
@@ -120,8 +119,8 @@ class TeamDetailScreen(SearchMixin, BaseScreen):
         self.app.push_screen(EditTeamModal(self.team_name, current_desc), _handle_result)
 
     def action_add_expert(self) -> None:
-        from hivemind_cli.tui.widgets.selection_modal import SelectionListModal
         from hivemind_cli.core import add_expert_to_team
+        from hivemind_cli.tui.widgets.selection_modal import SelectionListModal
 
         all_experts = [e.name for e in self.app.experts]
         current = set(self.team_data.get("experts", []))
@@ -145,8 +144,8 @@ class TeamDetailScreen(SearchMixin, BaseScreen):
         self.app.push_screen(SelectionListModal(available, title="Add Experts"), _handle_add)
 
     def action_remove_expert(self) -> None:
-        from hivemind_cli.tui.widgets import ConfirmationModal
         from hivemind_cli.core import remove_expert_from_team
+        from hivemind_cli.tui.widgets import ConfirmationModal
 
         expert_name = self.get_current_name()
         if not expert_name:

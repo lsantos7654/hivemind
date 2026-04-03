@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from textual.screen import Screen
 from textual.binding import Binding
+from textual.screen import Screen
 
 
 class BaseScreen(Screen):

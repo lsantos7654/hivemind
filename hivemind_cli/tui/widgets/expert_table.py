@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from textual.app import ComposeResult
 from textual.reactive import reactive
 
 from hivemind_cli.tui.models import ExpertRow, ExpertStatus, OperationStatus
@@ -43,16 +42,10 @@ class ExpertTable(VimDataTable):
 
         if self.filter_query:
             query = self.filter_query.lower()
-            filtered = [
-                e for e in filtered
-                if query in e.name.lower() or query in e.remote.lower()
-            ]
+            filtered = [e for e in filtered if query in e.name.lower() or query in e.remote.lower()]
 
         if self.filter_status:
-            filtered = [
-                e for e in filtered
-                if e.status.value == self.filter_status
-            ]
+            filtered = [e for e in filtered if e.status.value == self.filter_status]
 
         # Update experts list
         self.experts = filtered
@@ -60,7 +53,7 @@ class ExpertTable(VimDataTable):
         # Empty state
         if not self.experts:
             if self.filter_query:
-                self.add_row("", f"[dim]No results for \"{self.filter_query}\"[/dim]", "", "", "", "", "")
+                self.add_row("", f'[dim]No results for "{self.filter_query}"[/dim]', "", "", "", "", "")
             elif not self._all_experts:
                 self.add_row("", "[dim]No experts[/dim]", "", "", "", "", "")
             return

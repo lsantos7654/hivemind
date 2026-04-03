@@ -2,17 +2,19 @@
 
 from __future__ import annotations
 
-from textual.app import ComposeResult
-from textual.containers import Container
-from textual.widgets import Footer, Static, Input, Button
-from textual.binding import Binding
-from textual.reactive import reactive
-from textual.css.query import NoMatches
+import contextlib
 
+from textual.app import ComposeResult
+from textual.binding import Binding
+from textual.containers import Container
+from textual.css.query import NoMatches
+from textual.reactive import reactive
+from textual.widgets import Button, Footer, Input, Static
+
+from hivemind_cli.core import EXPERTS_DIR, PRIVATE_EXPERTS_DIR, commit_exists_in_repo, get_git_versions
 from hivemind_cli.tui.models import ExpertRow, VersionInfo
 from hivemind_cli.tui.screens.base_screen import BaseScreen
-from hivemind_cli.tui.widgets import VimDataTable, SearchBar
-from hivemind_cli.core import get_git_versions, commit_exists_in_repo, EXPERTS_DIR, PRIVATE_EXPERTS_DIR
+from hivemind_cli.tui.widgets import SearchBar, VimDataTable
 
 
 class VersionDetailScreen(BaseScreen):
@@ -68,8 +70,7 @@ class VersionDetailScreen(BaseScreen):
 
     def _load_versions(self) -> None:
         expert_dir = (
-            PRIVATE_EXPERTS_DIR / self.expert.name if self.expert.is_private
-            else EXPERTS_DIR / self.expert.name
+            PRIVATE_EXPERTS_DIR / self.expert.name if self.expert.is_private else EXPERTS_DIR / self.expert.name
         )
         self.versions = get_git_versions(self.expert.name, expert_dir)
 
@@ -80,16 +81,13 @@ class VersionDetailScreen(BaseScreen):
         filtered_versions = self.versions
         if self.filter_query:
             query = self.filter_query.lower()
-            filtered_versions = [
-                v for v in self.versions
-                if query in v.name.lower() or query in v.commit.lower()
-            ]
+            filtered_versions = [v for v in self.versions if query in v.name.lower() or query in v.commit.lower()]
 
         self._filtered_versions = filtered_versions
 
         if not filtered_versions:
             if self.filter_query:
-                table.add_row(f"[dim]No results for \"{self.filter_query}\"[/dim]", "", "", "", "")
+                table.add_row(f'[dim]No results for "{self.filter_query}"[/dim]', "", "", "", "")
             else:
                 table.add_row("[dim]No versions found[/dim]", "", "", "", "")
             return
@@ -110,10 +108,8 @@ class VersionDetailScreen(BaseScreen):
     # --- Search ---
 
     def action_focus_search(self) -> None:
-        try:
+        with contextlib.suppress(NoMatches):
             self.query_one(SearchBar).show()
-        except NoMatches:
-            pass
 
     def on_input_changed(self, event: Input.Changed) -> None:
         if event.input.id == "search-input":
@@ -182,6 +178,7 @@ class VersionDetailScreen(BaseScreen):
 
     async def _switch_version_wrapper(self, target_commit: str, token):
         from hivemind_cli.tui.operations import switch_version_async_tui
+
         await switch_version_async_tui(self, self.expert.name, target_commit, token)
 
     # --- Commit input ---

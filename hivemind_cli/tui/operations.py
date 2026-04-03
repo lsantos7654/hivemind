@@ -6,31 +6,17 @@ import asyncio
 from typing import TYPE_CHECKING
 
 from hivemind_cli.core import (
-    UpdatePhase,
+    CancellationToken,
     ProgressInfo,
-    enable_expert,
-    disable_expert,
+    UpdatePhase,
     delete_expert,
+    disable_expert,
+    enable_expert,
 )
 from hivemind_cli.tui.models import OperationStatus
 
 if TYPE_CHECKING:
     from hivemind_cli.tui.screens.experts_pane import ExpertsPane
-
-
-class CancellationToken:
-    """Token to signal and check for cancellation."""
-
-    def __init__(self):
-        self._cancelled = False
-
-    def cancel(self):
-        """Signal cancellation."""
-        self._cancelled = True
-
-    def is_cancelled(self) -> bool:
-        """Check if cancelled."""
-        return self._cancelled
 
 
 def create_tui_progress_callback(screen: ExpertsPane, expert_name: str):
@@ -168,11 +154,15 @@ async def add_expert_async(pane, url: str):
 
     try:
         proc = await asyncio.create_subprocess_exec(
-            sys.executable, "-m", "hivemind_cli.cli", "add", url,
+            sys.executable,
+            "-m",
+            "hivemind_cli.cli",
+            "add",
+            url,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
-        stdout, stderr = await proc.communicate()
+        _, stderr = await proc.communicate()
 
         if proc.returncode == 0:
             pane.notify("Expert added successfully", severity="information")
@@ -189,7 +179,7 @@ async def switch_version_async_tui(
     screen,  # VersionDetailScreen
     expert_name: str,
     target_commit: str,
-    token: CancellationToken
+    token: CancellationToken,
 ):
     """Async wrapper for switching versions with TUI integration."""
     from hivemind_cli.core import switch_version_async
@@ -197,7 +187,7 @@ async def switch_version_async_tui(
     # Create progress callback (reuse existing helper approach)
     def on_progress(info: ProgressInfo):
         # Update status message on the detail screen
-        if hasattr(screen, 'set_status_message'):
+        if hasattr(screen, "set_status_message"):
             screen.set_status_message(info.message)
         # Notify is already thread-safe in Textual workers
         screen.notify(info.message, severity="information")
@@ -225,14 +215,15 @@ async def switch_version_async_tui(
             else:
                 screen.notify(f"Switched to {target_commit[:12]}", severity="information")
                 # Refresh the version detail screen to show updated active status
-                if hasattr(screen, '_load_versions'):
+                if hasattr(screen, "_load_versions"):
                     screen.expert.commit = target_commit  # Update expert object
                     screen._load_versions()
                     screen._populate_table()
                     # Update the expert header to show new HEAD
-                    if hasattr(screen, 'query_one'):
+                    if hasattr(screen, "query_one"):
                         try:
                             from textual.widgets import Static
+
                             header = screen.query_one("#expert-header", Static)
                             header.update(
                                 f"Expert: {screen.expert.name}\n"

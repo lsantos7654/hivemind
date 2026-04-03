@@ -69,10 +69,7 @@ class SearchMixin:
         if self._filter_query:
             total = self._get_total_count()
             visible = len(self._visible_names)
-            indicator.update(
-                f"[dim]/[/dim] {self._filter_query}  "
-                f"[dim italic]({visible} of {total})[/dim italic]"
-            )
+            indicator.update(f"[dim]/[/dim] {self._filter_query}  [dim italic]({visible} of {total})[/dim italic]")
             indicator.display = True
         else:
             indicator.display = False
