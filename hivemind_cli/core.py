@@ -2109,6 +2109,9 @@ def _generate_expert_section(expert_name: str, team_name: str) -> str | None:
         capture_output=True,
     )
 
+    if proc.returncode != 0:
+        return None
+
     # The AI should write to stdout, not a file
     output = proc.stdout.strip() if proc.stdout else ""
     if output and f"## expert-{expert_name}" in output:
@@ -2264,11 +2267,9 @@ def create_team(
     team_dir = TEAMS_DIR / name
     team_dir.mkdir(parents=True, exist_ok=True)
 
-    # Generate expert sections and notes stubs
+    # Generate expert sections
     expert_sections: list[str] = []
     for expert_name in experts:
-        _create_expert_notes_stub(name, expert_name)
-
         section = _generate_expert_section(expert_name, name)
         if not section:
             shutil.rmtree(team_dir)
@@ -2277,6 +2278,10 @@ def create_team(
                 "error": f"AI generation failed for expert section: {expert_name}",
             }
         expert_sections.append(section)
+
+    # Create notes stubs (only after all sections generated successfully)
+    for expert_name in experts:
+        _create_expert_notes_stub(name, expert_name)
 
     # Assemble lead.md
     from hivemind_cli.templates import team_lead_template
