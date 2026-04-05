@@ -9,7 +9,7 @@ from textual.binding import Binding
 from textual.containers import Container
 from textual.css.query import NoMatches
 from textual.reactive import reactive
-from textual.widgets import Button, Footer, Input, Static
+from textual.widgets import Button, DataTable, Footer, Input, Static
 
 from hivemind_cli.core import EXPERTS_DIR, PRIVATE_EXPERTS_DIR, commit_exists_in_repo, get_git_versions
 from hivemind_cli.tui.screens.base_screen import BaseScreen
@@ -28,7 +28,6 @@ class VersionDetailScreen(BaseScreen):
         *BaseScreen.BINDINGS,
         Binding("slash", "focus_search", "Search", show=True),
         Binding("q", "quit_or_back", "Back", show=True),
-        Binding("enter", "switch_version", "Switch", show=True),
         Binding("i", "input_commit", "Input Commit", show=True),
         Binding("r", "refresh", "Refresh", show=True),
     ]
@@ -155,6 +154,10 @@ class VersionDetailScreen(BaseScreen):
         self.app.pop_screen()
 
     # --- Version switching ---
+
+    def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
+        event.stop()
+        self.action_switch_version()
 
     def action_switch_version(self) -> None:
         table = self.query_one("#version-table", VimDataTable)

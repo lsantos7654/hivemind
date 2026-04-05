@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from textual.binding import Binding
-from textual.widgets import Static
+from textual.widgets import DataTable, Static
 
 from hivemind_cli.tui.widgets import SearchBar, VimDataTable
 from hivemind_cli.tui.widgets.base_pane import BasePane
@@ -92,6 +92,10 @@ class TeamsPane(BasePane):
                     self.notify(f"Failed: {result.get('error', 'Unknown')}", severity="error")
 
         self.app.push_screen(CreateTeamModal(), _handle_result)
+
+    def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
+        event.stop()
+        self.action_show_details()
 
     def action_show_details(self) -> None:
         name = self.get_current_name()

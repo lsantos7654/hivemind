@@ -6,7 +6,7 @@ import contextlib
 from typing import TYPE_CHECKING
 
 from textual.binding import Binding
-from textual.widgets import Static
+from textual.widgets import DataTable, Static
 
 from hivemind_cli.tui.models import ExpertRow, ExpertStatus, OperationStatus
 from hivemind_cli.tui.operations import (
@@ -26,7 +26,6 @@ class ExpertsPane(BasePane):
 
     BINDINGS = [
         *BasePane.BINDINGS,
-        Binding("enter", "show_details", "Details", show=True),
         Binding("space", "toggle_select", "Select", show=True),
         Binding("e", "enable", "Enable", show=True),
         Binding("d", "disable", "Disable", show=True),
@@ -104,6 +103,10 @@ class ExpertsPane(BasePane):
         self.query_one("#expert-table", ExpertTable).update_experts(self.experts)
 
     # --- Actions ---
+
+    def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
+        event.stop()
+        self.action_show_details()
 
     def action_toggle_select(self) -> None:
         self.query_one("#expert-table", ExpertTable).toggle_selection()
