@@ -1,4 +1,28 @@
 repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      # Safety checks first
+      - id: check-merge-conflict
+      - id: detect-private-key
+      - id: check-added-large-files
+      - id: check-symlinks
+      - id: destroyed-symlinks
+      # Formatters
+      - id: trailing-whitespace
+        args: [--markdown-linebreak-ext=md]
+        exclude: '^experts/'
+      - id: end-of-file-fixer
+        exclude: '^experts/'
+      - id: mixed-line-ending
+        args: [--fix=lf]
+      # Validators
+      - id: check-yaml
+      - id: check-toml
+      - id: check-json
+      - id: check-ast
+      - id: debug-statements
+
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.11.4
     hooks:
@@ -6,25 +30,12 @@ repos:
         args: [--fix, --exit-non-zero-on-fix]
       - id: ruff-format
 
-  - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v5.0.0
-    hooks:
-      - id: trailing-whitespace
-      - id: end-of-file-fixer
-      - id: check-yaml
-      - id: check-toml
-      - id: check-added-large-files
-      - id: check-merge-conflict
-      - id: mixed-line-ending
-        args: [--fix=lf]
-
   - repo: local
     hooks:
       - id: mypy
         name: mypy
         entry: uv run mypy hivemind_cli/
         language: system
-        types: [python]
         pass_filenames: false
         always_run: true
         require_serial: true

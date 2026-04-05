@@ -17,6 +17,12 @@
           "Read(~/.cache/hivemind/**)",
           "Grep(~/.cache/hivemind/**)",
           "Glob(~/.cache/hivemind/**)",
+          "Read(~/.claude/experts/**)",
+          "Grep(~/.claude/experts/**)",
+          "Glob(~/.claude/experts/**)",
+          "Read(~/.claude/hivemind/teams/**)",
+          "Grep(~/.claude/hivemind/teams/**)",
+          "Glob(~/.claude/hivemind/teams/**)",
           "Edit(~/.claude/hivemind/teams/**)"
         ]
       }
@@ -392,6 +398,11 @@
     "TypeScript": {
       "remote": "https://github.com/microsoft/TypeScript.git",
       "commit": "7b8cb3bdf82f400642b73173f941335775d6f730",
+      "ref_name": ""
+    },
+    "pydantic": {
+      "remote": "https://github.com/pydantic/pydantic.git",
+      "commit": "46dea928844edfdbee5ca1f36cbc3b042e2a8abd",
       "ref_name": ""
     }
   }

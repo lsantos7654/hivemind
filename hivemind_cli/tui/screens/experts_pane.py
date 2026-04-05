@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import contextlib
+from typing import TYPE_CHECKING
 
-from textual.app import ComposeResult
 from textual.binding import Binding
-from textual.widgets import DataTable, Static
+from textual.widgets import Static
 
 from hivemind_cli.tui.models import ExpertRow, ExpertStatus, OperationStatus
 from hivemind_cli.tui.operations import (
@@ -16,6 +16,9 @@ from hivemind_cli.tui.operations import (
 )
 from hivemind_cli.tui.widgets import ExpertTable, SearchBar
 from hivemind_cli.tui.widgets.base_pane import BasePane
+
+if TYPE_CHECKING:
+    from textual.app import ComposeResult
 
 
 class ExpertsPane(BasePane):
@@ -263,10 +266,6 @@ class ExpertsPane(BasePane):
 
         with contextlib.suppress(ProcessLookupError):
             os.kill(pid, signal.SIGKILL)
-
-    def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
-        if event.data_table.id == "expert-table":
-            self.action_show_details()
 
     def check_action(self, action: str, parameters: tuple) -> bool | None:
         if action == "cancel_update":

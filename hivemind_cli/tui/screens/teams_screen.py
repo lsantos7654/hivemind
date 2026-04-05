@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
-from textual.app import ComposeResult
+from typing import TYPE_CHECKING
+
 from textual.binding import Binding
-from textual.widgets import DataTable, Static
+from textual.widgets import Static
 
 from hivemind_cli.tui.widgets import SearchBar, VimDataTable
 from hivemind_cli.tui.widgets.base_pane import BasePane
+
+if TYPE_CHECKING:
+    from textual.app import ComposeResult
 
 
 class TeamsPane(BasePane):
@@ -72,7 +76,7 @@ class TeamsPane(BasePane):
     def action_create_team(self) -> None:
         from hivemind_cli.tui.widgets.create_team_modal import CreateTeamModal
 
-        async def _handle_result(data: dict | None) -> None:
+        def _handle_result(data: dict | None) -> None:
             if data:
                 from hivemind_cli.core import create_team
 
@@ -96,10 +100,6 @@ class TeamsPane(BasePane):
 
             self.app.push_screen(TeamDetailScreen(name, self._teams[name]))
 
-    def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
-        if event.data_table.id == "teams-table":
-            self.action_show_details()
-
     def action_delete_team(self) -> None:
         from hivemind_cli.core import delete_team
         from hivemind_cli.tui.widgets import ConfirmationModal
@@ -108,7 +108,7 @@ class TeamsPane(BasePane):
         if not name:
             return
 
-        async def _do_delete(confirmed: bool) -> None:
+        def _do_delete(confirmed: bool) -> None:
             if confirmed:
                 result = delete_team(name)
                 if result["success"]:

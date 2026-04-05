@@ -2,8 +2,13 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
+from textual.binding import Binding
 from textual.screen import ModalScreen
-from textual.widgets import Button, Input
+
+if TYPE_CHECKING:
+    from textual.widgets import Button, Input
 
 
 class FormModal(ModalScreen):
@@ -14,12 +19,13 @@ class FormModal(ModalScreen):
     to validate and dismiss with data.
     """
 
-    def on_mount(self) -> None:
-        self._bindings.bind("escape", "dismiss_modal")
-        self._bindings.bind("ctrl+o", "dismiss_modal")
-        self._bindings.bind("ctrl+s", "submit_form", description="Confirm")
-        self._bindings.bind("h", "prev_button")
-        self._bindings.bind("l", "next_button")
+    BINDINGS = [
+        Binding("escape", "dismiss_modal"),
+        Binding("ctrl+o", "dismiss_modal"),
+        Binding("ctrl+s", "submit_form", description="Confirm"),
+        Binding("h", "prev_button"),
+        Binding("l", "next_button"),
+    ]
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
         """Allow Enter to submit from any Input except search."""

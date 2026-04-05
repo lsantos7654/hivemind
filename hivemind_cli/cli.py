@@ -13,6 +13,7 @@ import typer
 from rich import box
 from rich.console import Console
 from rich.live import Live
+from rich.markup import escape
 from rich.panel import Panel
 from rich.table import Table
 from rich.theme import Theme
@@ -27,8 +28,6 @@ from hivemind_cli.core import (
     PRIVATE_EXPERTS_DIR,
     REPOS_DIR,
     TEAMS_DIR,
-    ProgressInfo,
-    UpdatePhase,
     _clone_repo,
     _count_versions,
     _deploy_agent,
@@ -78,6 +77,7 @@ from hivemind_cli.core import (
 from hivemind_cli.core import (
     remove_expert_from_team as core_remove_expert_from_team,
 )
+from hivemind_cli.models import ProgressInfo, UpdatePhase
 
 THEME = Theme(
     {
@@ -446,9 +446,9 @@ def show_expert(
     lines.append(f"HEAD: {head_display}")
     lines.append(f"Versions: {version_count}")
     if remote:
-        remote_display = remote
+        remote_display = escape(remote)
         if ref_name:
-            remote_display += f" @ {ref_name}"
+            remote_display += f" @ {escape(ref_name)}"
         lines.append(f"Remote: {remote_display}")
     lines.append(f"Agent: {agent_status}")
 
@@ -495,7 +495,7 @@ def add(
     name = url.rstrip("/").split("/")[-1].removesuffix(".git")
 
     console.print(f"[heading]Adding expert: {name}[/heading]")
-    console.print(f"  URL: {url}")
+    console.print(f"  URL: {escape(url)}")
     if private:
         console.print("  [warning]Mode: PRIVATE (will not be committed to git)[/warning]")
 
@@ -695,10 +695,11 @@ def enable(
     name: str = typer.Argument(help="Expert name to enable", autocompletion=_complete_expert),
 ) -> None:
     """Enable an expert (clones repo if needed, creates agent symlink)."""
-    result = core_enable_expert(name)
+    config = _load_config()
+    result = core_enable_expert(name, config=config)
 
     if not result["success"]:
-        console.print(f"[error]Error: {result['error']}[/error]")
+        console.print(f"[error]Error: {escape(str(result['error']))}[/error]")
         raise typer.Exit(1)
 
     repos = _load_repos()
@@ -716,10 +717,11 @@ def disable(
     name: str = typer.Argument(help="Expert name to disable", autocompletion=_complete_expert),
 ) -> None:
     """Disable an expert (removes agent symlink)."""
-    result = core_disable_expert(name)
+    config = _load_config()
+    result = core_disable_expert(name, config=config)
 
     if not result["success"]:
-        console.print(f"[error]Error: {result['error']}[/error]")
+        console.print(f"[error]Error: {escape(str(result['error']))}[/error]")
         raise typer.Exit(1)
 
     _undeploy_agent_cli(name)
@@ -742,10 +744,11 @@ def delete(
             console.print("[dim]Cancelled.[/dim]")
             raise typer.Exit(0)
 
-    result = core_delete_expert_fn(name)
+    config = _load_config()
+    result = core_delete_expert_fn(name, config=config)
 
     if not result["success"]:
-        console.print(f"[error]Error: {result['error']}[/error]")
+        console.print(f"[error]Error: {escape(str(result['error']))}[/error]")
         raise typer.Exit(1)
 
     console.print(f"[error]✗[/error] Deleted: {name}")
@@ -796,7 +799,7 @@ def update(
         result = update_expert(expert_name, on_progress=on_progress, skip_analysis=skip_analysis)
 
         if not result["success"]:
-            console.print(f"  [error]✗[/error] {result['error']}")
+            console.print(f"  [error]✗[/error] {escape(str(result['error']))}")
         elif result.get("already_up_to_date"):
             console.print(f"  [success]✓[/success] Already up to date ({result['new_commit'][:12]})")
         else:
@@ -889,10 +892,11 @@ def provider_switch(
     name: str = typer.Argument(help="Provider name to switch to", autocompletion=_complete_provider),
 ) -> None:
     """Switch active provider (regenerates all agent files)."""
-    result = switch_provider(name)
+    config = _load_config()
+    result = switch_provider(name, config=config)
 
     if not result["success"]:
-        console.print(f"[error]Error: {result['error']}[/error]")
+        console.print(f"[error]Error: {escape(str(result['error']))}[/error]")
         raise typer.Exit(1)
 
     console.print(f"[success]Switched to provider: [heading]{name}[/heading][/success]")
@@ -924,8 +928,8 @@ def provider_show(
     lines: list[str] = []
     lines.append(f"[heading]Provider: {target}[/heading]")
     lines.append(f"Active: {'[success]yes[/success]' if is_active else '[dim]no[/dim]'}")
-    lines.append(f"Engine: {prov_config.get('engine', 'not set')}")
-    lines.append(f"Home directory: {prov_config.get('home_dir', 'not set')}")
+    lines.append(f"Engine: {escape(str(prov_config.get('engine', 'not set')))}")
+    lines.append(f"Home directory: {escape(str(prov_config.get('home_dir', 'not set')))}")
 
     settings = prov_config.get("settings", {})
     if settings:
@@ -933,13 +937,13 @@ def provider_show(
         lines.append("[heading]Settings:[/heading]")
         for key, value in sorted(settings.items()):
             if isinstance(value, list):
-                lines.append(f"  {key}: {', '.join(str(v) for v in value)}")
+                lines.append(f"  {escape(str(key))}: {', '.join(escape(str(v)) for v in value)}")
             elif isinstance(value, dict):
-                lines.append(f"  {key}:")
+                lines.append(f"  {escape(str(key))}:")
                 for k, v in sorted(value.items()):
-                    lines.append(f"    {k}: {v}")
+                    lines.append(f"    {escape(str(k))}: {escape(str(v))}")
             else:
-                lines.append(f"  {key}: {value}")
+                lines.append(f"  {escape(str(key))}: {escape(str(value))}")
 
     console.print(Panel("\n".join(lines), border_style="blue"))
 
@@ -999,7 +1003,7 @@ def team_create(
         result = core_create_team(name, description, expert_list)
 
     if not result["success"]:
-        console.print(f"[error]Error: {result['error']}[/error]")
+        console.print(f"[error]Error: {escape(str(result['error']))}[/error]")
         raise typer.Exit(1)
 
     console.print(f"  [success]✓[/success] Team lead deployed: team-lead-{name}")
@@ -1019,8 +1023,8 @@ def team_show(
 
     team = teams[name]
     lines: list[str] = []
-    lines.append(f"[heading]Team: {name}[/heading]")
-    lines.append(f"Description: {team.get('description', '')}")
+    lines.append(f"[heading]Team: {escape(name)}[/heading]")
+    lines.append(f"Description: {escape(team.get('description', ''))}")
     experts = team.get("experts", [])
     lines.append(f"\n[heading]Roster ({len(experts)}):[/heading]")
     lines.extend(f"  - {expert}" for expert in experts)
@@ -1050,7 +1054,7 @@ def team_add_expert(
     ):
         result = core_add_expert_to_team(team, expert)
     if not result["success"]:
-        console.print(f"[error]Error: {result['error']}[/error]")
+        console.print(f"[error]Error: {escape(str(result['error']))}[/error]")
         raise typer.Exit(1)
     console.print(f"[success]✓[/success] Added {expert} to team {team}")
 
@@ -1063,7 +1067,7 @@ def team_remove_expert(
     """Remove an expert from a team's roster."""
     result = core_remove_expert_from_team(team, expert)
     if not result["success"]:
-        console.print(f"[error]Error: {result['error']}[/error]")
+        console.print(f"[error]Error: {escape(str(result['error']))}[/error]")
         raise typer.Exit(1)
     console.print(f"[success]✓[/success] Removed {expert} from team {team}")
 
@@ -1079,7 +1083,7 @@ def team_delete(
 
     result = core_delete_team(name)
     if not result["success"]:
-        console.print(f"[error]Error: {result['error']}[/error]")
+        console.print(f"[error]Error: {escape(str(result['error']))}[/error]")
         raise typer.Exit(1)
     console.print(f"[success]✓[/success] Team '{name}' deleted")
 
@@ -1097,10 +1101,11 @@ def redeploy() -> None:
     provider = _get_provider()
     console.print(f"[heading]Redeploying all agents (provider: {provider.name})...[/heading]\n")
 
-    result = redeploy_all_agents()
+    config = _load_config()
+    result = redeploy_all_agents(config=config)
 
     if not result["success"]:
-        console.print(f"[error]Error: {result['error']}[/error]")
+        console.print(f"[error]Error: {escape(str(result['error']))}[/error]")
         raise typer.Exit(1)
 
     deployed = result.get("deployed", [])
@@ -1165,8 +1170,8 @@ def crawl(
     output_dir = EXTERNAL_DOCS_DIR / agent
 
     console.print(f"[heading]Crawling Documentation for {agent}[/heading]\n")
-    console.print(f"[info]URL:[/info] {url}")
-    console.print(f"[info]Output:[/info] {output_dir}")
+    console.print(f"[info]URL:[/info] {escape(url)}")
+    console.print(f"[info]Output:[/info] {escape(str(output_dir))}")
     console.print()
 
     # Phase 1: Preview (discover URLs)
@@ -1176,7 +1181,7 @@ def crawl(
         try:
             discovered_urls = asyncio.run(preview_sitemap(sitemap_url=url, max_pages=max_pages))
         except Exception as e:
-            console.print(f"[error]✗ Failed to fetch sitemap: {e}[/error]")
+            console.print(f"[error]✗ Failed to fetch sitemap: {escape(str(e))}[/error]")
             raise typer.Exit(1) from None
         is_sitemap = True
     else:
@@ -1184,7 +1189,7 @@ def crawl(
         try:
             discovered_urls = asyncio.run(preview_crawl(url=url, max_pages=max_pages))
         except Exception as e:
-            console.print(f"[error]✗ Failed to discover URLs: {e}[/error]")
+            console.print(f"[error]✗ Failed to discover URLs: {escape(str(e))}[/error]")
             raise typer.Exit(1) from None
         is_sitemap = False
 
@@ -1276,7 +1281,7 @@ def crawl(
                     ),
                 )
         except Exception as e:
-            console.print(f"\n[error]✗ Crawl failed: {e}[/error]")
+            console.print(f"\n[error]✗ Crawl failed: {escape(str(e))}[/error]")
             raise typer.Exit(1) from None
 
     # Display summary

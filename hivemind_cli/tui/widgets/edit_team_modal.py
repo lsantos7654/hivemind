@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
-from textual.app import ComposeResult
+from typing import TYPE_CHECKING
+
 from textual.containers import Horizontal, Vertical
 from textual.widgets import Button, Input, Label
 
 from hivemind_cli.tui.widgets.form_modal import FormModal
+
+if TYPE_CHECKING:
+    from textual.app import ComposeResult
 
 
 class EditTeamModal(FormModal):

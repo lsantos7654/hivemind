@@ -12,7 +12,10 @@ hivemind = "hivemind_cli.cli:app"
 packages = ["hivemind_cli"]
 
 [project.optional-dependencies]
-dev = ["ruff>=0.11.0", "mypy>=1.15.0", "pre-commit>=4.0.0"]
+dev = ["ruff>=0.11.0", "mypy>=1.15.0", "pre-commit>=4.0.0", "pytest>=8.0.0"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
 
 [tool.ruff]
 target-version = "py310"
@@ -24,8 +27,19 @@ select = [
     # Tier 1: low-effort, high-value rules
     "PIE", "PERF", "FURB", "RET", "PTH",
     "C4", "RSE", "ICN", "ERA", "LOG", "G",
+    # Tier 2: medium-effort rules
+    "TC", "TRY", "EM", "C90", "T20",
 ]
-ignore = ["E501", "SIM108", "RUF012"]
+ignore = ["E501", "SIM108", "RUF012", "TRY003", "EM101", "EM102", "TRY300", "RET504"]
+
+[tool.ruff.lint.mccabe]
+max-complexity = 15
+
+[tool.ruff.lint.per-file-ignores]
+"hivemind_cli/tui/**" = ["ARG"]
+"hivemind_cli/core.py" = ["T201", "C901"]
+"hivemind_cli/cli.py" = ["C901"]
+"scripts/**" = ["T20", "C901"]
 
 [tool.ruff.format]
 quote-style = "double"
@@ -46,13 +60,17 @@ warn_redundant_casts = true
 warn_unused_ignores = true
 warn_unused_configs = true
 
-# Third-party libs without stubs
+# Only crawl4ai lacks type stubs
+[[tool.mypy.overrides]]
+module = "crawl4ai.*"
 ignore_missing_imports = true
 
-# TUI: Textual mixin patterns produce false positives — defer entirely
+# TUI: Textual mixin patterns produce false positives
 [[tool.mypy.overrides]]
 module = "hivemind_cli.tui.*"
-ignore_errors = true
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+disable_error_code = ["attr-defined", "arg-type", "no-any-return", "assignment"]
 
 # core.py: large unannotated file — relax until incrementally annotated
 [[tool.mypy.overrides]]

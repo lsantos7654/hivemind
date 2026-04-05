@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
-from textual.app import ComposeResult
+from typing import TYPE_CHECKING
+
 from textual.containers import Horizontal
 from textual.reactive import reactive
 from textual.widgets import Input, Static
+
+if TYPE_CHECKING:
+    from textual.app import ComposeResult
 
 
 class SearchBar(Horizontal):

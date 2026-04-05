@@ -11,12 +11,16 @@ import subprocess
 import sys
 import tempfile
 import time
-from collections.abc import Callable
-from dataclasses import dataclass
-from enum import Enum
 from pathlib import Path
-from typing import IO
+from typing import IO, TYPE_CHECKING
 
+from hivemind_cli.models import (
+    AnalysisHandle,
+    CancellationToken,
+    ProgressCallback,
+    ProgressInfo,
+    UpdatePhase,
+)
 from hivemind_cli.providers import (
     Provider,
     extract_description,
@@ -25,65 +29,8 @@ from hivemind_cli.providers import (
 )
 from hivemind_cli.templates import update_expert_prompt
 
-# --- Progress Callback Types ---
-
-
-class UpdatePhase(str, Enum):
-    """Phases of the update process."""
-
-    CLONING = "cloning"
-    FETCHING = "fetching"
-    CHECKING = "checking"
-    STAGING = "staging"
-    ANALYZING = "analyzing"
-    COMMITTING = "committing"
-    UPDATING_HEAD = "updating_head"
-    UPDATING_LIBRARIAN = "updating_librarian"
-
-
-@dataclass
-class ProgressInfo:
-    """Progress information for callbacks."""
-
-    expert_name: str
-    phase: UpdatePhase
-    message: str
-    progress_percent: int | None = None  # 0-100 for analysis phase
-    new_commit: str | None = None
-    old_commit: str | None = None
-    error: str | None = None
-
-
-ProgressCallback = Callable[[ProgressInfo], None]
-
-
-class CancellationToken:
-    """Token to signal and check for cancellation."""
-
-    def __init__(self):
-        self._cancelled = False
-
-    def cancel(self):
-        """Signal cancellation."""
-        self._cancelled = True
-
-    def is_cancelled(self) -> bool:
-        """Check if cancelled."""
-        return self._cancelled
-
-
-@dataclass
-class AnalysisHandle:
-    """Handle for a running analysis subprocess, allowing progress monitoring."""
-
-    proc: subprocess.Popen
-    commit_dir: Path
-    expected_files: list[str]
-    stderr_path: Path
-    stdout_path: Path
-    _stderr_file: IO[str] | None = None  # kept open until finish
-    _stdout_file: IO[str] | None = None
-
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 # --- Paths (shared configuration) ---
 
@@ -105,21 +52,49 @@ TEAMS_DIR = HIVEMIND_ROOT / "teams"
 PROVIDERS_DIR = HIVEMIND_ROOT / "providers"
 HIVEMIND_MD = HIVEMIND_ROOT / "HIVEMIND.md"
 
+# --- Subprocess Timeout Constants (seconds) ---
+GIT_CLONE_TIMEOUT = 300
+GIT_FETCH_TIMEOUT = 60
+GIT_LOCAL_TIMEOUT = 15
 
-# --- Helper Functions ---
+
+# --- Config I/O (future: adapters/json_config.py) ---
+
+
+def _make_emit(name: str, on_progress: ProgressCallback | None):
+    """Create a progress emission closure, collapsing the repeated guard pattern."""
+
+    def _emit(phase: UpdatePhase, message: str, **kwargs) -> None:
+        if on_progress:
+            on_progress(ProgressInfo(expert_name=name, phase=phase, message=message, **kwargs))
+
+    return _emit
 
 
 def _load_json(path: Path) -> dict:
     if not path.exists():
         return {}
-    text = path.read_text()
+    text = path.read_text(encoding="utf-8")
     if not text.strip():
         return {}
     return json.loads(text)
 
 
 def _save_json(path: Path, data: dict) -> None:
-    path.write_text(json.dumps(data, indent=2) + "\n")
+    content = json.dumps(data, indent=2) + "\n"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=path.parent, suffix=".tmp")
+    tmp_path = Path(tmp)
+    try:
+        os.write(fd, content.encode("utf-8"))
+        os.close(fd)
+        tmp_path.replace(path)
+    except BaseException:
+        with contextlib.suppress(OSError):
+            os.close(fd)
+        with contextlib.suppress(OSError):
+            tmp_path.unlink()
+        raise
 
 
 def _load_config() -> dict:
@@ -161,15 +136,28 @@ def _save_teams(teams: dict) -> None:
     _save_config(config)
 
 
+_provider_cache: Provider | None = None
+
+
 def _get_provider() -> Provider:
-    """Get the active provider instance from config."""
+    """Get the active provider instance, cached for the session."""
+    global _provider_cache
+    if _provider_cache is not None:
+        return _provider_cache
     config = _load_config()
     active = config.get("active_provider")
     if not active:
         raise RuntimeError("No active_provider set in config.json. Run 'hivemind init' first.")
     hivemind = _load_hivemind()
     provider_config = hivemind.get("providers", {}).get(active, {})
-    return get_provider(active, provider_config)
+    _provider_cache = get_provider(active, provider_config)
+    return _provider_cache
+
+
+def _invalidate_provider_cache() -> None:
+    """Reset provider cache (call after switching providers)."""
+    global _provider_cache
+    _provider_cache = None
 
 
 def _load_repos() -> dict:
@@ -187,14 +175,17 @@ def _load_private_repos() -> dict:
     if not PRIVATE_REPOS_JSON.exists():
         return {}
     try:
-        return json.loads(PRIVATE_REPOS_JSON.read_text())
+        return json.loads(PRIVATE_REPOS_JSON.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return {}
 
 
 def _save_private_repos(repos: dict) -> None:
     """Save private-repos.json."""
-    PRIVATE_REPOS_JSON.write_text(json.dumps(repos, indent=2) + "\n")
+    PRIVATE_REPOS_JSON.write_text(json.dumps(repos, indent=2, encoding="utf-8") + "\n")
+
+
+# --- Expert File Store (future: adapters/filesystem_store.py) ---
 
 
 def _is_private_expert(name: str) -> bool:
@@ -279,6 +270,9 @@ def _ensure_external_docs_link() -> None:
     EXTERNAL_DOCS_LINK.symlink_to(EXTERNAL_DOCS_DIR)
 
 
+# --- Deployment (future: use_cases/deploy/) ---
+
+
 def _deploy_agent(name: str) -> bool:
     """Generate and deploy agent file with provider-specific frontmatter.
 
@@ -298,7 +292,7 @@ def _deploy_agent(name: str) -> bool:
     provider = _get_provider()
 
     # Read canonical body and strip any frontmatter
-    raw_content = head_agent.read_text()
+    raw_content = head_agent.read_text(encoding="utf-8")
     body = strip_frontmatter(raw_content)
     body += provider.get_context_append("expert")
     description = extract_description(body)
@@ -335,6 +329,9 @@ def _undeploy_expert(name: str) -> None:
     """Remove expert from active provider's expert location."""
     provider = _get_provider()
     provider.undeploy_expert(name)
+
+
+# --- Git & Analysis (future: adapters/subprocess_git.py + use_cases/analysis/) ---
 
 
 def _clone_repo(name: str, repos: dict, *, silent: bool = False) -> bool:
@@ -375,11 +372,13 @@ def _clone_repo(name: str, repos: dict, *, silent: bool = False) -> bool:
             check=True,
             stdout=subprocess.DEVNULL if silent else None,
             stderr=subprocess.DEVNULL if silent else None,
+            timeout=GIT_CLONE_TIMEOUT,
         )
         subprocess.run(
             ["git", "checkout", "--quiet", commit],
             cwd=str(repo_dir),
             check=True,
+            timeout=GIT_LOCAL_TIMEOUT,
         )
     elif ref_name:
         subprocess.run(
@@ -395,6 +394,7 @@ def _clone_repo(name: str, repos: dict, *, silent: bool = False) -> bool:
             check=True,
             stdout=subprocess.DEVNULL if silent else None,
             stderr=subprocess.DEVNULL if silent else None,
+            timeout=GIT_CLONE_TIMEOUT,
         )
     else:
         subprocess.run(
@@ -408,6 +408,7 @@ def _clone_repo(name: str, repos: dict, *, silent: bool = False) -> bool:
             check=True,
             stdout=subprocess.DEVNULL if silent else None,
             stderr=subprocess.DEVNULL if silent else None,
+            timeout=GIT_CLONE_TIMEOUT,
         )
 
     return True
@@ -455,12 +456,14 @@ def _analyze_repo(
         # Create temp files for stderr and stdout - use NamedTemporaryFile
         stderr_file = tempfile.NamedTemporaryFile(  # noqa: SIM115
             mode="w",
+            encoding="utf-8",
             prefix=f"hivemind-{name}-stderr-",
             suffix=".log",
             delete=False,  # Don't auto-delete, we'll read it later
         )
         stdout_file = tempfile.NamedTemporaryFile(  # noqa: SIM115
             mode="w",
+            encoding="utf-8",
             prefix=f"hivemind-{name}-stdout-",
             suffix=".log",
             delete=False,  # Don't auto-delete, we'll read it later
@@ -468,16 +471,23 @@ def _analyze_repo(
         stderr_path = Path(stderr_file.name)
         stdout_path = Path(stdout_file.name)
 
-        proc = subprocess.Popen(
-            cmd,
-            stdin=subprocess.PIPE,
-            stdout=stdout_file,
-            stderr=stderr_file,
-            cwd=str(cwd),
-        )
-        assert proc.stdin is not None
-        proc.stdin.write(prompt.encode())
-        proc.stdin.close()
+        try:
+            proc = subprocess.Popen(
+                cmd,
+                stdin=subprocess.PIPE,
+                stdout=stdout_file,
+                stderr=stderr_file,
+                cwd=str(cwd),
+            )
+            assert proc.stdin is not None
+            proc.stdin.write(prompt.encode())
+            proc.stdin.close()
+        except BaseException:
+            stderr_file.close()
+            stdout_file.close()
+            stderr_path.unlink(missing_ok=True)
+            stdout_path.unlink(missing_ok=True)
+            raise
         # Don't close files yet - process needs them
         return proc, stderr_path, stdout_path, stderr_file, stdout_file
     proc = subprocess.Popen(
@@ -565,27 +575,36 @@ def start_analysis(
 
     stderr_file = tempfile.NamedTemporaryFile(  # noqa: SIM115
         mode="w",
+        encoding="utf-8",
         prefix=f"hivemind-{name}-stderr-",
         suffix=".log",
         delete=False,
     )
     stdout_file = tempfile.NamedTemporaryFile(  # noqa: SIM115
         mode="w",
+        encoding="utf-8",
         prefix=f"hivemind-{name}-stdout-",
         suffix=".log",
         delete=False,
     )
 
-    proc = subprocess.Popen(
-        cmd,
-        stdin=subprocess.PIPE,
-        stdout=stdout_file,
-        stderr=stderr_file,
-        cwd=str(cwd),
-    )
-    assert proc.stdin is not None
-    proc.stdin.write(prompt.encode())
-    proc.stdin.close()
+    try:
+        proc = subprocess.Popen(
+            cmd,
+            stdin=subprocess.PIPE,
+            stdout=stdout_file,
+            stderr=stderr_file,
+            cwd=str(cwd),
+        )
+        assert proc.stdin is not None
+        proc.stdin.write(prompt.encode())
+        proc.stdin.close()
+    except BaseException:
+        stderr_file.close()
+        stdout_file.close()
+        Path(stderr_file.name).unlink(missing_ok=True)
+        Path(stdout_file.name).unlink(missing_ok=True)
+        raise
 
     return AnalysisHandle(
         proc=proc,
@@ -616,9 +635,9 @@ def finish_analysis(handle: AnalysisHandle) -> bool:
     if handle.proc.returncode != 0:
         err_output = ""
         try:
-            err_output = handle.stderr_path.read_text().strip()
+            err_output = handle.stderr_path.read_text(encoding="utf-8").strip()
             if not err_output:
-                err_output = handle.stdout_path.read_text().strip()
+                err_output = handle.stdout_path.read_text(encoding="utf-8").strip()
         except Exception:
             pass
         if err_output:
@@ -641,10 +660,27 @@ def finish_analysis(handle: AnalysisHandle) -> bool:
     return True
 
 
-def _update_librarian() -> None:
+_librarian_dirty = False
+
+
+def _mark_librarian_dirty() -> None:
+    """Mark the librarian catalog as needing regeneration."""
+    global _librarian_dirty
+    _librarian_dirty = True
+
+
+def _flush_librarian(config: dict | None = None) -> None:
+    """Regenerate the librarian catalog if marked dirty."""
+    global _librarian_dirty
+    if _librarian_dirty:
+        _update_librarian(config=config)
+        _librarian_dirty = False
+
+
+def _update_librarian(config: dict | None = None) -> None:
     """Regenerate agents/librarian.md from enabled experts with valid HEAD/agent.md."""
-    # Load config to get enabled experts
-    config = _load_config()
+    if config is None:
+        config = _load_config()
     enabled_experts = set(config.get("enabled", []))
 
     entries: list[str] = []
@@ -669,7 +705,7 @@ def _update_librarian() -> None:
             # Extract description from body (not frontmatter)
             description = ""
             try:
-                text = agent_md.read_text()
+                text = agent_md.read_text(encoding="utf-8")
                 body = strip_frontmatter(text)
                 description = extract_description(body)
             except OSError:
@@ -679,7 +715,7 @@ def _update_librarian() -> None:
             summary_lines = ""
             summary_md = expert_dir / "HEAD" / "summary.md"
             try:
-                lines = summary_md.read_text().splitlines()
+                lines = summary_md.read_text(encoding="utf-8").splitlines()
                 summary_lines = "\n".join(lines[:5])
             except OSError:
                 pass
@@ -728,7 +764,252 @@ def _update_librarian() -> None:
     content = provider.format_librarian_md(librarian_body)
 
     AGENTS_DIR.mkdir(parents=True, exist_ok=True)
-    (AGENTS_DIR / "librarian.md").write_text(content)
+    (AGENTS_DIR / "librarian.md").write_text(content, encoding="utf-8")
+
+
+# --- Shared Update Helpers ---
+
+
+def _resolve_latest_commit(repo_dir: Path) -> str | None:
+    """Resolve the latest commit from origin/HEAD, origin/main, or origin/master."""
+    for ref in ["origin/HEAD", "origin/main", "origin/master"]:
+        result = subprocess.run(
+            ["git", "rev-parse", ref],
+            cwd=str(repo_dir),
+            capture_output=True,
+            text=True,
+            timeout=GIT_LOCAL_TIMEOUT,
+        )
+        if result.returncode == 0:
+            return result.stdout.strip()
+    return None
+
+
+def _stage_for_analysis(
+    name: str,
+    new_commit: str,
+    expert_dir: Path,
+    old_commit: str | None,
+    repo_dir: Path,
+    prefix: str = "hivemind-update",
+) -> tuple[str, Path, Path]:
+    """Create temp directory, copy baseline files, and checkout new commit.
+
+    Returns (tmpdir, staged_path, tmp_commit_dir).
+    """
+    tmpdir = tempfile.mkdtemp(prefix=f"{prefix}-{name}-")
+    staged_path = Path(tmpdir) / "expert"
+    staged_path.mkdir()
+    tmp_commit_dir = staged_path / new_commit
+    tmp_commit_dir.mkdir()
+
+    # Copy baseline files from previous version
+    if old_commit:
+        old_dir = expert_dir / old_commit
+        if old_dir.is_dir():
+            for f in old_dir.iterdir():
+                if f.is_file():
+                    shutil.copy2(f, tmp_commit_dir / f.name)
+
+    # Checkout the target commit
+    subprocess.run(
+        ["git", "checkout", "--quiet", new_commit],
+        cwd=str(repo_dir),
+        check=True,
+        timeout=GIT_LOCAL_TIMEOUT,
+    )
+
+    return tmpdir, staged_path, tmp_commit_dir
+
+
+def _read_analysis_error(
+    returncode: int,
+    stderr_path: Path,
+    stdout_path: Path,
+) -> str:
+    """Read error details from analysis subprocess output files."""
+    error_msg = f"AI analysis failed (exit code {returncode})"
+    try:
+        stderr_content = stderr_path.read_text(encoding="utf-8")
+        stdout_content = stdout_path.read_text(encoding="utf-8")
+
+        if stderr_content.strip():
+            error_msg += f"\nStderr: {stderr_content[-500:]}"
+        if stdout_content.strip():
+            error_msg += f"\nStdout: {stdout_content[-500:]}"
+
+        if not stderr_content.strip() and not stdout_content.strip():
+            error_msg += "\nNo output captured."
+    except Exception as e:
+        error_msg += f"\nCould not read output: {e}"
+    return error_msg
+
+
+def _cleanup_log_files(*paths: Path) -> None:
+    """Remove temporary log files, ignoring errors."""
+    for p in paths:
+        with contextlib.suppress(Exception):
+            if p.exists():
+                p.unlink()
+
+
+def _commit_analysis_results(
+    tmp_commit_dir: Path,
+    expert_dir: Path,
+    commit: str,
+) -> None:
+    """Move staged analysis files to final location and update HEAD symlink."""
+    final_commit_dir = expert_dir / commit
+    final_commit_dir.mkdir(parents=True, exist_ok=True)
+
+    for f in tmp_commit_dir.iterdir():
+        if f.is_file():
+            shutil.move(str(f), str(final_commit_dir / f.name))
+
+    # Update HEAD symlink
+    head_link = expert_dir / "HEAD"
+    if head_link.is_symlink():
+        head_link.unlink()
+    head_link.symlink_to(commit)
+
+
+def _save_commit_to_repos(
+    name: str,
+    commit: str,
+    repos: dict,
+    is_private: bool,
+) -> None:
+    """Update the commit hash in repos config."""
+    repos[name]["commit"] = commit
+    if is_private:
+        _save_private_repos(repos)
+    else:
+        _save_repos(repos)
+
+
+def _revert_checkout(repo_dir: Path, old_commit: str | None) -> None:
+    """Revert git checkout to old commit on failure."""
+    if old_commit:
+        with contextlib.suppress(Exception):
+            subprocess.run(
+                ["git", "checkout", "--quiet", old_commit],
+                cwd=str(repo_dir),
+                capture_output=True,
+                timeout=GIT_LOCAL_TIMEOUT,
+            )
+
+
+async def _run_async_analysis(
+    name: str,
+    commit: str,
+    prompt: str,
+    staged_path: Path,
+    repo_dir: Path,
+    emit,
+    old_commit: str | None = None,
+    cancellation_token: CancellationToken | None = None,
+    on_subprocess_start: Callable[[int], None] | None = None,
+) -> tuple[bool, str | None, Path | None, Path | None]:
+    """Run AI analysis as an async subprocess with cancellation support.
+
+    Returns (success, error_msg, stderr_path, stdout_path).
+    """
+    stderr_file = tempfile.NamedTemporaryFile(  # noqa: SIM115
+        mode="wb",
+        prefix=f"hivemind-{name}-stderr-",
+        suffix=".log",
+        delete=False,
+    )
+    stdout_file = tempfile.NamedTemporaryFile(  # noqa: SIM115
+        mode="wb",
+        prefix=f"hivemind-{name}-stdout-",
+        suffix=".log",
+        delete=False,
+    )
+    stderr_path = Path(stderr_file.name)
+    stdout_path = Path(stdout_file.name)
+
+    provider = _get_provider()
+    cmd = provider.build_analysis_command(
+        extra_dirs=[repo_dir, staged_path],
+        write=True,
+    )
+
+    proc = await asyncio.create_subprocess_exec(
+        *cmd,
+        stdin=asyncio.subprocess.PIPE,
+        stdout=stdout_file.fileno(),
+        stderr=stderr_file.fileno(),
+        cwd=str(staged_path),
+    )
+
+    if proc.stdin:
+        proc.stdin.write(prompt.encode())
+        await proc.stdin.drain()
+        proc.stdin.close()
+        await proc.stdin.wait_closed()
+
+    stderr_file.close()
+    stdout_file.close()
+
+    if on_subprocess_start:
+        on_subprocess_start(proc.pid)
+
+    # Poll with cancellation checks
+    while proc.returncode is None:
+        await asyncio.sleep(1)
+
+        if cancellation_token and cancellation_token.is_cancelled():
+            try:
+                proc.terminate()
+                await asyncio.wait_for(proc.wait(), timeout=5.0)
+            except asyncio.TimeoutError:
+                proc.kill()
+                await proc.wait()
+            _cleanup_log_files(stderr_path, stdout_path)
+            raise asyncio.CancelledError("Cancelled by user")
+
+        emit(UpdatePhase.ANALYZING, f"Analyzing {commit[:12]}...", new_commit=commit, old_commit=old_commit)
+
+    if proc.returncode != 0:
+        error_msg = _read_analysis_error(proc.returncode, stderr_path, stdout_path)
+        _cleanup_log_files(stderr_path, stdout_path)
+        return False, error_msg, stderr_path, stdout_path
+
+    _cleanup_log_files(stderr_path, stdout_path)
+    return True, None, stderr_path, stdout_path
+
+
+def _make_cancellation_checker(cancellation_token: CancellationToken | None):
+    """Create a cancellation checker that respects risky phases."""
+
+    def _check_cancellation(phase: str) -> None:
+        if not cancellation_token or not cancellation_token.is_cancelled():
+            return
+        risky_phases = {UpdatePhase.COMMITTING, UpdatePhase.UPDATING_HEAD}
+        if phase not in risky_phases:
+            raise asyncio.CancelledError(f"Cancelled before {phase}")
+
+    return _check_cancellation
+
+
+def _handle_async_cancellation(
+    staged_path: Path | None,
+    stderr_path: Path | None,
+    stdout_path: Path | None,
+    repo_dir: Path,
+    old_commit: str | None,
+    cancel_msg: str = "Cancelled by user",
+) -> dict:
+    """Clean up and return cancelled result for async operations."""
+    if staged_path and staged_path.exists():
+        shutil.rmtree(staged_path, ignore_errors=True)
+    if stderr_path:
+        _cleanup_log_files(stderr_path)
+    if stdout_path:
+        _cleanup_log_files(stdout_path)
+    _revert_checkout(repo_dir, old_commit)
+    return {"success": False, "error": cancel_msg, "cancelled": True}
 
 
 # --- Core Operations ---
@@ -745,49 +1026,33 @@ def update_expert(
     Returns:
         dict with keys: success (bool), new_commit (str), old_commit (str), error (str | None)
     """
+    emit = _make_emit(name, on_progress)
     repos, is_private = _get_repos_for_expert(name)
 
     if name not in repos:
         return {"success": False, "error": f"{name} not in repos"}
 
-    # Phase 1: Clone/fetch
-    if on_progress:
-        on_progress(ProgressInfo(name, UpdatePhase.CLONING, "Cloning repository..."))
-
+    # Clone/fetch
+    emit(UpdatePhase.CLONING, "Cloning repository...")
     if not _clone_repo(name, repos, silent=True):
         return {"success": False, "error": "Failed to clone repository"}
 
     repo_dir = REPOS_DIR / name
-
-    if on_progress:
-        on_progress(ProgressInfo(name, UpdatePhase.FETCHING, "Fetching latest commits..."))
-
+    emit(UpdatePhase.FETCHING, "Fetching latest commits...")
     try:
         subprocess.run(
             ["git", "fetch", "origin"],
             cwd=str(repo_dir),
             capture_output=True,
             check=True,
+            timeout=GIT_FETCH_TIMEOUT,
         )
     except subprocess.CalledProcessError as e:
         return {"success": False, "error": f"Failed to fetch: {e.stderr.decode()}"}
 
-    # Get latest commit
-    if on_progress:
-        on_progress(ProgressInfo(name, UpdatePhase.CHECKING, "Checking for updates..."))
-
-    new_commit = None
-    for ref in ["origin/HEAD", "origin/main", "origin/master"]:
-        result = subprocess.run(
-            ["git", "rev-parse", ref],
-            cwd=str(repo_dir),
-            capture_output=True,
-            text=True,
-        )
-        if result.returncode == 0:
-            new_commit = result.stdout.strip()
-            break
-
+    # Resolve latest commit
+    emit(UpdatePhase.CHECKING, "Checking for updates...")
+    new_commit = _resolve_latest_commit(repo_dir)
     if not new_commit:
         return {"success": False, "error": "Could not resolve latest commit"}
 
@@ -795,183 +1060,66 @@ def update_expert(
     old_commit = _get_head_commit(expert_dir)
 
     if old_commit == new_commit:
-        return {
-            "success": True,
-            "already_up_to_date": True,
-            "new_commit": new_commit,
-            "old_commit": old_commit,
-        }
+        return {"success": True, "already_up_to_date": True, "new_commit": new_commit, "old_commit": old_commit}
 
-    # Phase 2: Stage for analysis
-    if on_progress:
-        on_progress(
-            ProgressInfo(
-                name,
-                UpdatePhase.STAGING,
-                f"Staging update from {old_commit[:12] if old_commit else 'none'} to {new_commit[:12]}...",
-                new_commit=new_commit,
-                old_commit=old_commit,
-            ),
-        )
-
-    tmpdir = tempfile.mkdtemp(prefix=f"hivemind-update-{name}-")
-    tmp_expert = Path(tmpdir) / "expert"
-    tmp_expert.mkdir()
-    tmp_commit_dir = tmp_expert / new_commit
-    tmp_commit_dir.mkdir()
+    # Stage
+    emit(
+        UpdatePhase.STAGING,
+        f"Staging update from {old_commit[:12] if old_commit else 'none'} to {new_commit[:12]}...",
+        new_commit=new_commit,
+        old_commit=old_commit,
+    )
+    tmpdir, staged_path, tmp_commit_dir = _stage_for_analysis(name, new_commit, expert_dir, old_commit, repo_dir)
 
     try:
-        # Copy baseline files
-        if old_commit:
-            old_dir = expert_dir / old_commit
-            if old_dir.is_dir():
-                for f in old_dir.iterdir():
-                    if f.is_file():
-                        shutil.copy2(f, tmp_commit_dir / f.name)
-
-        # Checkout new commit
-        subprocess.run(
-            ["git", "checkout", "--quiet", new_commit],
-            cwd=str(repo_dir),
-            check=True,
-        )
-
-        # Phase 3: AI Analysis (skip if requested)
+        # Analyze
         if not skip_analysis:
-            if on_progress:
-                on_progress(
-                    ProgressInfo(
-                        name,
-                        UpdatePhase.ANALYZING,
-                        f"Analyzing {new_commit[:12]} (this may take 2-5 minutes)...",
-                        progress_percent=0,
-                        new_commit=new_commit,
-                        old_commit=old_commit,
-                    ),
-                )
-
-            # Start analysis process
-            analysis_result = _analyze_repo(
-                name,
-                new_commit,
-                repo_dir,
-                tmp_expert,
-                is_update=True,
-                background=True,
+            emit(
+                UpdatePhase.ANALYZING,
+                f"Analyzing {new_commit[:12]} (this may take 2-5 minutes)...",
+                progress_percent=0,
+                new_commit=new_commit,
+                old_commit=old_commit,
             )
+
+            analysis_result = _analyze_repo(name, new_commit, repo_dir, staged_path, is_update=True, background=True)
             assert isinstance(analysis_result, tuple)
             proc, stderr_path, stdout_path, stderr_file, stdout_file = analysis_result
 
-            # Poll until complete (for progress updates)
             while proc.poll() is None:
-                time.sleep(1)  # Check every second
-                if on_progress:
-                    # Continue showing analyzing message
-                    on_progress(
-                        ProgressInfo(
-                            name,
-                            UpdatePhase.ANALYZING,
-                            f"Analyzing {new_commit[:12]}...",
-                            new_commit=new_commit,
-                            old_commit=old_commit,
-                        ),
-                    )
+                time.sleep(1)
+                emit(
+                    UpdatePhase.ANALYZING,
+                    f"Analyzing {new_commit[:12]}...",
+                    new_commit=new_commit,
+                    old_commit=old_commit,
+                )
 
-            # Close files now that process is done
             stderr_file.close()
             stdout_file.close()
 
             if proc.returncode != 0:
-                # Analysis failed - read error from stderr and stdout files
-                error_msg = f"AI analysis failed (exit code {proc.returncode})"
-                try:
-                    stderr_content = stderr_path.read_text()
-                    stdout_content = stdout_path.read_text()
+                error_msg = _read_analysis_error(proc.returncode, stderr_path, stdout_path)
+                _cleanup_log_files(stderr_path, stdout_path)
+                _revert_checkout(repo_dir, old_commit)
+                return {"success": False, "error": error_msg, "new_commit": new_commit, "old_commit": old_commit}
 
-                    if stderr_content.strip():
-                        # Include last 500 chars of stderr
-                        error_msg += f"\nStderr: {stderr_content[-500:]}"
-                    if stdout_content.strip():
-                        # Include last 500 chars of stdout
-                        error_msg += f"\nStdout: {stdout_content[-500:]}"
-
-                    if not stderr_content.strip() and not stdout_content.strip():
-                        error_msg += "\nNo output captured."
-                except Exception as e:
-                    error_msg += f"\nCould not read output: {e}"
-                finally:
-                    # Clean up log files
-                    try:
-                        stderr_path.unlink()
-                        stdout_path.unlink()
-                    except Exception:
-                        pass
-
-                # Revert checkout
-                if old_commit:
-                    subprocess.run(
-                        ["git", "checkout", "--quiet", old_commit],
-                        cwd=str(repo_dir),
-                        capture_output=True,
-                    )
-                return {
-                    "success": False,
-                    "error": error_msg,
-                    "new_commit": new_commit,
-                    "old_commit": old_commit,
-                }
-
-            # Clean up log files on success
-            try:
-                stderr_path.unlink()
-                stdout_path.unlink()
-            except Exception:
-                pass
+            _cleanup_log_files(stderr_path, stdout_path)
         else:
-            if on_progress:
-                on_progress(
-                    ProgressInfo(
-                        name,
-                        UpdatePhase.ANALYZING,
-                        "Skipping analysis (reusing existing docs)...",
-                        new_commit=new_commit,
-                        old_commit=old_commit,
-                    ),
-                )
+            emit(
+                UpdatePhase.ANALYZING,
+                "Skipping analysis (reusing existing docs)...",
+                new_commit=new_commit,
+                old_commit=old_commit,
+            )
 
-        # Phase 4: Commit results
-        if on_progress:
-            on_progress(ProgressInfo(name, UpdatePhase.COMMITTING, "Committing changes..."))
+        # Commit + HEAD
+        emit(UpdatePhase.COMMITTING, "Committing changes...")
+        _commit_analysis_results(tmp_commit_dir, expert_dir, new_commit)
+        emit(UpdatePhase.UPDATING_HEAD, "Updating HEAD symlink...")
+        _save_commit_to_repos(name, new_commit, repos, is_private)
 
-        # Move staged files to final location
-        final_commit_dir = expert_dir / new_commit
-        final_commit_dir.mkdir(parents=True, exist_ok=True)
-
-        for f in tmp_commit_dir.iterdir():
-            if f.is_file():
-                shutil.move(str(f), str(final_commit_dir / f.name))
-
-        # Update HEAD symlink
-        if on_progress:
-            on_progress(ProgressInfo(name, UpdatePhase.UPDATING_HEAD, "Updating HEAD symlink..."))
-
-        head_link = expert_dir / "HEAD"
-        if head_link.is_symlink():
-            head_link.unlink()
-        head_link.symlink_to(new_commit)
-
-        # Update repos.json or private-repos.json
-        repos[name]["commit"] = new_commit
-        if is_private:
-            _save_private_repos(repos)
-        else:
-            _save_repos(repos)
-
-        return {
-            "success": True,
-            "new_commit": new_commit,
-            "old_commit": old_commit,
-        }
+        return {"success": True, "new_commit": new_commit, "old_commit": old_commit}
 
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
@@ -985,81 +1133,45 @@ async def update_expert_async_internal(
 ) -> dict:
     """Async version of update_expert with cancellation support.
 
-    Args:
-        name: Expert name to update
-        on_progress: Progress callback function
-        on_subprocess_start: Called with subprocess PID when analysis starts
-        cancellation_token: Token to check for cancellation requests
-
     Returns:
         dict with keys: success (bool), new_commit (str), old_commit (str),
                         error (str | None), cancelled (bool | None)
     """
-
-    def _check_cancellation(phase: str):
-        """Check if operation was cancelled (except during risky phases)."""
-        if not cancellation_token or not cancellation_token.is_cancelled():
-            return
-
-        # Allow risky phases to complete
-        risky_phases = {UpdatePhase.COMMITTING, UpdatePhase.UPDATING_HEAD}
-        if phase not in risky_phases:
-            raise asyncio.CancelledError(f"Cancelled before {phase}")
-
+    emit = _make_emit(name, on_progress)
+    check_cancel = _make_cancellation_checker(cancellation_token)
     repos, is_private = _get_repos_for_expert(name)
 
     if name not in repos:
         return {"success": False, "error": f"{name} not in repos"}
 
     tmpdir = None
-    staged_path = None
-    stderr_path = None
-    stdout_path = None
-    stderr_file = None
-    stdout_file = None
+    old_commit = None
+    repo_dir = REPOS_DIR / name
 
     try:
-        # Phase 1: Clone/fetch
-        _check_cancellation(UpdatePhase.CLONING)
-        if on_progress:
-            on_progress(ProgressInfo(name, UpdatePhase.CLONING, "Cloning repository..."))
-
+        # Clone/fetch
+        check_cancel(UpdatePhase.CLONING)
+        emit(UpdatePhase.CLONING, "Cloning repository...")
         if not _clone_repo(name, repos, silent=True):
             return {"success": False, "error": "Failed to clone repository"}
 
-        repo_dir = REPOS_DIR / name
-
-        _check_cancellation(UpdatePhase.FETCHING)
-        if on_progress:
-            on_progress(ProgressInfo(name, UpdatePhase.FETCHING, "Fetching latest commits..."))
-
+        check_cancel(UpdatePhase.FETCHING)
+        emit(UpdatePhase.FETCHING, "Fetching latest commits...")
         try:
             subprocess.run(
                 ["git", "fetch", "origin"],
                 cwd=str(repo_dir),
                 capture_output=True,
                 check=True,
+                timeout=GIT_FETCH_TIMEOUT,
             )
         except subprocess.CalledProcessError as e:
             return {"success": False, "error": f"Failed to fetch: {e.stderr.decode()}"}
 
-        # Get latest commit
-        _check_cancellation(UpdatePhase.CHECKING)
-        if on_progress:
-            on_progress(ProgressInfo(name, UpdatePhase.CHECKING, "Checking for updates..."))
-
-        new_commit = None
-        for ref in ["origin/HEAD", "origin/main", "origin/master"]:
-            result = subprocess.run(
-                ["git", "rev-parse", ref],
-                cwd=str(repo_dir),
-                capture_output=True,
-                text=True,
-            )
-            if result.returncode == 0:
-                new_commit = result.stdout.strip()
-                break
-
+        # Resolve latest commit
+        check_cancel(UpdatePhase.CHECKING)
+        emit(UpdatePhase.CHECKING, "Checking for updates...")
+        new_commit = _resolve_latest_commit(repo_dir)
         if not new_commit:
             return {"success": False, "error": "Could not resolve latest commit"}
 
@@ -1067,247 +1179,55 @@ async def update_expert_async_internal(
         old_commit = _get_head_commit(expert_dir)
 
         if old_commit == new_commit:
-            return {
-                "success": True,
-                "already_up_to_date": True,
-                "new_commit": new_commit,
-                "old_commit": old_commit,
-            }
+            return {"success": True, "already_up_to_date": True, "new_commit": new_commit, "old_commit": old_commit}
 
-        # Phase 2: Stage for analysis
-        _check_cancellation(UpdatePhase.STAGING)
-        if on_progress:
-            on_progress(
-                ProgressInfo(
-                    name,
-                    UpdatePhase.STAGING,
-                    f"Staging update from {old_commit[:12] if old_commit else 'none'} to {new_commit[:12]}...",
-                    new_commit=new_commit,
-                    old_commit=old_commit,
-                ),
-            )
+        # Stage
+        check_cancel(UpdatePhase.STAGING)
+        emit(
+            UpdatePhase.STAGING,
+            f"Staging update from {old_commit[:12] if old_commit else 'none'} to {new_commit[:12]}...",
+            new_commit=new_commit,
+            old_commit=old_commit,
+        )
+        tmpdir, staged_path, tmp_commit_dir = _stage_for_analysis(name, new_commit, expert_dir, old_commit, repo_dir)
 
-        tmpdir = tempfile.mkdtemp(prefix=f"hivemind-update-{name}-")
-        staged_path = Path(tmpdir) / "expert"
-        staged_path.mkdir()
-        tmp_commit_dir = staged_path / new_commit
-        tmp_commit_dir.mkdir()
-
-        # Copy baseline files
-        if old_commit:
-            old_dir = expert_dir / old_commit
-            if old_dir.is_dir():
-                for f in old_dir.iterdir():
-                    if f.is_file():
-                        shutil.copy2(f, tmp_commit_dir / f.name)
-
-        # Checkout new commit
-        subprocess.run(
-            ["git", "checkout", "--quiet", new_commit],
-            cwd=str(repo_dir),
-            check=True,
+        # Async analysis
+        check_cancel(UpdatePhase.ANALYZING)
+        emit(
+            UpdatePhase.ANALYZING,
+            f"Analyzing {new_commit[:12]} (this may take 2-5 minutes)...",
+            progress_percent=0,
+            new_commit=new_commit,
+            old_commit=old_commit,
         )
 
-        # Phase 3: AI Analysis (async subprocess)
-        _check_cancellation(UpdatePhase.ANALYZING)
-        if on_progress:
-            on_progress(
-                ProgressInfo(
-                    name,
-                    UpdatePhase.ANALYZING,
-                    f"Analyzing {new_commit[:12]} (this may take 2-5 minutes)...",
-                    progress_percent=0,
-                    new_commit=new_commit,
-                    old_commit=old_commit,
-                ),
-            )
-
-        # Prepare prompt and command
         prompt = update_expert_prompt(name, new_commit, repo_dir, tmp_commit_dir)
-
-        # Create temp files for stderr and stdout (binary mode for subprocess)
-        stderr_file = tempfile.NamedTemporaryFile(  # noqa: SIM115
-            mode="wb",
-            prefix=f"hivemind-{name}-stderr-",
-            suffix=".log",
-            delete=False,
-        )
-        stdout_file = tempfile.NamedTemporaryFile(  # noqa: SIM115
-            mode="wb",
-            prefix=f"hivemind-{name}-stdout-",
-            suffix=".log",
-            delete=False,
-        )
-        stderr_path = Path(stderr_file.name)
-        stdout_path = Path(stdout_file.name)
-
-        provider = _get_provider()
-        cmd = provider.build_analysis_command(
-            extra_dirs=[repo_dir, staged_path],
-            write=True,
+        success, error_msg, _, _ = await _run_async_analysis(
+            name,
+            new_commit,
+            prompt,
+            staged_path,
+            repo_dir,
+            emit,
+            old_commit=old_commit,
+            cancellation_token=cancellation_token,
+            on_subprocess_start=on_subprocess_start,
         )
 
-        # Start async subprocess
-        proc = await asyncio.create_subprocess_exec(
-            *cmd,
-            stdin=asyncio.subprocess.PIPE,
-            stdout=stderr_file.fileno(),
-            stderr=stdout_file.fileno(),
-            cwd=str(staged_path),
-        )
+        if not success:
+            _revert_checkout(repo_dir, old_commit)
+            return {"success": False, "error": error_msg, "new_commit": new_commit, "old_commit": old_commit}
 
-        # Send prompt to stdin
-        if proc.stdin:
-            proc.stdin.write(prompt.encode())
-            await proc.stdin.drain()
-            proc.stdin.close()
-            await proc.stdin.wait_closed()
+        # Commit + HEAD
+        emit(UpdatePhase.COMMITTING, "Committing changes...")
+        _commit_analysis_results(tmp_commit_dir, expert_dir, new_commit)
+        emit(UpdatePhase.UPDATING_HEAD, "Updating HEAD symlink...")
+        _save_commit_to_repos(name, new_commit, repos, is_private)
 
-        # Close file handles now that subprocess has them
-        stderr_file.close()
-        stdout_file.close()
-
-        # Notify TUI of subprocess PID
-        if on_subprocess_start:
-            on_subprocess_start(proc.pid)
-
-        # Poll until complete with cancellation checks
-        while proc.returncode is None:
-            await asyncio.sleep(1)  # Non-blocking
-
-            # Check for cancellation
-            if cancellation_token and cancellation_token.is_cancelled():
-                # Terminate subprocess gracefully
-                try:
-                    proc.terminate()  # Send SIGTERM
-                    await asyncio.wait_for(proc.wait(), timeout=5.0)
-                except asyncio.TimeoutError:
-                    proc.kill()  # Force kill if didn't terminate
-                    await proc.wait()
-                raise asyncio.CancelledError("Update cancelled by user")
-
-            # Update progress
-            if on_progress:
-                on_progress(
-                    ProgressInfo(
-                        name,
-                        UpdatePhase.ANALYZING,
-                        f"Analyzing {new_commit[:12]}...",
-                        new_commit=new_commit,
-                        old_commit=old_commit,
-                    ),
-                )
-
-        # Check exit code
-        if proc.returncode != 0:
-            # Analysis failed - read error from stderr and stdout files
-            error_msg = f"AI analysis failed (exit code {proc.returncode})"
-            try:
-                stderr_content = stderr_path.read_text()
-                stdout_content = stdout_path.read_text()
-
-                if stderr_content.strip():
-                    error_msg += f"\nStderr: {stderr_content[-500:]}"
-                if stdout_content.strip():
-                    error_msg += f"\nStdout: {stdout_content[-500:]}"
-
-                if not stderr_content.strip() and not stdout_content.strip():
-                    error_msg += "\nNo output captured."
-
-            except Exception as e:
-                error_msg += f"\nCould not read output: {e}"
-            finally:
-                # Clean up log files
-                try:
-                    stderr_path.unlink()
-                    stdout_path.unlink()
-                except Exception:
-                    pass
-
-            # Revert checkout
-            if old_commit:
-                subprocess.run(
-                    ["git", "checkout", "--quiet", old_commit],
-                    cwd=str(repo_dir),
-                    capture_output=True,
-                )
-            return {
-                "success": False,
-                "error": error_msg,
-                "new_commit": new_commit,
-                "old_commit": old_commit,
-            }
-
-        # Clean up log files on success
-        try:
-            stderr_path.unlink()
-            stdout_path.unlink()
-        except Exception:
-            pass
-
-        # Phase 4: Commit results (risky - let it complete)
-        if on_progress:
-            on_progress(ProgressInfo(name, UpdatePhase.COMMITTING, "Committing changes..."))
-
-        # Move staged files to final location
-        final_commit_dir = expert_dir / new_commit
-        final_commit_dir.mkdir(parents=True, exist_ok=True)
-
-        for f in tmp_commit_dir.iterdir():
-            if f.is_file():
-                shutil.move(str(f), str(final_commit_dir / f.name))
-
-        # Update HEAD symlink (risky - let it complete)
-        if on_progress:
-            on_progress(ProgressInfo(name, UpdatePhase.UPDATING_HEAD, "Updating HEAD symlink..."))
-
-        head_link = expert_dir / "HEAD"
-        if head_link.is_symlink():
-            head_link.unlink()
-        head_link.symlink_to(new_commit)
-
-        # Update repos.json or private-repos.json
-        repos[name]["commit"] = new_commit
-        if is_private:
-            _save_private_repos(repos)
-        else:
-            _save_repos(repos)
-
-        return {
-            "success": True,
-            "new_commit": new_commit,
-            "old_commit": old_commit,
-        }
+        return {"success": True, "new_commit": new_commit, "old_commit": old_commit}
 
     except asyncio.CancelledError:
-        # Clean up temp directory
-        if staged_path and staged_path.exists():
-            shutil.rmtree(staged_path, ignore_errors=True)
-
-        # Clean up log files
-        if stderr_path and stderr_path.exists():
-            with contextlib.suppress(Exception):
-                stderr_path.unlink()
-        if stdout_path and stdout_path.exists():
-            with contextlib.suppress(Exception):
-                stdout_path.unlink()
-
-        # Revert git checkout if needed
-        if old_commit:
-            with contextlib.suppress(Exception):
-                repo_dir = REPOS_DIR / name
-                subprocess.run(
-                    ["git", "checkout", "--quiet", old_commit],
-                    cwd=str(repo_dir),
-                    capture_output=True,
-                )
-
-        # Return cancelled result
-        return {
-            "success": False,
-            "error": "Update cancelled by user",
-            "cancelled": True,
-        }
+        return _handle_async_cancellation(None, None, None, repo_dir, old_commit, "Update cancelled by user")
 
     finally:
         if tmpdir:
@@ -1340,6 +1260,7 @@ def get_git_versions(name: str, expert_dir: Path) -> list:
                 cwd=str(repo_dir),
                 capture_output=True,
                 text=True,
+                timeout=GIT_FETCH_TIMEOUT,
             )
 
         # Get current HEAD commit
@@ -1366,6 +1287,7 @@ def get_git_versions(name: str, expert_dir: Path) -> list:
             cwd=str(repo_dir),
             capture_output=True,
             text=True,
+            timeout=GIT_LOCAL_TIMEOUT,
         )
 
         if result.returncode == 0 and result.stdout.strip():
@@ -1382,6 +1304,7 @@ def get_git_versions(name: str, expert_dir: Path) -> list:
                         cwd=str(repo_dir),
                         capture_output=True,
                         text=True,
+                        timeout=GIT_LOCAL_TIMEOUT,
                     )
                     if resolve_result.returncode == 0:
                         commit = resolve_result.stdout.strip()
@@ -1403,6 +1326,7 @@ def get_git_versions(name: str, expert_dir: Path) -> list:
             cwd=str(repo_dir),
             capture_output=True,
             text=True,
+            timeout=GIT_LOCAL_TIMEOUT,
         )
 
         if result.returncode == 0 and result.stdout.strip():
@@ -1461,6 +1385,7 @@ def commit_exists_in_repo(name: str, commit: str) -> bool:
             ["git", "rev-parse", "--verify", commit],
             cwd=str(repo_dir),
             capture_output=True,
+            timeout=GIT_LOCAL_TIMEOUT,
         )
         return result.returncode == 0
     except Exception:
@@ -1476,28 +1401,12 @@ async def switch_version_async(
 ) -> dict:
     """Switch expert to a different version (async with cancellation support).
 
-    Args:
-        name: Expert name
-        target_commit: Target commit hash to switch to
-        on_progress: Progress callback function
-        on_subprocess_start: Called with subprocess PID when analysis starts
-        cancellation_token: Token to check for cancellation requests
-
     Returns:
         dict with keys: success (bool), old_commit (str), new_commit (str),
                         error (str | None), cancelled (bool | None)
     """
-
-    def _check_cancellation(phase: str):
-        """Check if operation was cancelled (except during risky phases)."""
-        if not cancellation_token or not cancellation_token.is_cancelled():
-            return
-
-        # Allow risky phases to complete
-        risky_phases = {UpdatePhase.COMMITTING, UpdatePhase.UPDATING_HEAD}
-        if phase not in risky_phases:
-            raise asyncio.CancelledError(f"Cancelled before {phase}")
-
+    emit = _make_emit(name, on_progress)
+    check_cancel = _make_cancellation_checker(cancellation_token)
     repos, is_private = _get_repos_for_expert(name)
 
     if name not in repos:
@@ -1510,71 +1419,46 @@ async def switch_version_async(
         return {"success": False, "error": "Repository not cloned"}
 
     tmpdir = None
-    staged_path = None
-    stderr_path = None
-    stdout_path = None
-    stderr_file = None
-    stdout_file = None
     old_commit = None
 
     try:
-        # Get current HEAD
         old_commit = _get_head_commit(expert_dir)
 
-        # Check if already active
         if old_commit == target_commit:
-            return {
-                "success": True,
-                "already_active": True,
-                "old_commit": old_commit,
-                "new_commit": target_commit,
-            }
+            return {"success": True, "already_active": True, "old_commit": old_commit, "new_commit": target_commit}
 
-        # Check if target commit exists
         if not commit_exists_in_repo(name, target_commit):
-            return {
-                "success": False,
-                "error": f"Commit {target_commit[:12]} not found in repository",
-            }
+            return {"success": False, "error": f"Commit {target_commit[:12]} not found in repository"}
 
         target_dir = expert_dir / target_commit
 
-        # If NOT analyzed, need to checkout and analyze
+        # Analyze if not already done
         if not target_dir.exists() or not (target_dir / "agent.md").exists():
-            _check_cancellation(UpdatePhase.CHECKING)
-            if on_progress:
-                on_progress(
-                    ProgressInfo(
-                        name,
-                        UpdatePhase.CHECKING,
-                        f"Checking out {target_commit[:12]}...",
-                        old_commit=old_commit,
-                        new_commit=target_commit,
-                    ),
-                )
+            check_cancel(UpdatePhase.CHECKING)
+            emit(
+                UpdatePhase.CHECKING,
+                f"Checking out {target_commit[:12]}...",
+                old_commit=old_commit,
+                new_commit=target_commit,
+            )
 
-            # Checkout target commit
             try:
                 subprocess.run(
                     ["git", "checkout", "--quiet", target_commit],
                     cwd=str(repo_dir),
                     check=True,
+                    timeout=GIT_LOCAL_TIMEOUT,
                 )
             except subprocess.CalledProcessError as e:
                 return {"success": False, "error": f"Failed to checkout commit: {e}"}
 
-            # Create temp directory for analysis
-            _check_cancellation(UpdatePhase.STAGING)
-            if on_progress:
-                on_progress(
-                    ProgressInfo(
-                        name,
-                        UpdatePhase.STAGING,
-                        f"Staging analysis for {target_commit[:12]}...",
-                        old_commit=old_commit,
-                        new_commit=target_commit,
-                    ),
-                )
+            check_cancel(UpdatePhase.STAGING)
+            emit(
+                UpdatePhase.STAGING,
+                f"Staging analysis for {target_commit[:12]}...",
+                old_commit=old_commit,
+                new_commit=target_commit,
+            )
 
             tmpdir = tempfile.mkdtemp(prefix=f"hivemind-version-{name}-")
             staged_path = Path(tmpdir) / "expert"
@@ -1582,245 +1466,70 @@ async def switch_version_async(
             tmp_commit_dir = staged_path / target_commit
             tmp_commit_dir.mkdir()
 
-            # Run analysis subprocess (similar to update_expert_async_internal)
-            _check_cancellation(UpdatePhase.ANALYZING)
-            if on_progress:
-                on_progress(
-                    ProgressInfo(
-                        name,
-                        UpdatePhase.ANALYZING,
-                        f"Analyzing {target_commit[:12]} (this may take 2-5 minutes)...",
-                        progress_percent=0,
-                        old_commit=old_commit,
-                        new_commit=target_commit,
-                    ),
-                )
+            check_cancel(UpdatePhase.ANALYZING)
+            emit(
+                UpdatePhase.ANALYZING,
+                f"Analyzing {target_commit[:12]} (this may take 2-5 minutes)...",
+                progress_percent=0,
+                old_commit=old_commit,
+                new_commit=target_commit,
+            )
 
-            # Prepare prompt for create (not update)
             from hivemind_cli.templates import create_expert_prompt
 
             prompt = create_expert_prompt(name, target_commit, repo_dir, tmp_commit_dir)
-
-            # Create temp files for stderr and stdout (binary mode for subprocess)
-            stderr_file = tempfile.NamedTemporaryFile(  # noqa: SIM115
-                mode="wb",
-                prefix=f"hivemind-{name}-stderr-",
-                suffix=".log",
-                delete=False,
-            )
-            stdout_file = tempfile.NamedTemporaryFile(  # noqa: SIM115
-                mode="wb",
-                prefix=f"hivemind-{name}-stdout-",
-                suffix=".log",
-                delete=False,
-            )
-            stderr_path = Path(stderr_file.name)
-            stdout_path = Path(stdout_file.name)
-
-            provider = _get_provider()
-            cmd = provider.build_analysis_command(
-                extra_dirs=[repo_dir, staged_path],
-                write=True,
+            success, error_msg, _, _ = await _run_async_analysis(
+                name,
+                target_commit,
+                prompt,
+                staged_path,
+                repo_dir,
+                emit,
+                old_commit=old_commit,
+                cancellation_token=cancellation_token,
+                on_subprocess_start=on_subprocess_start,
             )
 
-            # Start async subprocess
-            proc = await asyncio.create_subprocess_exec(
-                *cmd,
-                stdin=asyncio.subprocess.PIPE,
-                stdout=stderr_file.fileno(),
-                stderr=stdout_file.fileno(),
-                cwd=str(staged_path),
-            )
+            if not success:
+                _revert_checkout(repo_dir, old_commit)
+                return {"success": False, "error": error_msg, "old_commit": old_commit, "new_commit": target_commit}
 
-            # Send prompt to stdin
-            if proc.stdin:
-                proc.stdin.write(prompt.encode())
-                await proc.stdin.drain()
-                proc.stdin.close()
-                await proc.stdin.wait_closed()
+            # Commit staged files
+            emit(UpdatePhase.COMMITTING, "Committing changes...", old_commit=old_commit, new_commit=target_commit)
+            _commit_analysis_results(tmp_commit_dir, expert_dir, target_commit)
 
-            # Close file handles now that subprocess has them
-            stderr_file.close()
-            stdout_file.close()
-
-            # Notify TUI of subprocess PID
-            if on_subprocess_start:
-                on_subprocess_start(proc.pid)
-
-            # Poll until complete with cancellation checks
-            while proc.returncode is None:
-                await asyncio.sleep(1)  # Non-blocking
-
-                # Check for cancellation
-                if cancellation_token and cancellation_token.is_cancelled():
-                    # Terminate subprocess gracefully
-                    try:
-                        proc.terminate()  # Send SIGTERM
-                        await asyncio.wait_for(proc.wait(), timeout=5.0)
-                    except asyncio.TimeoutError:
-                        proc.kill()  # Force kill if didn't terminate
-                        await proc.wait()
-                    raise asyncio.CancelledError("Version switch cancelled by user")
-
-                # Update progress
-                if on_progress:
-                    on_progress(
-                        ProgressInfo(
-                            name,
-                            UpdatePhase.ANALYZING,
-                            f"Analyzing {target_commit[:12]}...",
-                            old_commit=old_commit,
-                            new_commit=target_commit,
-                        ),
-                    )
-
-            # Check exit code
-            if proc.returncode != 0:
-                # Analysis failed - read error from stderr and stdout files
-                error_msg = f"AI analysis failed (exit code {proc.returncode})"
-                try:
-                    stderr_content = stderr_path.read_text()
-                    stdout_content = stdout_path.read_text()
-
-                    if stderr_content.strip():
-                        error_msg += f"\nStderr: {stderr_content[-500:]}"
-                    if stdout_content.strip():
-                        error_msg += f"\nStdout: {stdout_content[-500:]}"
-
-                    if not stderr_content.strip() and not stdout_content.strip():
-                        error_msg += "\nNo output captured."
-
-                except Exception as e:
-                    error_msg += f"\nCould not read output: {e}"
-                finally:
-                    # Clean up log files
-                    try:
-                        stderr_path.unlink()
-                        stdout_path.unlink()
-                    except Exception:
-                        pass
-
-                # Revert checkout
-                if old_commit:
-                    subprocess.run(
-                        ["git", "checkout", "--quiet", old_commit],
-                        cwd=str(repo_dir),
-                        capture_output=True,
-                    )
-                return {
-                    "success": False,
-                    "error": error_msg,
-                    "old_commit": old_commit,
-                    "new_commit": target_commit,
-                }
-
-            # Clean up log files on success
-            try:
-                stderr_path.unlink()
-                stdout_path.unlink()
-            except Exception:
-                pass
-
-            # Move staged files to final location
-            if on_progress:
-                on_progress(
-                    ProgressInfo(
-                        name,
-                        UpdatePhase.COMMITTING,
-                        "Committing changes...",
-                        old_commit=old_commit,
-                        new_commit=target_commit,
-                    ),
-                )
-
-            final_commit_dir = expert_dir / target_commit
-            final_commit_dir.mkdir(parents=True, exist_ok=True)
-
-            for f in tmp_commit_dir.iterdir():
-                if f.is_file():
-                    shutil.move(str(f), str(final_commit_dir / f.name))
-
-        # Checkout target commit in repo to keep repo and symlink in sync
+        # Checkout in repo to keep in sync
         try:
             subprocess.run(
-                ["git", "checkout", "--quiet", target_commit],
-                cwd=str(repo_dir),
-                check=True,
+                ["git", "checkout", "--quiet", target_commit], cwd=str(repo_dir), check=True, timeout=GIT_LOCAL_TIMEOUT
             )
         except subprocess.CalledProcessError as e:
-            return {
-                "success": False,
-                "error": f"Failed to checkout commit in repo: {e}",
-            }
+            return {"success": False, "error": f"Failed to checkout commit in repo: {e}"}
 
-        # Update HEAD symlink (risky - let it complete)
-        if on_progress:
-            on_progress(
-                ProgressInfo(
-                    name,
-                    UpdatePhase.UPDATING_HEAD,
-                    "Updating HEAD symlink...",
-                    old_commit=old_commit,
-                    new_commit=target_commit,
-                ),
-            )
-
+        # Update HEAD (for already-analyzed versions, _commit_analysis_results already did this for new ones)
+        emit(UpdatePhase.UPDATING_HEAD, "Updating HEAD symlink...", old_commit=old_commit, new_commit=target_commit)
         head_link = expert_dir / "HEAD"
         if head_link.is_symlink():
             head_link.unlink()
         head_link.symlink_to(target_commit)
 
-        # Redeploy agent file with updated content
         _deploy_agent(name)
+        _save_commit_to_repos(name, target_commit, repos, is_private)
 
-        # Update repos.json or private-repos.json
-        repos[name]["commit"] = target_commit
-        if is_private:
-            _save_private_repos(repos)
-        else:
-            _save_repos(repos)
-
-        return {
-            "success": True,
-            "old_commit": old_commit,
-            "new_commit": target_commit,
-        }
+        return {"success": True, "old_commit": old_commit, "new_commit": target_commit}
 
     except asyncio.CancelledError:
-        # Clean up temp directory
-        if staged_path and staged_path.exists():
-            shutil.rmtree(staged_path, ignore_errors=True)
-
-        # Clean up log files
-        if stderr_path and stderr_path.exists():
-            with contextlib.suppress(Exception):
-                stderr_path.unlink()
-        if stdout_path and stdout_path.exists():
-            with contextlib.suppress(Exception):
-                stdout_path.unlink()
-
-        # Revert git checkout if needed
-        if old_commit:
-            with contextlib.suppress(Exception):
-                subprocess.run(
-                    ["git", "checkout", "--quiet", old_commit],
-                    cwd=str(repo_dir),
-                    capture_output=True,
-                )
-
-        # Return cancelled result
-        return {
-            "success": False,
-            "error": "Version switch cancelled by user",
-            "cancelled": True,
-        }
+        return _handle_async_cancellation(None, None, None, repo_dir, old_commit, "Version switch cancelled by user")
 
     finally:
         if tmpdir:
             shutil.rmtree(tmpdir, ignore_errors=True)
 
 
-def enable_expert(name: str) -> dict:
+# --- Expert Lifecycle (future: use_cases/expert/) ---
+
+
+def enable_expert(name: str, config: dict | None = None) -> dict:
     """Enable an expert (clone repo + create agent symlink).
 
     Returns:
@@ -1830,7 +1539,8 @@ def enable_expert(name: str) -> dict:
     if not expert_dir.is_dir():
         return {"success": False, "error": f"Expert '{name}' not found"}
 
-    config = _load_config()
+    if config is None:
+        config = _load_config()
     already_enabled = name in config["enabled"]
 
     if not already_enabled:
@@ -1846,13 +1556,13 @@ def enable_expert(name: str) -> dict:
     _deploy_agent(name)
     _deploy_expert(name)
 
-    # Update librarian to reflect enabled experts
-    _update_librarian()
+    _mark_librarian_dirty()
+    _flush_librarian(config=config)
 
     return {"success": True, "already_enabled": already_enabled}
 
 
-def disable_expert(name: str) -> dict:
+def disable_expert(name: str, config: dict | None = None) -> dict:
     """Disable an expert (remove agent symlink).
 
     Returns:
@@ -1862,7 +1572,8 @@ def disable_expert(name: str) -> dict:
     if not expert_dir.is_dir():
         return {"success": False, "error": f"Expert '{name}' not found"}
 
-    config = _load_config()
+    if config is None:
+        config = _load_config()
     already_disabled = name not in config["enabled"] and name in config["disabled"]
 
     if not already_disabled:
@@ -1875,13 +1586,13 @@ def disable_expert(name: str) -> dict:
     _undeploy_agent(name)
     _undeploy_expert(name)
 
-    # Update librarian to reflect enabled experts
-    _update_librarian()
+    _mark_librarian_dirty()
+    _flush_librarian(config=config)
 
     return {"success": True, "already_disabled": already_disabled}
 
 
-def delete_expert(name: str) -> dict:
+def delete_expert(name: str, config: dict | None = None) -> dict:
     """Delete an expert entirely — removes config entries, agent files, expert dir, and repo entry.
 
     Returns:
@@ -1900,7 +1611,8 @@ def delete_expert(name: str) -> dict:
     _undeploy_expert(name)
 
     # Remove from config.json (enabled/disabled lists)
-    config = _load_config()
+    if config is None:
+        config = _load_config()
     if name in config.get("enabled", []):
         config["enabled"].remove(name)
     if name in config.get("disabled", []):
@@ -1936,13 +1648,15 @@ def delete_expert(name: str) -> dict:
     if repo_cache.exists():
         shutil.rmtree(repo_cache)
 
-    _update_librarian()
+    _mark_librarian_dirty()
+    _flush_librarian(config=config)
     return {"success": True}
 
 
-def redeploy_all_agents() -> dict:
+def redeploy_all_agents(config: dict | None = None) -> dict:
     """Regenerate all enabled agent files with current provider settings."""
-    config = _load_config()
+    if config is None:
+        config = _load_config()
     enabled = config.get("enabled", [])
 
     deployed: list[str] = []
@@ -1968,8 +1682,9 @@ def redeploy_all_agents() -> dict:
             _refresh_expert_notes_header(team_name, expert_name)
 
     # Regenerate librarian and HIVEMIND.md
-    _update_librarian()
-    _regenerate_hivemind_md()
+    _mark_librarian_dirty()
+    _flush_librarian(config=config)
+    _regenerate_hivemind_md(config=config)
 
     return {
         "success": True,
@@ -1983,27 +1698,31 @@ def redeploy_all_agents() -> dict:
 # --- HIVEMIND.md Generation ---
 
 
-def _regenerate_hivemind_md() -> None:
+def _regenerate_hivemind_md(config: dict | None = None) -> None:
     """Regenerate HIVEMIND.md from base template + provider instructions."""
     from hivemind_cli.templates import hivemind_md_base
 
     content = hivemind_md_base(str(HIVEMIND_ROOT))
 
-    config = _load_config()
+    if config is None:
+        config = _load_config()
 
     # Append provider-specific orchestration instructions
     active_provider = config.get("active_provider")
     if active_provider:
         provider_instructions = PROVIDERS_DIR / active_provider / "instructions.md"
         if provider_instructions.exists():
-            instructions_content = provider_instructions.read_text().strip()
+            instructions_content = provider_instructions.read_text(encoding="utf-8").strip()
             if instructions_content:
                 content += "\n" + instructions_content + "\n"
 
-    HIVEMIND_MD.write_text(content)
+    HIVEMIND_MD.write_text(content, encoding="utf-8")
 
 
 # --- Team Operations ---
+
+
+# --- Team Management (future: use_cases/team/) ---
 
 
 def _deploy_team_lead(team_name: str) -> bool:
@@ -2020,7 +1739,7 @@ def _deploy_team_lead(team_name: str) -> bool:
         return False
 
     provider = _get_provider()
-    body = strip_frontmatter(lead_md.read_text())
+    body = strip_frontmatter(lead_md.read_text(encoding="utf-8"))
 
     # Inject current roster from config (always fresh)
     teams = _load_teams()
@@ -2051,7 +1770,7 @@ def _deploy_team_lead(team_name: str) -> bool:
     agent_file = AGENTS_DIR / f"team-lead-{team_name}.md"
     if agent_file.is_symlink():
         agent_file.unlink()
-    agent_file.write_text(content)
+    agent_file.write_text(content, encoding="utf-8")
     return True
 
 
@@ -2109,7 +1828,7 @@ def _remove_expert_section(team_name: str, expert_name: str) -> bool:
     if not lead_md.exists():
         return False
 
-    content = lead_md.read_text()
+    content = lead_md.read_text(encoding="utf-8")
     heading = f"## expert-{expert_name}"
 
     if heading not in content:
@@ -2133,7 +1852,7 @@ def _remove_expert_section(team_name: str, expert_name: str) -> bool:
     while "\n\n\n" in cleaned:
         cleaned = cleaned.replace("\n\n\n", "\n\n")
 
-    lead_md.write_text(cleaned)
+    lead_md.write_text(cleaned, encoding="utf-8")
     return True
 
 
@@ -2145,7 +1864,7 @@ def _create_expert_notes_stub(team_name: str, expert_name: str) -> None:
     notes_dir.mkdir(parents=True, exist_ok=True)
     notes_file = notes_dir / "notes.md"
     if not notes_file.exists():
-        notes_file.write_text(expert_notes_template(expert_name, team_name))
+        notes_file.write_text(expert_notes_template(expert_name, team_name), encoding="utf-8")
 
 
 def _refresh_expert_notes_header(team_name: str, expert_name: str) -> None:
@@ -2157,7 +1876,7 @@ def _refresh_expert_notes_header(team_name: str, expert_name: str) -> None:
         _create_expert_notes_stub(team_name, expert_name)
         return
 
-    content = notes_file.read_text()
+    content = notes_file.read_text(encoding="utf-8")
     template = expert_notes_template(expert_name, team_name)
 
     # Template ends with "---\n", entries live below that
@@ -2165,10 +1884,10 @@ def _refresh_expert_notes_header(team_name: str, expert_name: str) -> None:
     if separator in content:
         _, entries = content.split(separator, 1)
         # Template already ends with "---\n", append preserved entries
-        notes_file.write_text(template + entries)
+        notes_file.write_text(template + entries, encoding="utf-8")
     else:
         # No entries yet — rewrite from template
-        notes_file.write_text(template)
+        notes_file.write_text(template, encoding="utf-8")
 
 
 def _refresh_team_lead_body(team_name: str) -> None:
@@ -2187,7 +1906,7 @@ def _refresh_team_lead_body(team_name: str) -> None:
     description = team_data.get("description", "")
 
     # Extract existing ## expert-{name} sections from current lead.md
-    content = lead_md.read_text()
+    content = lead_md.read_text(encoding="utf-8")
     lines = content.split("\n")
     expert_sections: list[str] = []
     current_section: list[str] = []
@@ -2213,7 +1932,7 @@ def _refresh_team_lead_body(team_name: str) -> None:
     # Regenerate wrapper with preserved expert sections
     expert_content = "\n\n".join(s.rstrip() for s in expert_sections) if expert_sections else ""
     lead_body = team_lead_template(team_name, description, expert_content)
-    lead_md.write_text(lead_body)
+    lead_md.write_text(lead_body, encoding="utf-8")
 
 
 def create_team(
@@ -2265,7 +1984,7 @@ def create_team(
     from hivemind_cli.templates import team_lead_template
 
     lead_body = team_lead_template(name, description, "\n\n".join(expert_sections))
-    (team_dir / "lead.md").write_text(lead_body)
+    (team_dir / "lead.md").write_text(lead_body, encoding="utf-8")
 
     # Save to config
     team_data: dict = {
@@ -2277,7 +1996,8 @@ def create_team(
 
     # Deploy
     _deploy_team_lead(name)
-    _update_librarian()
+    _mark_librarian_dirty()
+    _flush_librarian()
 
     return {"success": True}
 
@@ -2306,7 +2026,8 @@ def delete_team(name: str) -> dict:
     del teams[name]
     _save_teams(teams)
 
-    _update_librarian()
+    _mark_librarian_dirty()
+    _flush_librarian()
     return {"success": True}
 
 
@@ -2346,11 +2067,13 @@ def update_team(
         _undeploy_team_lead(name)
         _save_teams(teams)
         _deploy_team_lead(new_name)
-        _update_librarian()
+        _mark_librarian_dirty()
+        _flush_librarian()
     else:
         _save_teams(teams)
         _deploy_team_lead(name)
-        _update_librarian()
+        _mark_librarian_dirty()
+        _flush_librarian()
 
     return {"success": True}
 
@@ -2390,7 +2113,7 @@ def add_expert_to_team(team_name: str, expert_name: str) -> dict:
     # Append section to lead.md
     lead_md = TEAMS_DIR / team_name / "lead.md"
     if lead_md.exists():
-        content = lead_md.read_text()
+        content = lead_md.read_text(encoding="utf-8")
         # Insert before ## Instructions or ## Expert Notes (whichever comes first)
         for marker in ["## Expert Notes", "## Instructions"]:
             if marker in content:
@@ -2399,7 +2122,7 @@ def add_expert_to_team(team_name: str, expert_name: str) -> dict:
                 break
         else:
             content += "\n\n" + section + "\n"
-        lead_md.write_text(content)
+        lead_md.write_text(content, encoding="utf-8")
 
     # Create notes stub
     _create_expert_notes_stub(team_name, expert_name)
@@ -2411,7 +2134,8 @@ def add_expert_to_team(team_name: str, expert_name: str) -> dict:
 
     # Redeploy team lead (roster list updates automatically)
     _deploy_team_lead(team_name)
-    _update_librarian()
+    _mark_librarian_dirty()
+    _flush_librarian()
 
     return {"success": True}
 
@@ -2450,15 +2174,17 @@ def remove_expert_from_team(team_name: str, expert_name: str) -> dict:
 
     # Redeploy team lead (roster list updates automatically)
     _deploy_team_lead(team_name)
-    _update_librarian()
+    _mark_librarian_dirty()
+    _flush_librarian()
     return {"success": True}
 
 
-def switch_provider(provider_name: str) -> dict:
+def switch_provider(provider_name: str, config: dict | None = None) -> dict:
     """Switch active provider.
 
     Args:
         provider_name: Name of provider to switch to (e.g. "claude", "opencode")
+        config: Pre-loaded config dict, or None to load from disk.
 
     Returns:
         dict with keys: success (bool), error (str | None), old_provider (str), new_provider (str)
@@ -2472,7 +2198,8 @@ def switch_provider(provider_name: str) -> dict:
             "error": f"Unknown provider '{provider_name}'. Available: {available}",
         }
 
-    config = _load_config()
+    if config is None:
+        config = _load_config()
     old_provider = config.get("active_provider", "")
 
     if old_provider == provider_name:
@@ -2485,9 +2212,10 @@ def switch_provider(provider_name: str) -> dict:
 
     config["active_provider"] = provider_name
     _save_config(config)
+    _invalidate_provider_cache()
 
     # Regenerate HIVEMIND.md with new provider's instructions
-    _regenerate_hivemind_md()
+    _regenerate_hivemind_md(config=config)
 
     return {
         "success": True,

@@ -193,7 +193,7 @@ class Provider(ABC):
         context_path = PROVIDERS_DIR / self.name / "context.json"
         if context_path.exists():
             try:
-                data = json.loads(context_path.read_text())
+                data = json.loads(context_path.read_text(encoding="utf-8"))
                 append = data.get(agent_type, {}).get("append", "")
                 if append:
                     parts.append(append)
@@ -204,7 +204,7 @@ class Provider(ABC):
         overrides_path = PROVIDERS_DIR / self.name / "overrides.json"
         if overrides_path.exists():
             try:
-                data = json.loads(overrides_path.read_text())
+                data = json.loads(overrides_path.read_text(encoding="utf-8"))
                 append = data.get(agent_type, {}).get("append", "")
                 if append:
                     parts.append(append)
@@ -247,9 +247,9 @@ class Provider(ABC):
         # Subclasses can override if needed
         return self._format_agent_md_internal(agent_name, description, body)
 
+    @abstractmethod
     def _format_agent_md_internal(self, agent_name: str, description: str, body: str) -> str:
         """Internal formatting — override in subclasses."""
-        raise NotImplementedError
 
     @abstractmethod
     def format_librarian_md(self, body: str) -> str:
@@ -291,24 +291,26 @@ class Provider(ABC):
 
     # --- Deployment ---
 
-    @abstractmethod
     def deploy_agent(self, name: str, content: str, *, agents_dir: Path) -> None:
-        """Deploy a generated agent file.
+        """Deploy a generated agent file."""
+        agents_dir.mkdir(parents=True, exist_ok=True)
+        agent_file = agents_dir / f"expert-{name}.md"
+        if agent_file.is_symlink():
+            agent_file.unlink()
+        agent_file.write_text(content, encoding="utf-8")
 
-        Args:
-            name: Expert name
-            content: Full agent.md content (with frontmatter)
-            agents_dir: Hivemind's agents/ directory
-        """
-
-    @abstractmethod
     def undeploy_agent(self, name: str, *, agents_dir: Path) -> None:
-        """Remove a deployed agent file.
+        """Remove a deployed agent file."""
+        agent_file = agents_dir / f"expert-{name}.md"
+        if agent_file.is_symlink() or agent_file.exists():
+            agent_file.unlink()
 
-        Args:
-            name: Expert name
-            agents_dir: Hivemind's agents/ directory
-        """
+    def _transform_body(self, body: str) -> str:
+        """Apply standard path replacements to agent body."""
+        transformed = replace_expert_paths(body, old_base="{EXPERTS_DIR}", new_base=self.experts_base_path)
+        transformed = transformed.replace("{HIVEMIND_DIR}", self.hivemind_base_path)
+        transformed = transformed.replace("{CACHE_DIR}", self.cache_base_path)
+        return transformed
 
     @abstractmethod
     def deploy_expert(self, name: str, source_dir: Path) -> None:
@@ -438,15 +440,7 @@ class ClaudeProvider(Provider):
             f"---\nname: {agent_name}\ndescription: {description}\ntools: {tools_str}\nmodel: {model}\n---\n\n"
         )
 
-        transformed = replace_expert_paths(
-            body,
-            old_base="{EXPERTS_DIR}",
-            new_base=self.experts_base_path,
-        )
-        transformed = transformed.replace("{HIVEMIND_DIR}", self.hivemind_base_path)
-        transformed = transformed.replace("{CACHE_DIR}", self.cache_base_path)
-
-        return frontmatter + transformed
+        return frontmatter + self._transform_body(body)
 
     def _format_agent_md_internal(self, agent_name: str, description: str, body: str) -> str:
         """Internal Claude Code agent formatting with custom name."""
@@ -459,14 +453,7 @@ class ClaudeProvider(Provider):
             f"---\nname: {agent_name}\ndescription: {description}\ntools: {tools_str}\nmodel: {model}\n---\n\n"
         )
 
-        transformed = replace_expert_paths(
-            body,
-            old_base="{EXPERTS_DIR}",
-            new_base=self.experts_base_path,
-        )
-        transformed = transformed.replace("{CACHE_DIR}", self.cache_base_path)
-
-        return frontmatter + transformed
+        return frontmatter + self._transform_body(body)
 
     def format_agent_md(self, name: str, description: str, body: str) -> str:
         """Format agent.md with Claude Code YAML frontmatter."""
@@ -532,21 +519,6 @@ class ClaudeProvider(Provider):
         model = self._settings.get("model", "sonnet")
         return ["claude", "-p", "--model", model]
 
-    def deploy_agent(self, name: str, content: str, *, agents_dir: Path) -> None:
-        """Write agent file to agents/ directory."""
-        agents_dir.mkdir(parents=True, exist_ok=True)
-        agent_file = agents_dir / f"expert-{name}.md"
-        # Remove old symlink if present (migrating from symlink to file)
-        if agent_file.is_symlink():
-            agent_file.unlink()
-        agent_file.write_text(content)
-
-    def undeploy_agent(self, name: str, *, agents_dir: Path) -> None:
-        """Remove agent file from agents/ directory."""
-        agent_file = agents_dir / f"expert-{name}.md"
-        if agent_file.is_symlink() or agent_file.exists():
-            agent_file.unlink()
-
     def deploy_expert(self, name: str, source_dir: Path) -> None:
         """Create symlink ~/.claude/experts/<name> -> source_dir."""
         provider_experts = self._home_dir / "experts"
@@ -591,7 +563,7 @@ class ClaudeProvider(Provider):
                     "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1",
                 },
             }
-            settings_path.write_text(_json.dumps(settings_data, indent=2) + "\n")
+            settings_path.write_text(_json.dumps(settings_data, indent=2, encoding="utf-8") + "\n")
             results.append(("settings.json", "generated from hivemind.json"))
 
         return results
@@ -642,14 +614,7 @@ class OpenCodeProvider(Provider):
 
         frontmatter = "\n".join(lines)
 
-        transformed = replace_expert_paths(
-            body,
-            old_base="{EXPERTS_DIR}",
-            new_base=self.experts_base_path,
-        )
-        transformed = transformed.replace("{CACHE_DIR}", self.cache_base_path)
-
-        return frontmatter + transformed
+        return frontmatter + self._transform_body(body)
 
     def format_agent_md(self, name: str, description: str, body: str) -> str:
         """Format agent.md with OpenCode YAML frontmatter."""
@@ -690,15 +655,7 @@ class OpenCodeProvider(Provider):
 
         frontmatter = "\n".join(lines)
 
-        transformed = replace_expert_paths(
-            body,
-            old_base="{EXPERTS_DIR}",
-            new_base=self.experts_base_path,
-        )
-        transformed = transformed.replace("{HIVEMIND_DIR}", self.hivemind_base_path)
-        transformed = transformed.replace("{CACHE_DIR}", self.cache_base_path)
-
-        return frontmatter + transformed
+        return frontmatter + self._transform_body(body)
 
     def format_librarian_md(self, body: str) -> str:
         """Format librarian.md with OpenCode YAML frontmatter."""
@@ -755,24 +712,6 @@ class OpenCodeProvider(Provider):
         model = self._settings.get("model", "github-copilot/claude-sonnet-4")
         cmd.extend(["--model", model])
         return cmd
-
-    def deploy_agent(self, name: str, content: str, *, agents_dir: Path) -> None:
-        """Write agent file to agents/ directory.
-
-        OpenCode reads from agents/ the same way, just uses regular files.
-        """
-        agents_dir.mkdir(parents=True, exist_ok=True)
-        agent_file = agents_dir / f"expert-{name}.md"
-        # Remove old symlink if present (migrating from symlink to file)
-        if agent_file.is_symlink():
-            agent_file.unlink()
-        agent_file.write_text(content)
-
-    def undeploy_agent(self, name: str, *, agents_dir: Path) -> None:
-        """Remove agent file from agents/ directory."""
-        agent_file = agents_dir / f"expert-{name}.md"
-        if agent_file.is_symlink() or agent_file.exists():
-            agent_file.unlink()
 
     def deploy_expert(self, name: str, source_dir: Path) -> None:
         """Create symlink in provider's experts directory."""
@@ -845,7 +784,7 @@ class OpenCodeProvider(Provider):
         existing: dict = {}
         if config_path.exists() and not config_path.is_symlink():
             with contextlib.suppress(ValueError, OSError):
-                existing = _json.loads(config_path.read_text())
+                existing = _json.loads(config_path.read_text(encoding="utf-8"))
 
         # Deep-merge hivemind permissions into existing permission key
         existing_perms = existing.get("permission", {})
@@ -860,7 +799,7 @@ class OpenCodeProvider(Provider):
                 existing_perms[tool_key].update(patterns)
 
         existing["permission"] = existing_perms
-        config_path.write_text(_json.dumps(existing, indent=2) + "\n")
+        config_path.write_text(_json.dumps(existing, indent=2, encoding="utf-8") + "\n")
         results.append(("opencode.json", "permissions merged for hivemind paths"))
 
         return results

@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import time
+from typing import TYPE_CHECKING
 
 from textual.binding import Binding
 from textual.widgets import Static
 
 from hivemind_cli.tui.widgets.search_bar import SearchBar
-from hivemind_cli.tui.widgets.vim_data_table import VimDataTable
+
+if TYPE_CHECKING:
+    from hivemind_cli.tui.widgets.vim_data_table import VimDataTable
 
 
 class SearchMixin:

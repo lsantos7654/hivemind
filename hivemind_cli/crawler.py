@@ -1,5 +1,6 @@
 """Core crawling logic using crawl4ai."""
 
+import logging
 import re
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -13,6 +14,8 @@ from crawl4ai.content_filter_strategy import PruningContentFilter
 from crawl4ai.deep_crawling import BFSDeepCrawlStrategy
 from crawl4ai.deep_crawling.filters import FilterChain, URLPatternFilter
 from crawl4ai.markdown_generation_strategy import DefaultMarkdownGenerator
+
+logger = logging.getLogger(__name__)
 
 
 def normalize_url(url: str) -> str:
@@ -366,8 +369,12 @@ async def crawl_urls_raw_markdown(
                     if on_page_callback:
                         on_page_callback(page_url, True)
                     continue
-            except Exception:
-                pass
+            except (httpx.TimeoutException, httpx.ConnectError, httpx.HTTPStatusError):
+                pass  # transient HTTP failure, skip URL
+            except OSError:
+                raise  # disk write failure is non-transient
+            except Exception as e:
+                logger.warning("Unexpected error crawling %s: %s", page_url, e)
             failed += 1
             if on_page_callback:
                 on_page_callback(page_url, False)
@@ -418,8 +425,12 @@ async def crawl_with_fallback(
                     if on_page_callback:
                         on_page_callback(page_url, True)
                     continue
-            except Exception:
-                pass
+            except (httpx.TimeoutException, httpx.ConnectError, httpx.HTTPStatusError):
+                pass  # transient HTTP failure, skip URL
+            except OSError:
+                raise  # disk write failure is non-transient
+            except Exception as e:
+                logger.warning("Unexpected error crawling %s: %s", page_url, e)
 
             # Track failures for browser retry
             failed_urls.append(page_url)

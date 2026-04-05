@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import contextlib
+from typing import TYPE_CHECKING
 
-from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Container
 from textual.css.query import NoMatches
@@ -12,9 +12,13 @@ from textual.reactive import reactive
 from textual.widgets import Button, Footer, Input, Static
 
 from hivemind_cli.core import EXPERTS_DIR, PRIVATE_EXPERTS_DIR, commit_exists_in_repo, get_git_versions
-from hivemind_cli.tui.models import ExpertRow, VersionInfo
 from hivemind_cli.tui.screens.base_screen import BaseScreen
 from hivemind_cli.tui.widgets import SearchBar, VimDataTable
+
+if TYPE_CHECKING:
+    from textual.app import ComposeResult
+
+    from hivemind_cli.tui.models import ExpertRow, VersionInfo
 
 
 class VersionDetailScreen(BaseScreen):
@@ -218,10 +222,6 @@ class VersionDetailScreen(BaseScreen):
         input_field.value = ""
 
         self._start_version_switch(commit)
-
-    def on_data_table_row_selected(self, event: VimDataTable.RowSelected) -> None:
-        if event.data_table.id == "version-table":
-            self.action_switch_version()
 
     def action_refresh(self) -> None:
         table = self.query_one("#version-table", VimDataTable)

@@ -6,13 +6,12 @@ import asyncio
 from typing import TYPE_CHECKING
 
 from hivemind_cli.core import (
-    CancellationToken,
-    ProgressInfo,
-    UpdatePhase,
+    _load_config,
     delete_expert,
     disable_expert,
     enable_expert,
 )
+from hivemind_cli.models import CancellationToken, ProgressInfo, UpdatePhase
 from hivemind_cli.tui.models import OperationStatus
 
 if TYPE_CHECKING:
@@ -93,7 +92,8 @@ async def enable_expert_async_op(pane, expert_name: str) -> None:
     try:
         pane.set_expert_operation_status(expert_name, OperationStatus.IN_PROGRESS)
         pane.set_expert_status_message(expert_name, "enabling...")
-        result = await asyncio.to_thread(enable_expert, expert_name)
+        config = _load_config()
+        result = await asyncio.to_thread(enable_expert, expert_name, config)
         if result["success"]:
             if result["already_enabled"]:
                 pane.notify(f"{expert_name}: already enabled", severity="information")
@@ -114,7 +114,8 @@ async def disable_expert_async_op(pane, expert_name: str) -> None:
     try:
         pane.set_expert_operation_status(expert_name, OperationStatus.IN_PROGRESS)
         pane.set_expert_status_message(expert_name, "disabling...")
-        result = await asyncio.to_thread(disable_expert, expert_name)
+        config = _load_config()
+        result = await asyncio.to_thread(disable_expert, expert_name, config)
         if result["success"]:
             if result["already_disabled"]:
                 pane.notify(f"{expert_name}: already disabled", severity="information")
@@ -135,7 +136,8 @@ async def delete_expert_async_op(pane, expert_name: str) -> None:
     try:
         pane.set_expert_operation_status(expert_name, OperationStatus.IN_PROGRESS)
         pane.set_expert_status_message(expert_name, "deleting...")
-        result = await asyncio.to_thread(delete_expert, expert_name)
+        config = _load_config()
+        result = await asyncio.to_thread(delete_expert, expert_name, config)
         if result["success"]:
             pane.notify(f"Deleted: {expert_name}", severity="information")
         else:

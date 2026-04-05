@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from textual.app import ComposeResult
+from typing import TYPE_CHECKING
+
 from textual.binding import Binding
 from textual.widgets import Footer, Static
 
@@ -10,6 +11,9 @@ from hivemind_cli.core import _load_config
 from hivemind_cli.tui.screens.base_screen import BaseScreen
 from hivemind_cli.tui.widgets import SearchBar, VimDataTable
 from hivemind_cli.tui.widgets.search_mixin import SearchMixin
+
+if TYPE_CHECKING:
+    from textual.app import ComposeResult
 
 
 class TeamDetailScreen(SearchMixin, BaseScreen):
@@ -98,7 +102,7 @@ class TeamDetailScreen(SearchMixin, BaseScreen):
 
         current_desc = self.team_data.get("description", "")
 
-        async def _handle_result(data: dict | None) -> None:
+        def _handle_result(data: dict | None) -> None:
             if not data:
                 return
             new_name = data["name"] if data["name"] != self.team_name else None
@@ -130,7 +134,7 @@ class TeamDetailScreen(SearchMixin, BaseScreen):
             self.notify("No available experts to add", severity="warning")
             return
 
-        async def _handle_add(selected: list[str] | None) -> None:
+        def _handle_add(selected: list[str] | None) -> None:
             if not selected:
                 return
             for expert_name in selected:
@@ -151,7 +155,7 @@ class TeamDetailScreen(SearchMixin, BaseScreen):
         if not expert_name:
             return
 
-        async def _do_remove(confirmed: bool) -> None:
+        def _do_remove(confirmed: bool) -> None:
             if confirmed:
                 result = remove_expert_from_team(self.team_name, expert_name)
                 if result["success"]:

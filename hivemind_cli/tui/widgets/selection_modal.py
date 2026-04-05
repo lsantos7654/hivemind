@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from textual.app import ComposeResult
+from typing import TYPE_CHECKING
+
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
 from textual.widgets import Button, Input, Label
@@ -10,6 +11,9 @@ from textual.widgets import Button, Input, Label
 from hivemind_cli.tui.widgets.form_modal import FormModal
 from hivemind_cli.tui.widgets.search_bar import SearchBar
 from hivemind_cli.tui.widgets.vim_data_table import VimSelectionList
+
+if TYPE_CHECKING:
+    from textual.app import ComposeResult
 
 
 class SelectionListModal(FormModal):
