@@ -14,10 +14,11 @@ uv run hivemind init          # Set up provider directory structure
 
 No test suite exists. Verify changes by importing and running CLI commands:
 ```bash
-uv run python -c "from hivemind_cli.core import redeploy_all_agents; print('OK')"
+uv run python -c "from hivemind_cli.deployment import redeploy_all_agents; print('OK')"
 uv run hivemind expert list
 uv run hivemind team list
 uv run hivemind redeploy
+uv run pre-commit run --all-files
 ```
 
 ## Architecture
@@ -26,10 +27,16 @@ Hivemind is a context management layer that feeds expert knowledge into any AI c
 
 ### Core modules (`hivemind_cli/`)
 
-- **`core.py`** (~2000 lines) — All business logic: expert CRUD, team management, repo cloning, AI analysis, agent deployment, librarian generation, HIVEMIND.md regeneration. Functions prefixed with `_` are internal helpers.
-- **`cli.py`** (~1500 lines) — Typer CLI with Rich output. Thin layer over core.py functions. Expert and team subcommand groups.
-- **`providers.py`** (~900 lines) — Abstract `Provider` base class with `ClaudeProvider` and `OpenCodeProvider`. Handles frontmatter formatting, path transforms (`{EXPERTS_DIR}` → actual paths), `init_dirs()` symlink setup, analysis command building.
-- **`templates.py`** (~650 lines) — All prompt templates and agent body templates. `hivemind_md_base()` generates HIVEMIND.md content. `team_lead_template()` / `team_lead_prompt()` for team leads. `agent_md_template()` / `create_expert_prompt()` / `update_expert_prompt()` for experts.
+- **`config.py`** — Path constants, config I/O (`load_config`, `save_config`, `load_hivemind`, etc.), filesystem helpers (`expert_names`, `get_expert_dir`, `get_head_commit`), provider cache (`get_active_provider`).
+- **`experts.py`** — Expert lifecycle: `enable_expert`, `disable_expert`, `delete_expert`, `update_expert`, `update_expert_async_internal`, `switch_version_async`, `switch_provider`.
+- **`teams.py`** — Team management: `create_team`, `delete_team`, `update_team`, `add_expert_to_team`, `remove_expert_from_team`.
+- **`deployment.py`** — Agent deployment (`deploy_agent`, `redeploy_all_agents`), librarian generation (`update_librarian`), HIVEMIND.md regeneration.
+- **`git.py`** — Git subprocess operations: `clone_repo`, `resolve_latest_commit`, `stage_for_analysis`, `commit_analysis_results`.
+- **`analysis.py`** — AI analysis orchestration: `start_analysis`, `finish_analysis`, `analyze_repo`, `run_async_analysis`.
+- **`cli.py`** — Typer CLI with Rich output. Thin entrypoint over the modules above. Expert and team subcommand groups.
+- **`providers.py`** — Abstract `Provider` base class with `ClaudeProvider` and `OpenCodeProvider`. Handles frontmatter formatting, path transforms (`{EXPERTS_DIR}` → actual paths), `init_dirs()` symlink setup, analysis command building.
+- **`models.py`** — Pydantic models for config schemas (`AppConfig`, `HivemindConfig`, `ProviderConfig`) and operation results (`OperationResult`, `UpdateResult`, etc.).
+- **`templates.py`** — Jinja2 template rendering for agent/lead/hivemind content.
 - **`crawler.py`** — Web documentation crawler for supplementing expert knowledge.
 
 ### TUI (`hivemind_cli/tui/`)

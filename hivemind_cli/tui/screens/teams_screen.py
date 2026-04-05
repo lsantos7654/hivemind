@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
-from textual.binding import Binding
+from textual.binding import Binding, BindingType
 from textual.widgets import DataTable, Static
 
 from hivemind_cli.tui.widgets import SearchBar, VimDataTable
@@ -13,11 +13,13 @@ from hivemind_cli.tui.widgets.base_pane import BasePane
 if TYPE_CHECKING:
     from textual.app import ComposeResult
 
+    from hivemind_cli.models import TeamData
+
 
 class TeamsPane(BasePane):
     """Team list pane for the tabbed layout."""
 
-    BINDINGS = [
+    BINDINGS: ClassVar[list[BindingType]] = [
         *BasePane.BINDINGS,
         Binding("n", "create_team", "New", show=True),
         Binding("D", "delete_team", "Delete", show=True),
@@ -25,7 +27,7 @@ class TeamsPane(BasePane):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self._teams: dict = {}
+        self._teams: dict[str, TeamData] = {}
 
     def _get_table_id(self) -> str:
         return "teams-table"
@@ -57,12 +59,12 @@ class TeamsPane(BasePane):
         for name, data in sorted(self._teams.items()):
             if self._filter_query:
                 query = self._filter_query.lower()
-                if query not in name.lower() and query not in data.get("description", "").lower():
+                if query not in name.lower() and query not in data.description.lower():
                     continue
 
-            experts = data.get("experts", [])
+            experts = data.experts
             expert_count = f"{len(experts)} expert{'s' if len(experts) != 1 else ''}"
-            description = data.get("description", "[dim]none[/dim]")
+            description = data.description or "[dim]none[/dim]"
 
             table.add_row(name, expert_count, description)
             self._visible_names.append(name)
@@ -78,18 +80,18 @@ class TeamsPane(BasePane):
 
         def _handle_result(data: dict | None) -> None:
             if data:
-                from hivemind_cli.core import create_team
+                from hivemind_cli.teams import create_team
 
                 result = create_team(
                     data["name"],
                     data["description"],
                     data["experts"],
                 )
-                if result["success"]:
+                if result.success:
                     self.notify(f"Created team: {data['name']}", severity="information")
                     self.load_teams()
                 else:
-                    self.notify(f"Failed: {result.get('error', 'Unknown')}", severity="error")
+                    self.notify(f"Failed: {result.error or 'Unknown'}", severity="error")
 
         self.app.push_screen(CreateTeamModal(), _handle_result)
 
@@ -105,7 +107,7 @@ class TeamsPane(BasePane):
             self.app.push_screen(TeamDetailScreen(name, self._teams[name]))
 
     def action_delete_team(self) -> None:
-        from hivemind_cli.core import delete_team
+        from hivemind_cli.teams import delete_team
         from hivemind_cli.tui.widgets import ConfirmationModal
 
         name = self.get_current_name()
@@ -115,11 +117,11 @@ class TeamsPane(BasePane):
         def _do_delete(confirmed: bool) -> None:
             if confirmed:
                 result = delete_team(name)
-                if result["success"]:
+                if result.success:
                     self.notify(f"Deleted team: {name}", severity="information")
                     self.load_teams()
                 else:
-                    self.notify(f"Failed: {result.get('error', 'Unknown')}", severity="error")
+                    self.notify(f"Failed: {result.error or 'Unknown'}", severity="error")
 
         self.app.push_screen(
             ConfirmationModal(

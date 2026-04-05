@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
-from textual.binding import Binding
+from textual.binding import Binding, BindingType
 from textual.containers import Horizontal, Vertical
 from textual.screen import ModalScreen
 from textual.widgets import Button, Label
@@ -21,7 +21,7 @@ class ConfirmationModal(ButtonNavigationMixin, ModalScreen[bool]):
     CSS is in styles.tcss under ConfirmationModal.
     """
 
-    BINDINGS = [
+    BINDINGS: ClassVar[list[BindingType]] = [
         Binding("y", "confirm", description="Yes"),
         Binding("n", "dismiss_modal", description="No"),
         Binding("ctrl+s", "confirm", description="Confirm"),

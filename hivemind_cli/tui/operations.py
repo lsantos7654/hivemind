@@ -5,23 +5,22 @@ from __future__ import annotations
 import asyncio
 from typing import TYPE_CHECKING
 
-from hivemind_cli.core import (
-    _load_config,
-    delete_expert,
-    disable_expert,
-    enable_expert,
-)
+from hivemind_cli.config import load_config
+from hivemind_cli.experts import delete_expert, disable_expert, enable_expert
 from hivemind_cli.models import CancellationToken, ProgressInfo, UpdatePhase
 from hivemind_cli.tui.models import OperationStatus
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from hivemind_cli.tui.screens.experts_pane import ExpertsPane
+    from hivemind_cli.tui.screens.version_detail_screen import VersionDetailScreen
 
 
-def create_tui_progress_callback(screen: ExpertsPane, expert_name: str):
+def create_tui_progress_callback(screen: ExpertsPane, expert_name: str) -> Callable[[ProgressInfo], None]:
     """Create a progress callback that updates the TUI."""
 
-    def on_progress(info: ProgressInfo):
+    def on_progress(info: ProgressInfo) -> None:
         # Update operation status in the table
         # Called from async context (main thread), so no need for call_from_thread
         if info.phase == UpdatePhase.ANALYZING:
@@ -38,7 +37,7 @@ def create_tui_progress_callback(screen: ExpertsPane, expert_name: str):
 
 async def update_expert_async(screen: ExpertsPane, expert_name: str, token: CancellationToken):
     """Async wrapper for updating an expert with cancellation support."""
-    from hivemind_cli.core import update_expert_async_internal
+    from hivemind_cli.experts import update_expert_async_internal
 
     callback = create_tui_progress_callback(screen, expert_name)
 
@@ -54,23 +53,23 @@ async def update_expert_async(screen: ExpertsPane, expert_name: str, token: Canc
             cancellation_token=token,
         )
 
-        if result.get("cancelled"):
+        if result.cancelled:
             screen.notify(f"{expert_name}: cancelled", severity="warning")
-        elif result["success"]:
-            if result.get("already_up_to_date"):
+        elif result.success:
+            if result.already_up_to_date:
                 screen.notify(
-                    f"{expert_name}: already up to date ({result['new_commit'][:12]})",
+                    f"{expert_name}: already up to date ({result.new_commit[:12]})",
                     severity="information",
                 )
             else:
-                old_display = result["old_commit"][:12] if result["old_commit"] else "none"
+                old_display = result.old_commit[:12] if result.old_commit else "none"
                 screen.notify(
-                    f"{expert_name}: updated from {old_display} to {result['new_commit'][:12]}",
+                    f"{expert_name}: updated from {old_display} to {result.new_commit[:12]}",
                     severity="information",
                 )
         else:
             screen.notify(
-                f"{expert_name}: {result['error']}",
+                f"{expert_name}: {result.error}",
                 severity="error",
             )
 
@@ -87,20 +86,20 @@ async def update_expert_async(screen: ExpertsPane, expert_name: str, token: Canc
         screen.app.refresh_experts()
 
 
-async def enable_expert_async_op(pane, expert_name: str) -> None:
+async def enable_expert_async_op(pane: ExpertsPane, expert_name: str) -> None:
     """Async wrapper for enabling an expert in the TUI."""
     try:
         pane.set_expert_operation_status(expert_name, OperationStatus.IN_PROGRESS)
         pane.set_expert_status_message(expert_name, "enabling...")
-        config = _load_config()
+        config = load_config()
         result = await asyncio.to_thread(enable_expert, expert_name, config)
-        if result["success"]:
-            if result["already_enabled"]:
+        if result.success:
+            if result.already_enabled:
                 pane.notify(f"{expert_name}: already enabled", severity="information")
             else:
                 pane.notify(f"Enabled: {expert_name}", severity="information")
         else:
-            pane.notify(f"Failed to enable {expert_name}: {result['error']}", severity="error")
+            pane.notify(f"Failed to enable {expert_name}: {result.error}", severity="error")
     except Exception as e:
         pane.notify(f"Error enabling {expert_name}: {e}", severity="error")
     finally:
@@ -109,20 +108,20 @@ async def enable_expert_async_op(pane, expert_name: str) -> None:
         pane.app.refresh_experts()
 
 
-async def disable_expert_async_op(pane, expert_name: str) -> None:
+async def disable_expert_async_op(pane: ExpertsPane, expert_name: str) -> None:
     """Async wrapper for disabling an expert in the TUI."""
     try:
         pane.set_expert_operation_status(expert_name, OperationStatus.IN_PROGRESS)
         pane.set_expert_status_message(expert_name, "disabling...")
-        config = _load_config()
+        config = load_config()
         result = await asyncio.to_thread(disable_expert, expert_name, config)
-        if result["success"]:
-            if result["already_disabled"]:
+        if result.success:
+            if result.already_disabled:
                 pane.notify(f"{expert_name}: already disabled", severity="information")
             else:
                 pane.notify(f"Disabled: {expert_name}", severity="warning")
         else:
-            pane.notify(f"Failed to disable {expert_name}: {result['error']}", severity="error")
+            pane.notify(f"Failed to disable {expert_name}: {result.error}", severity="error")
     except Exception as e:
         pane.notify(f"Error disabling {expert_name}: {e}", severity="error")
     finally:
@@ -131,17 +130,17 @@ async def disable_expert_async_op(pane, expert_name: str) -> None:
         pane.app.refresh_experts()
 
 
-async def delete_expert_async_op(pane, expert_name: str) -> None:
+async def delete_expert_async_op(pane: ExpertsPane, expert_name: str) -> None:
     """Async wrapper for deleting an expert in the TUI."""
     try:
         pane.set_expert_operation_status(expert_name, OperationStatus.IN_PROGRESS)
         pane.set_expert_status_message(expert_name, "deleting...")
-        config = _load_config()
+        config = load_config()
         result = await asyncio.to_thread(delete_expert, expert_name, config)
-        if result["success"]:
+        if result.success:
             pane.notify(f"Deleted: {expert_name}", severity="information")
         else:
-            pane.notify(f"Failed to delete {expert_name}: {result['error']}", severity="error")
+            pane.notify(f"Failed to delete {expert_name}: {result.error}", severity="error")
     except Exception as e:
         pane.notify(f"Error deleting {expert_name}: {e}", severity="error")
     finally:
@@ -150,7 +149,7 @@ async def delete_expert_async_op(pane, expert_name: str) -> None:
         pane.app.refresh_experts()
 
 
-async def add_expert_async(pane, url: str):
+async def add_expert_async(pane: ExpertsPane, url: str) -> None:
     """Async wrapper for adding an expert via subprocess."""
     import sys
 
@@ -178,13 +177,13 @@ async def add_expert_async(pane, url: str):
 
 
 async def switch_version_async_tui(
-    screen,  # VersionDetailScreen
+    screen: VersionDetailScreen,
     expert_name: str,
     target_commit: str,
     token: CancellationToken,
 ):
     """Async wrapper for switching versions with TUI integration."""
-    from hivemind_cli.core import switch_version_async
+    from hivemind_cli.experts import switch_version_async
 
     # Create progress callback (reuse existing helper approach)
     def on_progress(info: ProgressInfo):
@@ -206,10 +205,10 @@ async def switch_version_async_tui(
             cancellation_token=token,
         )
 
-        if result.get("cancelled"):
+        if result.cancelled:
             screen.notify("Version switch cancelled", severity="warning")
-        elif result["success"]:
-            if result.get("already_active"):
+        elif result.success:
+            if result.already_up_to_date:
                 screen.notify(
                     f"Already on {target_commit[:12]}",
                     severity="information",
@@ -236,7 +235,7 @@ async def switch_version_async_tui(
                             pass
                 # Stay on version detail screen - let user press escape to go back
         else:
-            screen.notify(f"Failed: {result.get('error', 'Unknown error')}", severity="error")
+            screen.notify(f"Failed: {result.error or 'Unknown error'}", severity="error")
 
     except Exception as e:
         screen.notify(f"Error: {e}", severity="error")

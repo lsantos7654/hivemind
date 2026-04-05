@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import time
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
-from textual.binding import Binding
+from textual.binding import Binding, BindingType
 from textual.widgets import Static
 
 from hivemind_cli.tui.widgets.search_bar import SearchBar
@@ -25,7 +25,7 @@ class SearchMixin:
     - Optionally override _on_all_clear()
     """
 
-    SEARCH_BINDINGS = [
+    SEARCH_BINDINGS: ClassVar[list[BindingType]] = [
         Binding("slash", "focus_search", "Search", show=True),
         Binding("escape", "handle_escape", "Back/Clear", show=True),
         Binding("ctrl+c", "handle_escape", "Back/Clear", show=False),

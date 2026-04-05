@@ -19,7 +19,8 @@ from rich.table import Table
 from rich.theme import Theme
 from rich.traceback import install as install_traceback
 
-from hivemind_cli.core import (
+from hivemind_cli.analysis import finish_analysis, start_analysis
+from hivemind_cli.config import (
     AGENTS_DIR,
     COMMANDS_DIR,
     EXPERTS_DIR,
@@ -28,59 +29,61 @@ from hivemind_cli.core import (
     PRIVATE_EXPERTS_DIR,
     REPOS_DIR,
     TEAMS_DIR,
-    _clone_repo,
-    _count_versions,
-    _deploy_agent,
-    _deploy_expert,
-    _ensure_external_docs_link,
-    _ensure_repos_link,
-    _expert_names,
-    _get_expert_dir,
-    _get_head_commit,
-    _get_provider,
-    _is_private_expert,
-    _load_config,
-    _load_hivemind,
-    _load_private_repos,
-    _load_repos,
-    _load_teams,
-    _regenerate_hivemind_md,
-    _save_config,
-    _save_private_repos,
-    _save_repos,
-    _undeploy_agent,
-    _update_librarian,
-    finish_analysis,
+    count_versions,
+    ensure_external_docs_link,
+    ensure_repos_link,
+    expert_names,
+    get_active_provider,
+    get_expert_dir,
+    get_head_commit,
+    is_private_expert,
+    load_config,
+    load_hivemind,
+    load_private_repos,
+    load_repos,
+    load_teams,
+    save_config,
+    save_private_repos,
+    save_repos,
+)
+from hivemind_cli.deployment import (
+    deploy_agent,
+    deploy_expert,
     redeploy_all_agents,
-    start_analysis,
+    regenerate_hivemind_md,
+    undeploy_agent,
+    update_librarian,
+)
+from hivemind_cli.experts import (
+    delete_expert as core_delete_expert_fn,
+)
+from hivemind_cli.experts import (
+    disable_expert as core_disable_expert,
+)
+from hivemind_cli.experts import (
+    enable_expert as core_enable_expert,
+)
+from hivemind_cli.experts import (
     switch_provider,
     update_expert,
 )
-from hivemind_cli.core import (
+from hivemind_cli.git import clone_repo
+from hivemind_cli.models import ProgressInfo, RepoEntry, UpdatePhase
+from hivemind_cli.teams import (
     add_expert_to_team as core_add_expert_to_team,
 )
-from hivemind_cli.core import (
+from hivemind_cli.teams import (
     add_experts_to_team as core_add_experts_to_team,
 )
-from hivemind_cli.core import (
+from hivemind_cli.teams import (
     create_team as core_create_team,
 )
-from hivemind_cli.core import (
-    delete_expert as core_delete_expert_fn,
-)
-from hivemind_cli.core import (
+from hivemind_cli.teams import (
     delete_team as core_delete_team,
 )
-from hivemind_cli.core import (
-    disable_expert as core_disable_expert,
-)
-from hivemind_cli.core import (
-    enable_expert as core_enable_expert,
-)
-from hivemind_cli.core import (
+from hivemind_cli.teams import (
     remove_expert_from_team as core_remove_expert_from_team,
 )
-from hivemind_cli.models import ProgressInfo, UpdatePhase
 
 THEME = Theme(
     {
@@ -117,7 +120,7 @@ def main(ctx: typer.Context) -> None:
 
 def _complete_expert(incomplete: str) -> list[str]:
     """Shell completion for expert names."""
-    return [n for n in _expert_names() if n.startswith(incomplete)]
+    return [n for n in expert_names() if n.startswith(incomplete)]
 
 
 # --- Expert subcommands ---
@@ -160,11 +163,11 @@ def _setup_symlink(target: Path, link: Path, label: str) -> None:
 # Wrapper functions to add console output to core module functions
 def _deploy_agent_cli(name: str) -> bool:
     """Wrapper for _deploy_agent that adds console output."""
-    result = _deploy_agent(name)
+    result = deploy_agent(name)
     if result:
         console.print(f"  [success]✓[/success] {name}: agent deployed")
     else:
-        expert_dir = _get_expert_dir(name)
+        expert_dir = get_expert_dir(name)
         head_link = expert_dir / "HEAD"
         if not head_link.exists():
             console.print(f"  [warning]![/warning] {name}: no HEAD, skipping agent deploy")
@@ -175,13 +178,13 @@ def _deploy_agent_cli(name: str) -> bool:
 
 def _undeploy_agent_cli(name: str) -> None:
     """Wrapper for _undeploy_agent that adds console output."""
-    _undeploy_agent(name)
+    undeploy_agent(name)
     console.print(f"  [success]✓[/success] {name}: agent removed")
 
 
 def _deploy_expert_cli(name: str) -> bool:
     """Wrapper for _deploy_expert that adds console output."""
-    result = _deploy_expert(name)
+    result = deploy_expert(name)
     if result:
         console.print(f"  [success]✓[/success] {name}: expert deployed")
     else:
@@ -189,7 +192,7 @@ def _deploy_expert_cli(name: str) -> bool:
     return result
 
 
-def _clone_repo_cli(name: str, repos: dict) -> bool:
+def _clone_repo_cli(name: str, repos: dict[str, RepoEntry]) -> bool:
     """Wrapper for _clone_repo that adds console output."""
     if name not in repos:
         console.print(f"  [warning]![/warning] {name}: not in hivemind.json repos, skipping clone")
@@ -200,8 +203,8 @@ def _clone_repo_cli(name: str, repos: dict) -> bool:
         return True  # Already cloned
 
     repo = repos[name]
-    commit = repo.get("commit", "")
-    ref_name = repo.get("ref_name", "")
+    commit = repo.commit
+    ref_name = repo.ref_name
 
     if commit:
         console.print(f"  Cloning {name} at {commit[:12]}...")
@@ -210,7 +213,7 @@ def _clone_repo_cli(name: str, repos: dict) -> bool:
     else:
         console.print(f"  Cloning {name} (default branch)...")
 
-    result = _clone_repo(name, repos, silent=False)
+    result = clone_repo(name, repos, silent=False)
 
     if result:
         if commit:
@@ -225,7 +228,7 @@ def _clone_repo_cli(name: str, repos: dict) -> bool:
 
 def _update_librarian_cli() -> None:
     """Wrapper for _update_librarian that adds console output."""
-    _update_librarian()
+    update_librarian(config=load_config())
     console.print("  [success]✓[/success] Librarian updated")
 
 
@@ -237,11 +240,11 @@ def init() -> None:
     """Set up provider directory symlinks and enable agents."""
     from hivemind_cli.providers import PROVIDER_CLASSES
 
-    config = _load_config()
-    if not config.get("active_provider"):
+    config = load_config()
+    if not config.active_provider:
         # Bootstrap: no provider set yet
-        hivemind = _load_hivemind()
-        available = [name for name in hivemind.get("providers", {}) if name in PROVIDER_CLASSES]
+        hivemind = load_hivemind()
+        available = [name for name in hivemind.providers if name in PROVIDER_CLASSES]
         if not available:
             console.print("[error]No providers configured in hivemind.json[/error]")
             raise typer.Exit(1)
@@ -257,14 +260,14 @@ def init() -> None:
                 console.print("[error]Invalid selection[/error]")
                 raise typer.Exit(1)
             chosen = available[choice - 1]
-        config["active_provider"] = chosen
-        _save_config(config)
+        config.active_provider = chosen
+        save_config(config)
 
-    provider = _get_provider()
+    provider = get_active_provider()
     console.print(f"[heading]Initializing hivemind (provider: {provider.name})...[/heading]\n")
 
     # Generate HIVEMIND.md before symlink setup (it's the symlink target)
-    _regenerate_hivemind_md()
+    regenerate_hivemind_md(config=config)
     console.print("  [success]✓[/success] HIVEMIND.md generated")
 
     # Use provider to initialize directory structure
@@ -275,19 +278,19 @@ def init() -> None:
         teams_dir=TEAMS_DIR,
         permissions=provider.permissions,
     )
-    for label, status_msg in results:
-        console.print(f"  [success]✓[/success] {label}: {status_msg}")
+    for result in results:
+        console.print(f"  [success]✓[/success] {result.label}: {result.status}")
 
-    _ensure_repos_link()
+    ensure_repos_link()
     console.print(f"  [success]✓[/success] repos/ → {REPOS_DIR}")
-    _ensure_external_docs_link()
+    ensure_external_docs_link()
     console.print(f"  [success]✓[/success] external_docs/ → {EXTERNAL_DOCS_DIR}")
 
-    config = _load_config()
-    repos = _load_repos()
+    config = load_config()
+    repos = load_repos()
 
     console.print()
-    for name in config["enabled"]:
+    for name in config.enabled:
         _clone_repo_cli(name, repos)
         _deploy_agent_cli(name)
         _deploy_expert_cli(name)
@@ -297,7 +300,7 @@ def init() -> None:
     # Remove stale agent files
     for f in AGENTS_DIR.glob("expert-*.md"):
         expert_name = f.name.removeprefix("expert-").removesuffix(".md")
-        if expert_name not in config["enabled"]:
+        if expert_name not in config.enabled:
             f.unlink()
             console.print(f"  [error]✗[/error] Removed stale: {f.name}")
 
@@ -306,7 +309,7 @@ def init() -> None:
     if provider_experts.is_dir():
         for link in provider_experts.iterdir():
             expert_name = link.name
-            if expert_name not in config["enabled"]:
+            if expert_name not in config.enabled:
                 if link.is_symlink():
                     link.unlink()
                 elif link.is_dir():
@@ -321,18 +324,18 @@ def init() -> None:
 @expert_app.command(name="list")
 def list_experts() -> None:
     """Show all experts with their status."""
-    config = _load_config()
-    repos = _load_repos()
-    private_repos = _load_private_repos()
-    experts = _expert_names()
+    config = load_config()
+    repos = load_repos()
+    private_repos = load_private_repos()
+    experts = expert_names()
 
     if not experts:
         console.print("No experts found. Use [heading]hivemind add <url>[/heading] to add one.")
         return
 
     # Separate into public and private
-    public_expert_names = [name for name in experts if not _is_private_expert(name)]
-    private_expert_names = [name for name in experts if _is_private_expert(name)]
+    public_expert_names = [name for name in experts if not is_private_expert(name)]
+    private_expert_names = [name for name in experts if is_private_expert(name)]
 
     def create_table_for_experts(expert_names: list[str], title: str) -> Table | None:
         """Create a table for a list of experts."""
@@ -347,31 +350,31 @@ def list_experts() -> None:
         table.add_column("Remote")
 
         for name in expert_names:
-            is_private = _is_private_expert(name)
+            is_private = is_private_expert(name)
 
             # Status
-            if name in config["enabled"]:
+            if name in config.enabled:
                 status = "[success]enabled[/success]"
-            elif name in config["disabled"]:
+            elif name in config.disabled:
                 status = "[warning]disabled[/warning]"
             else:
                 status = "[error]unlisted[/error]"
 
             # HEAD commit
-            expert_dir = _get_expert_dir(name)
-            head_commit = _get_head_commit(expert_dir)
+            expert_dir = get_expert_dir(name)
+            head_commit = get_head_commit(expert_dir)
             head_display = f"[commit]{head_commit[:12]}[/commit]" if head_commit else "[dim]none[/dim]"
 
             # Version count
-            version_count = _count_versions(expert_dir)
+            version_count = count_versions(expert_dir)
             versions = str(version_count) if version_count > 0 else "[dim]0[/dim]"
 
             # Remote URL (check both repos)
             remote = ""
             repos_dict = private_repos if is_private else repos
             if name in repos_dict:
-                url = repos_dict[name].get("remote", "")
-                ref = repos_dict[name].get("ref_name", "")
+                url = repos_dict[name].remote
+                ref = repos_dict[name].ref_name
                 remote = url
                 if ref:
                     remote += f" @ {ref}"
@@ -398,22 +401,22 @@ def show_expert(
     name: str = typer.Argument(..., help="Expert name", autocompletion=_complete_expert),
 ) -> None:
     """Show detailed information about an expert."""
-    experts = _expert_names()
+    experts = expert_names()
     if name not in experts:
         console.print(f"[error]Error: expert '{name}' not found[/error]")
         raise typer.Exit(1)
 
-    config = _load_config()
-    repos = _load_repos()
-    private_repos = _load_private_repos()
-    teams = _load_teams()
+    config = load_config()
+    repos = load_repos()
+    private_repos = load_private_repos()
+    teams = load_teams()
 
-    is_private = _is_private_expert(name)
+    is_private = is_private_expert(name)
 
     # Status
-    if name in config["enabled"]:
+    if name in config.enabled:
         status_str = "[success]enabled[/success]"
-    elif name in config["disabled"]:
+    elif name in config.disabled:
         status_str = "[warning]disabled[/warning]"
     else:
         status_str = "[error]unlisted[/error]"
@@ -422,21 +425,21 @@ def show_expert(
     visibility = "[warning]private[/warning]" if is_private else "[info]public[/info]"
 
     # HEAD commit and version count
-    expert_dir = _get_expert_dir(name)
-    head_commit = _get_head_commit(expert_dir)
+    expert_dir = get_expert_dir(name)
+    head_commit = get_head_commit(expert_dir)
     head_display = f"[commit]{head_commit}[/commit]" if head_commit else "[dim]none[/dim]"
-    version_count = _count_versions(expert_dir)
+    version_count = count_versions(expert_dir)
 
     # Remote URL
     repos_dict = private_repos if is_private else repos
     remote = ""
     ref_name = ""
     if name in repos_dict:
-        remote = repos_dict[name].get("remote", "")
-        ref_name = repos_dict[name].get("ref_name", "")
+        remote = repos_dict[name].remote
+        ref_name = repos_dict[name].ref_name
 
     # Teams containing this expert
-    expert_teams = [t for t, td in teams.items() if name in td.get("experts", [])]
+    expert_teams = [t for t, td in teams.items() if name in td.experts]
 
     # Agent file status
     agent_file = AGENTS_DIR / f"expert-{name}.md"
@@ -621,7 +624,7 @@ def add(
         # --- Success: move everything to final locations ---
 
         # Move repo to final location
-        _ensure_repos_link()
+        ensure_repos_link()
         final_repo = REPOS_DIR / name
         if final_repo.exists():
             shutil.rmtree(final_repo)
@@ -646,28 +649,29 @@ def add(
         console.print(f"  [success]✓[/success] HEAD → {commit[:12]}")
 
         # Update repos.json or private-repos.json
+        from hivemind_cli.models import RepoEntry
+
+        repo_entry = RepoEntry(remote=url, commit=commit, ref_name=ref_name)
         if private:
-            repos = _load_private_repos()
-            repos[name] = {"remote": url, "commit": commit, "ref_name": ref_name}
-            _save_private_repos(repos)
+            repos = load_private_repos()
+            repos[name] = repo_entry
+            save_private_repos(repos)
             console.print("  [success]✓[/success] Added to hivemind.json (private)")
         else:
-            repos = _load_repos()
-            repos[name] = {"remote": url, "commit": commit, "ref_name": ref_name}
-            _save_repos(repos)
+            repos = load_repos()
+            repos[name] = repo_entry
+            save_repos(repos)
             console.print("  [success]✓[/success] Added to hivemind.json")
 
         # Enable in config and mark as private if needed
-        config = _load_config()
-        if name not in config["enabled"]:
-            config["enabled"].append(name)
-        if name in config["disabled"]:
-            config["disabled"].remove(name)
-        if private:
-            config.setdefault("private", [])
-            if name not in config["private"]:
-                config["private"].append(name)
-        _save_config(config)
+        config = load_config()
+        if name not in config.enabled:
+            config.enabled.append(name)
+        if name in config.disabled:
+            config.disabled.remove(name)
+        if private and name not in config.private:
+            config.private.append(name)
+        save_config(config)
         console.print("  [success]✓[/success] Enabled in config.json")
 
         # Deploy agent and expert
@@ -698,18 +702,18 @@ def enable(
     name: str = typer.Argument(help="Expert name to enable", autocompletion=_complete_expert),
 ) -> None:
     """Enable an expert (clones repo if needed, creates agent symlink)."""
-    config = _load_config()
+    config = load_config()
     result = core_enable_expert(name, config=config)
 
-    if not result["success"]:
-        console.print(f"[error]Error: {escape(str(result['error']))}[/error]")
+    if not result.success:
+        console.print(f"[error]Error: {escape(str(result.error))}[/error]")
         raise typer.Exit(1)
 
-    repos = _load_repos()
+    repos = load_repos()
     _clone_repo_cli(name, repos)
     _deploy_agent_cli(name)
 
-    if result["already_enabled"]:
+    if result.already_enabled:
         console.print(f"[success]✓[/success] {name}: already enabled, ensured repo and agent link")
     else:
         console.print(f"[success]✓[/success] Enabled: {name}")
@@ -720,16 +724,16 @@ def disable(
     name: str = typer.Argument(help="Expert name to disable", autocompletion=_complete_expert),
 ) -> None:
     """Disable an expert (removes agent symlink)."""
-    config = _load_config()
+    config = load_config()
     result = core_disable_expert(name, config=config)
 
-    if not result["success"]:
-        console.print(f"[error]Error: {escape(str(result['error']))}[/error]")
+    if not result.success:
+        console.print(f"[error]Error: {escape(str(result.error))}[/error]")
         raise typer.Exit(1)
 
     _undeploy_agent_cli(name)
 
-    if result["already_disabled"]:
+    if result.already_disabled:
         console.print(f"[warning]✓[/warning] {name}: already disabled, ensured agent link removed")
     else:
         console.print(f"[warning]✓[/warning] Disabled: {name}")
@@ -747,11 +751,11 @@ def delete(
             console.print("[dim]Cancelled.[/dim]")
             raise typer.Exit(0)
 
-    config = _load_config()
+    config = load_config()
     result = core_delete_expert_fn(name, config=config)
 
-    if not result["success"]:
-        console.print(f"[error]Error: {escape(str(result['error']))}[/error]")
+    if not result.success:
+        console.print(f"[error]Error: {escape(str(result.error))}[/error]")
         raise typer.Exit(1)
 
     console.print(f"[error]✗[/error] Deleted: {name}")
@@ -771,8 +775,8 @@ def update(
     ),
 ) -> None:
     """Fetch latest commits and re-analyze with AI."""
-    config = _load_config()
-    repos = _load_repos()
+    config = load_config()
+    repos = load_repos()
 
     if name:
         names = [name]
@@ -780,7 +784,7 @@ def update(
             console.print(f"[error]Error: '{name}' not found in hivemind.json repos[/error]")
             raise typer.Exit(1)
     else:
-        names = config["enabled"]
+        names = config.enabled
 
     if not names:
         console.print("No experts to update.")
@@ -793,7 +797,7 @@ def update(
         console.print(f"\n[heading]Updating {expert_name}...[/heading]")
 
         # Define progress callback for CLI
-        def on_progress(info: ProgressInfo):
+        def on_progress(info: ProgressInfo) -> None:
             if info.phase == UpdatePhase.ANALYZING:
                 console.print(f"  [info]→[/info] {info.message}")
             elif info.phase not in [UpdatePhase.CLONING, UpdatePhase.FETCHING]:
@@ -801,13 +805,13 @@ def update(
 
         result = update_expert(expert_name, on_progress=on_progress, skip_analysis=skip_analysis)
 
-        if not result["success"]:
-            console.print(f"  [error]✗[/error] {escape(str(result['error']))}")
-        elif result.get("already_up_to_date"):
-            console.print(f"  [success]✓[/success] Already up to date ({result['new_commit'][:12]})")
+        if not result.success:
+            console.print(f"  [error]✗[/error] {escape(str(result.error))}")
+        elif result.already_up_to_date:
+            console.print(f"  [success]✓[/success] Already up to date ({result.new_commit[:12]})")
         else:
-            old_display = result["old_commit"][:12] if result["old_commit"] else "none"
-            console.print(f"  [success]✓[/success] Updated from {old_display} to {result['new_commit'][:12]}")
+            old_display = result.old_commit[:12] if result.old_commit else "none"
+            console.print(f"  [success]✓[/success] Updated from {old_display} to {result.new_commit[:12]}")
             experts_to_update.append(expert_name)
 
     # Regenerate librarian if any experts were updated
@@ -828,7 +832,7 @@ def query(
         console.print("[error]Error: librarian.md not found. Run [bold]hivemind init[/bold] first.[/error]")
         raise typer.Exit(1)
 
-    provider = _get_provider()
+    provider = get_active_provider()
     system_prompt = librarian.read_text()
     cmd = provider.build_query_command()
 
@@ -858,10 +862,10 @@ def provider_list() -> None:
     """List available providers and their status."""
     from hivemind_cli.providers import PROVIDER_CLASSES
 
-    config = _load_config()
-    hivemind = _load_hivemind()
-    active = config.get("active_provider", "")
-    providers = hivemind.get("providers", {})
+    config = load_config()
+    hivemind = load_hivemind()
+    active = config.active_provider
+    providers = hivemind.providers
 
     table = Table(title="Providers", show_header=True, header_style="bold", box=box.ROUNDED)
     table.add_column("Name", style="bold")
@@ -871,19 +875,21 @@ def provider_list() -> None:
     table.add_column("Model")
 
     for name in sorted(PROVIDER_CLASSES):
-        prov_config = providers.get(name, {})
+        from hivemind_cli.models import ProviderConfig
+
+        prov_config = providers.get(name, ProviderConfig())
         is_active = name == active
 
         if is_active:
             status_str = "[success]active[/success]"
-        elif prov_config:
+        elif prov_config.engine:
             status_str = "[info]configured[/info]"
         else:
             status_str = "[dim]not configured[/dim]"
 
-        engine = prov_config.get("engine", "[dim]not configured[/dim]")
-        home_dir = prov_config.get("home_dir", "[dim]not configured[/dim]")
-        model = prov_config.get("settings", {}).get("model", "[dim]default[/dim]")
+        engine = prov_config.engine or "[dim]not configured[/dim]"
+        home_dir = prov_config.home_dir or "[dim]not configured[/dim]"
+        model = prov_config.settings.model or "[dim]default[/dim]"
 
         table.add_row(name, status_str, engine, home_dir, model)
 
@@ -895,11 +901,11 @@ def provider_switch(
     name: str = typer.Argument(help="Provider name to switch to", autocompletion=_complete_provider),
 ) -> None:
     """Switch active provider (regenerates all agent files)."""
-    config = _load_config()
+    config = load_config()
     result = switch_provider(name, config=config)
 
-    if not result["success"]:
-        console.print(f"[error]Error: {escape(str(result['error']))}[/error]")
+    if not result.success:
+        console.print(f"[error]Error: {escape(str(result.error))}[/error]")
         raise typer.Exit(1)
 
     console.print(f"[success]Switched to provider: [heading]{name}[/heading][/success]")
@@ -915,11 +921,11 @@ def provider_show(
     ),
 ) -> None:
     """Show detailed configuration for a provider."""
-    config = _load_config()
-    hivemind = _load_hivemind()
-    active = config.get("active_provider", "")
+    config = load_config()
+    hivemind = load_hivemind()
+    active = config.active_provider
     target = name or active
-    providers = hivemind.get("providers", {})
+    providers = hivemind.providers
 
     if target not in providers:
         console.print(f"[error]Error: provider '{target}' not found in config[/error]")
@@ -931,14 +937,14 @@ def provider_show(
     lines: list[str] = []
     lines.append(f"[heading]Provider: {target}[/heading]")
     lines.append(f"Active: {'[success]yes[/success]' if is_active else '[dim]no[/dim]'}")
-    lines.append(f"Engine: {escape(str(prov_config.get('engine', 'not set')))}")
-    lines.append(f"Home directory: {escape(str(prov_config.get('home_dir', 'not set')))}")
+    lines.append(f"Engine: {escape(prov_config.engine or 'not set')}")
+    lines.append(f"Home directory: {escape(prov_config.home_dir or 'not set')}")
 
-    settings = prov_config.get("settings", {})
-    if settings:
+    settings_dict = prov_config.settings.model_dump(exclude_defaults=True)
+    if settings_dict:
         lines.append("")
         lines.append("[heading]Settings:[/heading]")
-        for key, value in sorted(settings.items()):
+        for key, value in sorted(settings_dict.items()):
             if isinstance(value, list):
                 lines.append(f"  {escape(str(key))}: {', '.join(escape(str(v)) for v in value)}")
             elif isinstance(value, dict):
@@ -963,13 +969,13 @@ app.add_typer(team_app, name="team")
 
 def _complete_team(incomplete: str) -> list[str]:
     """Shell completion for team names."""
-    return [n for n in _load_teams() if n.startswith(incomplete)]
+    return [n for n in load_teams() if n.startswith(incomplete)]
 
 
 @team_app.command(name="list")
 def team_list() -> None:
     """List all teams with their roster info."""
-    teams = _load_teams()
+    teams = load_teams()
 
     if not teams:
         console.print("No teams configured. Use [heading]hivemind team create <name>[/heading] to create one.")
@@ -982,9 +988,9 @@ def team_list() -> None:
     table.add_column("Size")
 
     for name, data in sorted(teams.items()):
-        experts = data.get("experts", [])
+        experts = data.experts
         roster_str = ", ".join(experts) if experts else "[dim]empty[/dim]"
-        table.add_row(name, data.get("description", ""), roster_str, str(len(experts)))
+        table.add_row(name, data.description, roster_str, str(len(experts)))
 
     console.print(table)
 
@@ -1005,8 +1011,8 @@ def team_create(
     with console.status("[heading]Generating team lead agent...[/heading]", spinner="dots"):
         result = core_create_team(name, description, expert_list)
 
-    if not result["success"]:
-        console.print(f"[error]Error: {escape(str(result['error']))}[/error]")
+    if not result.success:
+        console.print(f"[error]Error: {escape(str(result.error))}[/error]")
         raise typer.Exit(1)
 
     console.print(f"  [success]✓[/success] Team lead deployed: team-lead-{name}")
@@ -1019,7 +1025,7 @@ def team_show(
     name: str = typer.Argument(help="Team name", autocompletion=_complete_team),
 ) -> None:
     """Show team details and roster."""
-    teams = _load_teams()
+    teams = load_teams()
     if name not in teams:
         console.print(f"[error]Error: team '{name}' not found[/error]")
         raise typer.Exit(1)
@@ -1027,8 +1033,8 @@ def team_show(
     team = teams[name]
     lines: list[str] = []
     lines.append(f"[heading]Team: {escape(name)}[/heading]")
-    lines.append(f"Description: {escape(team.get('description', ''))}")
-    experts = team.get("experts", [])
+    lines.append(f"Description: {escape(team.description)}")
+    experts = team.experts
     lines.append(f"\n[heading]Roster ({len(experts)}):[/heading]")
     lines.extend(f"  - {expert}" for expert in experts)
 
@@ -1057,8 +1063,8 @@ def team_add_expert(
             spinner="dots",
         ):
             result = core_add_expert_to_team(team, experts[0])
-        if not result["success"]:
-            console.print(f"[error]Error: {escape(str(result['error']))}[/error]")
+        if not result.success:
+            console.print(f"[error]Error: {escape(str(result.error))}[/error]")
             raise typer.Exit(1)
         console.print(f"[success]✓[/success] Added {experts[0]} to team {team}")
         return
@@ -1071,16 +1077,16 @@ def team_add_expert(
 
         result = core_add_experts_to_team(team, experts, on_progress=_on_progress)
 
-    if not result["success"]:
-        console.print(f"[error]Error: {escape(str(result['error']))}[/error]")
+    if not result.success:
+        console.print(f"[error]Error: {escape(str(result.error))}[/error]")
         raise typer.Exit(1)
 
-    for name in result["added"]:
+    for name in result.added:
         console.print(f"[success]✓[/success] Added {name} to team {team}")
-    for name in result["skipped"]:
+    for name in result.skipped:
         console.print(f"[dim]⊘ Skipped {name} (already on team)[/dim]")
-    for entry in result["failed"]:
-        console.print(f"[error]✗ Failed {entry['name']}: {escape(str(entry['error']))}[/error]")
+    for entry in result.failed:
+        console.print(f"[error]✗ Failed {entry.name}: {escape(entry.error)}[/error]")
 
 
 @team_app.command(name="remove-expert")
@@ -1090,8 +1096,8 @@ def team_remove_expert(
 ) -> None:
     """Remove an expert from a team's roster."""
     result = core_remove_expert_from_team(team, expert)
-    if not result["success"]:
-        console.print(f"[error]Error: {escape(str(result['error']))}[/error]")
+    if not result.success:
+        console.print(f"[error]Error: {escape(str(result.error))}[/error]")
         raise typer.Exit(1)
     console.print(f"[success]✓[/success] Removed {expert} from team {team}")
 
@@ -1106,8 +1112,8 @@ def team_delete(
         raise typer.Exit(0)
 
     result = core_delete_team(name)
-    if not result["success"]:
-        console.print(f"[error]Error: {escape(str(result['error']))}[/error]")
+    if not result.success:
+        console.print(f"[error]Error: {escape(str(result.error))}[/error]")
         raise typer.Exit(1)
     console.print(f"[success]✓[/success] Team '{name}' deleted")
 
@@ -1122,20 +1128,20 @@ def redeploy() -> None:
     Use after changing provider settings in hivemind.json
     (model, tools, temperature) or after switching providers.
     """
-    provider = _get_provider()
+    provider = get_active_provider()
     console.print(f"[heading]Redeploying all agents (provider: {provider.name})...[/heading]\n")
 
-    config = _load_config()
+    config = load_config()
     result = redeploy_all_agents(config=config)
 
-    if not result["success"]:
-        console.print(f"[error]Error: {escape(str(result['error']))}[/error]")
+    if not result.success:
+        console.print(f"[error]Error: {escape(str(result.error))}[/error]")
         raise typer.Exit(1)
 
-    deployed = result.get("deployed", [])
-    failed = result.get("failed", [])
-    experts_deployed = result.get("experts_deployed", [])
-    teams_deployed = result.get("teams_deployed", [])
+    deployed = [n for n in config.enabled if n not in result.failed]
+    failed = result.failed
+    experts_deployed = result.experts_deployed
+    teams_deployed = result.teams_deployed
 
     for name in deployed:
         console.print(f"  [success]✓[/success] {name}: redeployed")
@@ -1170,11 +1176,11 @@ def crawl(
     before the crawl begins.
     """
     # Validate that the agent exists
-    expert_dir = _get_expert_dir(agent)
+    expert_dir = get_expert_dir(agent)
     if not expert_dir.is_dir():
         console.print(f"[error]Error: Expert '{agent}' not found.[/error]")
         console.print("\n[info]Available experts:[/info]")
-        experts = sorted(_expert_names())
+        experts = sorted(expert_names())
         if experts:
             for expert in experts:
                 console.print(f"  - {expert}")
@@ -1335,16 +1341,16 @@ def crawl(
 @app.command()
 def status() -> None:
     """Show a dashboard of hivemind status."""
-    provider = _get_provider()
-    config = _load_config()
+    provider = get_active_provider()
+    config = load_config()
 
     # --- Overview panel ---
     overview_lines: list[str] = []
     overview_lines.append(f"Provider: [heading]{provider.name}[/heading]")
 
-    enabled = config.get("enabled", [])
-    disabled = config.get("disabled", [])
-    teams = _load_teams()
+    enabled = config.enabled
+    disabled = config.disabled
+    teams = load_teams()
     overview_lines.append(
         f"Experts: [success]{len(enabled)} enabled[/success]"
         + (f", [warning]{len(disabled)} disabled[/warning]" if disabled else ""),
@@ -1354,7 +1360,7 @@ def status() -> None:
     console.print(Panel("\n".join(overview_lines), title="Hivemind", border_style="blue"))
 
     # --- Experts table (enabled + disabled only, skip unlisted) ---
-    listed_experts = [name for name in _expert_names() if name in enabled or name in disabled]
+    listed_experts = [name for name in expert_names() if name in enabled or name in disabled]
 
     if listed_experts:
         table = Table(title="Experts", show_header=True, header_style="bold", box=box.ROUNDED)
@@ -1364,19 +1370,15 @@ def status() -> None:
         table.add_column("Teams")
 
         for name in listed_experts:
-            # Status
-            if name in enabled:
-                status_str = "[success]enabled[/success]"
-            else:
-                status_str = "[warning]disabled[/warning]"
+            status_str = "[success]enabled[/success]" if name in enabled else "[warning]disabled[/warning]"
 
             # HEAD
-            expert_dir = _get_expert_dir(name)
-            head_commit = _get_head_commit(expert_dir)
+            expert_dir = get_expert_dir(name)
+            head_commit = get_head_commit(expert_dir)
             head_display = f"[commit]{head_commit[:12]}[/commit]" if head_commit else "[dim]none[/dim]"
 
             # Teams this expert belongs to
-            expert_teams = [t for t, td in teams.items() if name in td.get("experts", [])]
+            expert_teams = [t for t, td in teams.items() if name in td.experts]
             teams_display = ", ".join(expert_teams) if expert_teams else "[dim]-[/dim]"
 
             table.add_row(name, status_str, head_display, teams_display)
@@ -1390,7 +1392,7 @@ def status() -> None:
         table.add_column("Roster")
 
         for name, data in sorted(teams.items()):
-            experts_list = data.get("experts", [])
+            experts_list = data.experts
             roster_str = ", ".join(experts_list) if experts_list else "[dim]empty[/dim]"
 
             table.add_row(name, roster_str)

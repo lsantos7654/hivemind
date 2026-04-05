@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
-from textual.binding import Binding
+from textual.binding import Binding, BindingType
 from textual.screen import ModalScreen
 
 from hivemind_cli.tui.widgets.button_nav_mixin import ButtonNavigationMixin
@@ -21,7 +21,7 @@ class FormModal(ButtonNavigationMixin, ModalScreen):
     to validate and dismiss with data.
     """
 
-    BINDINGS = [
+    BINDINGS: ClassVar[list[BindingType]] = [
         Binding("escape", "dismiss_modal"),
         Binding("ctrl+o", "dismiss_modal"),
         Binding("ctrl+s", "submit_form", description="Confirm"),

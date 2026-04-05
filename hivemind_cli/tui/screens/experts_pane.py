@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import contextlib
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
-from textual.binding import Binding
+from textual.binding import Binding, BindingType
 from textual.widgets import DataTable, Static
 
-from hivemind_cli.tui.models import ExpertRow, ExpertStatus, OperationStatus
+from hivemind_cli.tui.models import ExpertRow, ExpertStatus, OperationStatus, WorkerInfo
 from hivemind_cli.tui.operations import (
     disable_expert_async_op,
     enable_expert_async_op,
@@ -20,11 +20,13 @@ from hivemind_cli.tui.widgets.base_pane import BasePane
 if TYPE_CHECKING:
     from textual.app import ComposeResult
 
+    from hivemind_cli.models import CancellationToken
+
 
 class ExpertsPane(BasePane):
     """Expert list pane for the tabbed layout."""
 
-    BINDINGS = [
+    BINDINGS: ClassVar[list[BindingType]] = [
         *BasePane.BINDINGS,
         Binding("space", "toggle_select", "Select", show=True),
         Binding("e", "enable", "Enable", show=True),
@@ -39,7 +41,7 @@ class ExpertsPane(BasePane):
     def __init__(self, experts: list[ExpertRow], **kwargs):
         super().__init__(**kwargs)
         self.experts = experts
-        self._active_workers: dict[str, dict] = {}
+        self._active_workers: dict[str, WorkerInfo] = {}
 
     def _get_table_id(self) -> str:
         return "expert-table"
@@ -75,17 +77,17 @@ class ExpertsPane(BasePane):
 
     # --- Worker management ---
 
-    def register_worker(self, expert_name: str, token) -> None:
-        self._active_workers[expert_name] = {"token": token, "pid": None}
+    def register_worker(self, expert_name: str, token: CancellationToken) -> None:
+        self._active_workers[expert_name] = WorkerInfo(token=token)
 
     def register_subprocess_pid(self, expert_name: str, pid: int) -> None:
         if expert_name in self._active_workers:
-            self._active_workers[expert_name]["pid"] = pid
+            self._active_workers[expert_name].pid = pid
 
     def unregister_worker(self, expert_name: str) -> None:
         self._active_workers.pop(expert_name, None)
 
-    def get_worker_info(self, expert_name: str) -> dict | None:
+    def get_worker_info(self, expert_name: str) -> WorkerInfo | None:
         return self._active_workers.get(expert_name)
 
     def set_expert_operation_status(self, expert_name: str, status: OperationStatus | None) -> None:
@@ -252,12 +254,12 @@ class ExpertsPane(BasePane):
 
         self.set_expert_operation_status(current.name, OperationStatus.CANCELLING)
         self.set_expert_status_message(current.name, "Cancelling...")
-        worker_info["token"].cancel()
+        worker_info.token.cancel()
 
-        if worker_info["pid"]:
+        if worker_info.pid:
             try:
-                os.kill(worker_info["pid"], signal.SIGTERM)
-                self.set_timer(5.0, lambda: self._force_kill_if_alive(worker_info["pid"]))
+                os.kill(worker_info.pid, signal.SIGTERM)
+                self.set_timer(5.0, lambda: self._force_kill_if_alive(worker_info.pid))
             except ProcessLookupError:
                 pass
 

@@ -4,6 +4,18 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from hivemind_cli.models import CancellationToken
+
+
+class WorkerInfo:
+    """Tracks an active worker's cancellation token and subprocess PID."""
+
+    def __init__(self, token: CancellationToken, pid: int | None = None) -> None:
+        self.token = token
+        self.pid = pid
 
 
 class ExpertStatus(str, Enum):

@@ -16,6 +16,10 @@ import shutil
 from abc import ABC, abstractmethod
 from pathlib import Path
 
+from hivemind_cli.models import InitResult, ProviderConfig, ProviderSettings, SymlinkCheck
+
+ToolsConfig = list[str] | dict[str, bool]
+
 # --- Helpers ---
 
 
@@ -100,17 +104,17 @@ def replace_expert_paths(body: str, *, old_base: str, new_base: str) -> str:
 class Provider(ABC):
     """Abstract base for AI coding platform providers."""
 
-    def __init__(self, config: dict, *, providers_dir: Path | None = None):
+    def __init__(self, config: ProviderConfig, *, providers_dir: Path | None = None):
         """Initialize provider from its config section.
 
         Args:
-            config: Provider config dict with keys: engine, home_dir, settings
+            config: Provider configuration model
             providers_dir: Path to the providers directory (for context append lookups)
         """
-        self._config: dict = config
-        self._home_dir = Path(config.get("home_dir", "")).expanduser()
-        self._engine: str = config.get("engine", "")
-        self._settings: dict = config.get("settings", {})
+        self._config: ProviderConfig = config
+        self._home_dir = Path(config.home_dir).expanduser() if config.home_dir else Path()
+        self._engine: str = config.engine
+        self._settings: ProviderSettings = config.settings
         self._providers_dir: Path | None = providers_dir
 
     @property
@@ -137,14 +141,14 @@ class Provider(ABC):
         return self._engine
 
     @property
-    def settings(self) -> dict:
+    def settings(self) -> ProviderSettings:
         """Provider-specific settings (model, tools, temperature, etc.)."""
         return self._settings
 
     @property
-    def permissions(self) -> dict | None:
+    def permissions(self) -> dict[str, object] | None:
         """Provider permissions config (e.g. for settings.json generation)."""
-        return self._config.get("permissions")
+        return self._config.permissions
 
     @property
     def experts_base_path(self) -> str:
@@ -231,7 +235,7 @@ class Provider(ABC):
             Complete agent.md content with provider frontmatter + transformed body
         """
 
-    def _lead_extra_tools(self) -> dict | list:
+    def _lead_extra_tools(self) -> ToolsConfig:
         """Extra tools to add for lead agents. Override in subclasses."""
         return []
 
@@ -268,7 +272,7 @@ class Provider(ABC):
         description: str,
         body: str,
         *,
-        extra_tools: dict | list | None = None,
+        extra_tools: ToolsConfig | None = None,
         extra_permissions: list[str] | None = None,
     ) -> str:
         """Internal formatting — override in subclasses."""
@@ -279,12 +283,12 @@ class Provider(ABC):
         "before delegating to specialists."
     )
 
-    def _get_librarian_tools(self) -> dict | list:
+    def _get_librarian_tools(self) -> ToolsConfig:
         """Return the tool set for the librarian agent. Override in subclasses."""
         return []
 
     @abstractmethod
-    def _format_librarian_md_internal(self, tools: dict | list, description: str, body: str) -> str:
+    def _format_librarian_md_internal(self, tools: ToolsConfig, description: str, body: str) -> str:
         """Format librarian frontmatter — provider-specific. Override in subclasses."""
 
     def format_librarian_md(self, body: str) -> str:
@@ -340,10 +344,9 @@ class Provider(ABC):
 
     def _transform_body(self, body: str) -> str:
         """Apply standard path replacements to agent body."""
-        transformed = replace_expert_paths(body, old_base="{EXPERTS_DIR}", new_base=self.experts_base_path)
-        transformed = transformed.replace("{HIVEMIND_DIR}", self.hivemind_base_path)
-        transformed = transformed.replace("{CACHE_DIR}", self.cache_base_path)
-        return transformed
+        body = replace_expert_paths(body, old_base="{EXPERTS_DIR}", new_base=self.experts_base_path)
+        body = body.replace("{HIVEMIND_DIR}", self.hivemind_base_path)
+        return body.replace("{CACHE_DIR}", self.cache_base_path)
 
     def deploy_expert(self, name: str, source_dir: Path) -> None:
         """Create symlink in provider's experts directory."""
@@ -379,15 +382,15 @@ class Provider(ABC):
         commands_dir: Path,
         rules_source: Path,
         teams_dir: Path | None = None,
-        permissions: dict | None = None,
-    ) -> list[tuple[str, str]]:
+        permissions: dict[str, object] | None = None,
+    ) -> list[InitResult]:
         """Initialize provider directory structure and deploy symlinks.
 
         Shared logic for all providers: agents/, commands/, rules file,
         experts/ directory, and hivemind/teams/ symlinks.
         Provider-specific steps go in _post_init_dirs().
         """
-        results: list[tuple[str, str]] = []
+        results: list[InitResult] = []
 
         self._home_dir.mkdir(parents=True, exist_ok=True)
 
@@ -405,7 +408,7 @@ class Provider(ABC):
         # experts/ directory (real dir, not symlink)
         experts_dir = self._home_dir / "experts"
         experts_dir.mkdir(parents=True, exist_ok=True)
-        results.append(("experts/", "directory ready"))
+        results.append(InitResult(label="experts/", status="directory ready"))
 
         # teams/ under hivemind/ subdirectory
         # (avoids conflicts with provider-owned directories)
@@ -420,7 +423,7 @@ class Provider(ABC):
 
         return results
 
-    def _post_init_dirs(self, *, permissions: dict | None = None) -> list[tuple[str, str]]:
+    def _post_init_dirs(self, *, permissions: dict[str, object] | None = None) -> list[InitResult]:
         """Provider-specific init steps. Override in subclasses."""
         return []
 
@@ -431,28 +434,38 @@ class Provider(ABC):
         commands_dir: Path,
         rules_source: Path,
         teams_dir: Path | None = None,
-    ) -> list[tuple[str, Path, Path]]:
+    ) -> list[SymlinkCheck]:
         """Return symlink checks for the status dashboard.
 
-        Each tuple is (display_name, expected_target, link_path).
+        Each entry contains display_name, expected_target, and link_path.
         Shared across all providers.
         """
         checks = [
-            (f"{self._home_dir}/agents/", agents_dir, self._home_dir / "agents"),
-            (
-                f"{self._home_dir}/commands/",
-                commands_dir,
-                self._home_dir / "commands",
+            SymlinkCheck(
+                display_name=f"{self._home_dir}/agents/",
+                expected_target=agents_dir,
+                link_path=self._home_dir / "agents",
             ),
-            (
-                f"{self._home_dir}/{self.rules_file_name}",
-                rules_source,
-                self._home_dir / self.rules_file_name,
+            SymlinkCheck(
+                display_name=f"{self._home_dir}/commands/",
+                expected_target=commands_dir,
+                link_path=self._home_dir / "commands",
+            ),
+            SymlinkCheck(
+                display_name=f"{self._home_dir}/{self.rules_file_name}",
+                expected_target=rules_source,
+                link_path=self._home_dir / self.rules_file_name,
             ),
         ]
         hivemind_subdir = self._home_dir / "hivemind"
         if teams_dir:
-            checks.append((f"{hivemind_subdir}/teams/", teams_dir, hivemind_subdir / "teams"))
+            checks.append(
+                SymlinkCheck(
+                    display_name=f"{hivemind_subdir}/teams/",
+                    expected_target=teams_dir,
+                    link_path=hivemind_subdir / "teams",
+                )
+            )
         return checks
 
 
@@ -470,7 +483,7 @@ class ClaudeProvider(Provider):
     def rules_file_name(self) -> str:
         return "CLAUDE.md"
 
-    def _lead_extra_tools(self) -> list:
+    def _lead_extra_tools(self) -> ToolsConfig:
         return ["Edit"]
 
     def _format_agent_md_internal(
@@ -479,16 +492,16 @@ class ClaudeProvider(Provider):
         description: str,
         body: str,
         *,
-        extra_tools: dict | list | None = None,
+        extra_tools: ToolsConfig | None = None,
         extra_permissions: list[str] | None = None,
     ) -> str:
         """Internal Claude Code agent formatting with custom name."""
-        tools = list(self._settings.get("tools", []))
+        tools = list(self._settings.tools)
         if isinstance(extra_tools, list):
             for t in extra_tools:
                 if t not in tools:
                     tools.append(t)
-        model = self._settings.get("model", "sonnet")
+        model = self._settings.model or "sonnet"
 
         tools_str = ", ".join(tools)
 
@@ -502,13 +515,13 @@ class ClaudeProvider(Provider):
         """Format agent.md with Claude Code YAML frontmatter."""
         return self._format_agent_md_internal(f"expert-{name}", description, body)
 
-    def _get_librarian_tools(self) -> list:
-        tools = self._settings.get("tools", [])
+    def _get_librarian_tools(self) -> ToolsConfig:
+        tools = self._settings.tools
         librarian_tools = [t for t in tools if t in ("Read", "Grep", "Glob")]
         return librarian_tools or ["Read", "Grep", "Glob"]
 
-    def _format_librarian_md_internal(self, tools: dict | list, description: str, body: str) -> str:
-        model = self._settings.get("model", "sonnet")
+    def _format_librarian_md_internal(self, tools: ToolsConfig, description: str, body: str) -> str:
+        model = self._settings.model or "sonnet"
         tools_str = ", ".join(tools) if isinstance(tools, list) else str(tools)
 
         frontmatter = f'---\nname: librarian\ndescription: "{description}"\ntools: {tools_str}\nmodel: {model}\n---\n\n'
@@ -526,7 +539,7 @@ class ClaudeProvider(Provider):
         cmd = shlex.split(self._engine)
 
         # Add tools — only include Write when the task needs file access
-        analysis_tools = list(self._settings.get("tools", []))
+        analysis_tools = list(self._settings.tools)
         if write and "Write" not in analysis_tools:
             analysis_tools.append("Write")
         if not write:
@@ -536,7 +549,7 @@ class ClaudeProvider(Provider):
         cmd.extend(["--allowedTools", ",".join(analysis_tools)])
 
         # Add model
-        model = self._settings.get("model", "sonnet")
+        model = self._settings.model or "sonnet"
         cmd.extend(["--model", model])
 
         # Add extra directories
@@ -548,14 +561,14 @@ class ClaudeProvider(Provider):
 
     def build_query_command(self) -> list[str]:
         """Build claude -p command for librarian queries."""
-        model = self._settings.get("model", "sonnet")
+        model = self._settings.model or "sonnet"
         return ["claude", "-p", "--model", model]
 
-    def _post_init_dirs(self, *, permissions: dict | None = None) -> list[tuple[str, str]]:
+    def _post_init_dirs(self, *, permissions: dict[str, object] | None = None) -> list[InitResult]:
         """Generate settings.json from permissions config."""
         import json as _json
 
-        results: list[tuple[str, str]] = []
+        results: list[InitResult] = []
 
         if permissions:
             settings_path = self._home_dir / "settings.json"
@@ -569,7 +582,7 @@ class ClaudeProvider(Provider):
                 },
             }
             settings_path.write_text(_json.dumps(settings_data, indent=2) + "\n")
-            results.append(("settings.json", "generated from hivemind.json"))
+            results.append(InitResult(label="settings.json", status="generated from hivemind.json"))
 
         return results
 
@@ -588,7 +601,7 @@ class OpenCodeProvider(Provider):
     def rules_file_name(self) -> str:
         return "AGENTS.md"
 
-    def _lead_extra_tools(self) -> dict:
+    def _lead_extra_tools(self) -> ToolsConfig:
         return {"edit": True}
 
     def _lead_extra_permissions(self) -> list[str]:
@@ -603,13 +616,13 @@ class OpenCodeProvider(Provider):
         description: str,
         body: str,
         *,
-        extra_tools: dict | list | None = None,
+        extra_tools: ToolsConfig | None = None,
         extra_permissions: list[str] | None = None,
     ) -> str:
         """Internal OpenCode agent formatting with custom name."""
-        model = self._settings.get("model", "anthropic/claude-sonnet-4-20250514")
-        temperature = self._settings.get("temperature", 0.1)
-        tools = dict(self._settings.get("tools", {}))
+        model = self._settings.model or "anthropic/claude-sonnet-4-20250514"
+        temperature = self._settings.temperature if self._settings.temperature is not None else 0.1
+        tools = dict(self._settings.tools) if isinstance(self._settings.tools, dict) else {}
         if isinstance(extra_tools, dict):
             tools.update(extra_tools)
 
@@ -646,12 +659,12 @@ class OpenCodeProvider(Provider):
         """Format agent.md with OpenCode YAML frontmatter."""
         return self._format_agent_md_internal(f"expert-{name}", description, body)
 
-    def _get_librarian_tools(self) -> dict:
+    def _get_librarian_tools(self) -> ToolsConfig:
         return {"read": True, "grep": True, "glob": True}
 
-    def _format_librarian_md_internal(self, tools: dict | list, description: str, body: str) -> str:
-        model = self._settings.get("model", "anthropic/claude-sonnet-4-20250514")
-        temperature = self._settings.get("temperature", 0.1)
+    def _format_librarian_md_internal(self, tools: ToolsConfig, description: str, body: str) -> str:
+        model = self._settings.model or "anthropic/claude-sonnet-4-20250514"
+        temperature = self._settings.temperature if self._settings.temperature is not None else 0.1
 
         lines = [
             "---",
@@ -680,7 +693,7 @@ class OpenCodeProvider(Provider):
         cmd = shlex.split(self._engine)
 
         # Add model
-        model = self._settings.get("model", "github-copilot/claude-sonnet-4")
+        model = self._settings.model or "github-copilot/claude-sonnet-4"
         cmd.extend(["--model", model])
 
         # Set working directory to common parent of extra dirs so opencode
@@ -698,15 +711,15 @@ class OpenCodeProvider(Provider):
     def build_query_command(self) -> list[str]:
         """Build opencode run command for librarian queries."""
         cmd = shlex.split(self._engine)
-        model = self._settings.get("model", "github-copilot/claude-sonnet-4")
+        model = self._settings.model or "github-copilot/claude-sonnet-4"
         cmd.extend(["--model", model])
         return cmd
 
-    def _post_init_dirs(self, *, permissions: dict | None = None) -> list[tuple[str, str]]:
+    def _post_init_dirs(self, *, permissions: dict[str, object] | None = None) -> list[InitResult]:
         """Generate/merge global permissions into opencode.json."""
         import json as _json
 
-        results: list[tuple[str, str]] = []
+        results: list[InitResult] = []
 
         cache_path = self.cache_base_path
         experts_path = self.experts_base_path
@@ -762,7 +775,7 @@ class OpenCodeProvider(Provider):
 
         existing["permission"] = existing_perms
         config_path.write_text(_json.dumps(existing, indent=2) + "\n")
-        results.append(("opencode.json", "permissions merged for hivemind paths"))
+        results.append(InitResult(label="opencode.json", status="permissions merged for hivemind paths"))
 
         return results
 
@@ -776,12 +789,12 @@ PROVIDER_CLASSES: dict[str, type[Provider]] = {
 }
 
 
-def get_provider(name: str, provider_config: dict, *, providers_dir: Path | None = None) -> Provider:
+def get_provider(name: str, provider_config: ProviderConfig, *, providers_dir: Path | None = None) -> Provider:
     """Create a provider instance by name.
 
     Args:
         name: Provider name (e.g. "claude", "opencode")
-        provider_config: Provider's config dict from config.json
+        provider_config: Provider configuration model
         providers_dir: Path to the providers directory (for context append lookups)
 
     Returns:
@@ -792,14 +805,15 @@ def get_provider(name: str, provider_config: dict, *, providers_dir: Path | None
     """
     cls = PROVIDER_CLASSES.get(name)
     if cls is None:
-        raise ValueError(f"Unknown provider '{name}'. Available: {', '.join(PROVIDER_CLASSES)}")
+        msg = f"Unknown provider '{name}'. Available: {', '.join(PROVIDER_CLASSES)}"
+        raise ValueError(msg)
     return cls(provider_config, providers_dir=providers_dir)
 
 
 # --- Internal Helpers ---
 
 
-def _setup_symlink(target: Path, link: Path, label: str) -> tuple[str, str]:
+def _setup_symlink(target: Path, link: Path, label: str) -> InitResult:
     """Create or update a symlink, returning status for display.
 
     Args:
@@ -808,19 +822,19 @@ def _setup_symlink(target: Path, link: Path, label: str) -> tuple[str, str]:
         label: Display label for status messages
 
     Returns:
-        (label, status_message) tuple
+        InitResult with label and status message
     """
     if link.is_symlink():
         current = link.resolve()
         if current == target.resolve():
-            return (label, "already correct")
+            return InitResult(label=label, status="already correct")
         link.unlink()
     elif link.is_dir():
         backup = link.with_name(link.name + ".bak")
         link.rename(backup)
-        return (label, f"backed up existing dir to {backup.name}/, created symlink")
+        return InitResult(label=label, status=f"backed up existing dir to {backup.name}/, created symlink")
     elif link.exists():
         link.unlink()
 
     link.symlink_to(target)
-    return (label, f"-> {target}")
+    return InitResult(label=label, status=f"-> {target}")

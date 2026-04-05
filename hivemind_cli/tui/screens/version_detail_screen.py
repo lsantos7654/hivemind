@@ -3,15 +3,16 @@
 from __future__ import annotations
 
 import contextlib
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
-from textual.binding import Binding
+from textual.binding import Binding, BindingType
 from textual.containers import Container
 from textual.css.query import NoMatches
 from textual.reactive import reactive
 from textual.widgets import Button, DataTable, Footer, Input, Static
 
-from hivemind_cli.core import EXPERTS_DIR, PRIVATE_EXPERTS_DIR, commit_exists_in_repo, get_git_versions
+from hivemind_cli.config import EXPERTS_DIR, PRIVATE_EXPERTS_DIR
+from hivemind_cli.experts import commit_exists_in_repo, get_git_versions
 from hivemind_cli.tui.screens.base_screen import BaseScreen
 from hivemind_cli.tui.widgets import SearchBar, VimDataTable
 
@@ -24,7 +25,7 @@ if TYPE_CHECKING:
 class VersionDetailScreen(BaseScreen):
     """Screen for viewing and switching expert versions."""
 
-    BINDINGS = [
+    BINDINGS: ClassVar[list[BindingType]] = [
         *BaseScreen.BINDINGS,
         Binding("slash", "focus_search", "Search", show=True),
         Binding("q", "quit_or_back", "Back", show=True),

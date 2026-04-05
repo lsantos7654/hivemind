@@ -3,15 +3,16 @@
 from __future__ import annotations
 
 import time
+from typing import ClassVar
 
-from textual.binding import Binding
+from textual.binding import Binding, BindingType
 from textual.widgets import DataTable, SelectionList
 
 
 class VimSelectionList(SelectionList):
     """SelectionList with vim-style navigation."""
 
-    BINDINGS = [
+    BINDINGS: ClassVar[list[BindingType]] = [
         Binding("j", "cursor_down", "Down", show=False),
         Binding("k", "cursor_up", "Up", show=False),
         Binding("g", "goto_top", "Top", show=False),
@@ -55,7 +56,7 @@ class VimSelectionList(SelectionList):
 class VimDataTable(DataTable):
     """DataTable subclass with vim-style key bindings."""
 
-    BINDINGS = [
+    BINDINGS: ClassVar[list[BindingType]] = [
         Binding("j,ctrl+n", "cursor_down", "Down", show=False),
         Binding("k,ctrl+p", "cursor_up", "Up", show=False),
         Binding("g", "goto_top", "Top", show=False),

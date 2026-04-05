@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
-from textual.binding import Binding
+from textual.binding import Binding, BindingType
 from textual.widgets import Footer, Static
 
-from hivemind_cli.core import _load_config
+from hivemind_cli.config import load_config
 from hivemind_cli.tui.screens.base_screen import BaseScreen
 from hivemind_cli.tui.widgets import SearchBar, VimDataTable
 from hivemind_cli.tui.widgets.search_mixin import SearchMixin
@@ -15,11 +15,13 @@ from hivemind_cli.tui.widgets.search_mixin import SearchMixin
 if TYPE_CHECKING:
     from textual.app import ComposeResult
 
+    from hivemind_cli.models import TeamData
+
 
 class TeamDetailScreen(SearchMixin, BaseScreen):
     """Screen showing a team's experts with add/remove actions."""
 
-    BINDINGS = [
+    BINDINGS: ClassVar[list[BindingType]] = [
         *BaseScreen.BINDINGS,
         *SearchMixin.SEARCH_BINDINGS,
         Binding("a", "add_expert", "Add Expert", show=True),
@@ -28,15 +30,15 @@ class TeamDetailScreen(SearchMixin, BaseScreen):
         Binding("q", "quit_or_back", "Back", show=True),
     ]
 
-    def __init__(self, team_name: str, team_data: dict, **kwargs):
+    def __init__(self, team_name: str, team_data: TeamData, **kwargs):
         super().__init__(**kwargs)
         self.team_name = team_name
         self.team_data = team_data
         self._init_search()
 
     def _format_header(self) -> str:
-        desc = self.team_data.get("description", "")
-        experts = self.team_data.get("experts", [])
+        desc = self.team_data.description
+        experts = self.team_data.experts
         count = len(experts)
         parts = [f"[bold]{self.team_name}[/bold]"]
         if desc:
@@ -55,7 +57,7 @@ class TeamDetailScreen(SearchMixin, BaseScreen):
         return self.query_one("#team-roster-table", VimDataTable)
 
     def _get_total_count(self) -> int:
-        return len(self.team_data.get("experts", []))
+        return len(self.team_data.experts)
 
     def _on_all_clear(self) -> None:
         self.app.pop_screen()
@@ -72,10 +74,10 @@ class TeamDetailScreen(SearchMixin, BaseScreen):
         table.clear()
         self._visible_names = []
 
-        config = _load_config()
-        enabled = set(config.get("enabled", []))
+        config = load_config()
+        enabled = set(config.enabled)
 
-        for expert_name in sorted(self.team_data.get("experts", [])):
+        for expert_name in sorted(self.team_data.experts):
             if self._filter_query and self._filter_query.lower() not in expert_name.lower():
                 continue
             status = "[green]enabled[/green]" if expert_name in enabled else "[dim]disabled[/dim]"
@@ -85,7 +87,7 @@ class TeamDetailScreen(SearchMixin, BaseScreen):
         if not self._visible_names:
             if self._filter_query:
                 table.add_row(f'[dim]No results for "{self._filter_query}"[/dim]', "")
-            elif not self.team_data.get("experts"):
+            elif not self.team_data.experts:
                 table.add_row("[dim]No experts[/dim]", "")
 
     def _reload(self) -> None:
@@ -97,10 +99,10 @@ class TeamDetailScreen(SearchMixin, BaseScreen):
         self.query_one("#team-header", Static).update(self._format_header())
 
     def action_edit_team(self) -> None:
-        from hivemind_cli.core import update_team
+        from hivemind_cli.teams import update_team
         from hivemind_cli.tui.widgets.edit_team_modal import EditTeamModal
 
-        current_desc = self.team_data.get("description", "")
+        current_desc = self.team_data.description
 
         def _handle_result(data: dict | None) -> None:
             if not data:
@@ -112,22 +114,22 @@ class TeamDetailScreen(SearchMixin, BaseScreen):
                 return
 
             result = update_team(self.team_name, new_name=new_name, description=new_desc)
-            if result["success"]:
+            if result.success:
                 if new_name:
                     self.team_name = new_name
                 self.notify(f"Updated team: {self.team_name}", severity="information")
                 self._reload()
             else:
-                self.notify(f"Failed: {result.get('error', 'Unknown')}", severity="error")
+                self.notify(f"Failed: {result.error or 'Unknown'}", severity="error")
 
         self.app.push_screen(EditTeamModal(self.team_name, current_desc), _handle_result)
 
     def action_add_expert(self) -> None:
-        from hivemind_cli.core import add_expert_to_team
+        from hivemind_cli.teams import add_expert_to_team
         from hivemind_cli.tui.widgets.selection_modal import SelectionListModal
 
         all_experts = [e.name for e in self.app.experts]
-        current = set(self.team_data.get("experts", []))
+        current = set(self.team_data.experts)
         available = [(n, n) for n in all_experts if n not in current]
 
         if not available:
@@ -139,16 +141,16 @@ class TeamDetailScreen(SearchMixin, BaseScreen):
                 return
             for expert_name in selected:
                 result = add_expert_to_team(self.team_name, expert_name)
-                if result["success"]:
+                if result.success:
                     self.notify(f"Added {expert_name}", severity="information")
                 else:
-                    self.notify(f"Failed: {result.get('error', 'Unknown')}", severity="error")
+                    self.notify(f"Failed: {result.error or 'Unknown'}", severity="error")
             self._reload()
 
         self.app.push_screen(SelectionListModal(available, title="Add Experts"), _handle_add)
 
     def action_remove_expert(self) -> None:
-        from hivemind_cli.core import remove_expert_from_team
+        from hivemind_cli.teams import remove_expert_from_team
         from hivemind_cli.tui.widgets import ConfirmationModal
 
         expert_name = self.get_current_name()
@@ -158,11 +160,11 @@ class TeamDetailScreen(SearchMixin, BaseScreen):
         def _do_remove(confirmed: bool) -> None:
             if confirmed:
                 result = remove_expert_from_team(self.team_name, expert_name)
-                if result["success"]:
+                if result.success:
                     self.notify(f"Removed {expert_name}", severity="information")
                     self._reload()
                 else:
-                    self.notify(f"Failed: {result.get('error', 'Unknown')}", severity="error")
+                    self.notify(f"Failed: {result.error or 'Unknown'}", severity="error")
 
         self.app.push_screen(
             ConfirmationModal(

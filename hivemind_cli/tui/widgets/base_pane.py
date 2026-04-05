@@ -2,16 +2,21 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING, ClassVar
+
 from textual.widget import Widget
 
 from hivemind_cli.tui.widgets.search_mixin import SearchMixin
 from hivemind_cli.tui.widgets.vim_data_table import VimDataTable
 
+if TYPE_CHECKING:
+    from textual.binding import BindingType
+
 
 class BasePane(SearchMixin, Widget, can_focus=False):
     """Base class for all tabbed panes with shared search/escape/filter behavior."""
 
-    BINDINGS = [*SearchMixin.SEARCH_BINDINGS]
+    BINDINGS: ClassVar[list[BindingType]] = [*SearchMixin.SEARCH_BINDINGS]
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)

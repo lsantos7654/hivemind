@@ -3,28 +3,32 @@
 from __future__ import annotations
 
 import contextlib
+from typing import TYPE_CHECKING, ClassVar
 
 from textual.app import App, ComposeResult
-from textual.binding import Binding
+from textual.binding import Binding, BindingType
 from textual.css.query import NoMatches
 from textual.widgets import ContentSwitcher, Footer, Static
 
-from hivemind_cli.core import (
+from hivemind_cli.config import (
     AGENTS_DIR,
-    _count_versions,
-    _expert_names,
-    _get_expert_dir,
-    _get_head_commit,
-    _is_private_expert,
-    _load_config,
-    _load_private_repos,
-    _load_repos,
+    count_versions,
+    expert_names,
+    get_expert_dir,
+    get_head_commit,
+    is_private_expert,
+    load_config,
+    load_private_repos,
+    load_repos,
 )
 from hivemind_cli.tui.models import ExpertRow, ExpertStatus
 from hivemind_cli.tui.screens.experts_pane import ExpertsPane
 from hivemind_cli.tui.screens.teams_screen import TeamsPane
 from hivemind_cli.tui.widgets import SearchBar
 from hivemind_cli.tui.widgets.vim_data_table import VimDataTable
+
+if TYPE_CHECKING:
+    from hivemind_cli.models import TeamData
 
 TAB_ORDER = ["pane-experts", "pane-teams"]
 TAB_NAMES = {"pane-experts": "Experts", "pane-teams": "Teams"}
@@ -35,10 +39,10 @@ class HivemindApp(App):
 
     CSS_PATH = "styles.tcss"
     TITLE = "Hivemind Expert Manager"
-    COMMANDS = set()
+    COMMANDS: ClassVar[set[type]] = set()
     COMMAND_PALETTE_BINDING = ""
 
-    BINDINGS = [
+    BINDINGS: ClassVar[list[BindingType]] = [
         Binding("h", "previous_tab", "Prev Tab", show=False),
         Binding("l", "next_tab", "Next Tab", show=False),
         Binding("tab", "next_tab", "Next Tab", show=False, priority=True),
@@ -142,33 +146,33 @@ class HivemindApp(App):
     # --- Data loading ---
 
     def load_experts(self) -> None:
-        config = _load_config()
-        repos = _load_repos()
-        private_repos = _load_private_repos()
-        expert_names = _expert_names()
+        config = load_config()
+        repos = load_repos()
+        private_repos = load_private_repos()
+        all_expert_names = expert_names()
 
         self.experts = []
 
-        for name in expert_names:
-            is_private = _is_private_expert(name)
-            if name in config["enabled"]:
+        for name in all_expert_names:
+            is_private = is_private_expert(name)
+            if name in config.enabled:
                 status = ExpertStatus.ENABLED
-            elif name in config["disabled"]:
+            elif name in config.disabled:
                 status = ExpertStatus.DISABLED
             else:
                 status = ExpertStatus.UNLISTED
 
-            expert_dir = _get_expert_dir(name)
-            commit = _get_head_commit(expert_dir)
-            version_count = _count_versions(expert_dir)
+            expert_dir = get_expert_dir(name)
+            commit = get_head_commit(expert_dir)
+            version_count = count_versions(expert_dir)
             has_agent = (AGENTS_DIR / f"expert-{name}.md").is_file()
 
             remote = ""
             ref_name = ""
             repos_dict = private_repos if is_private else repos
             if name in repos_dict:
-                remote = repos_dict[name].get("remote", "")
-                ref_name = repos_dict[name].get("ref_name", "")
+                remote = repos_dict[name].remote
+                ref_name = repos_dict[name].ref_name
 
             self.experts.append(
                 ExpertRow(
@@ -196,6 +200,6 @@ class HivemindApp(App):
         except (NoMatches, AttributeError):
             pass
 
-    def load_teams(self) -> dict:
-        config = _load_config()
-        return config.get("teams", {})
+    def load_teams(self) -> dict[str, TeamData]:
+        config = load_config()
+        return config.teams
