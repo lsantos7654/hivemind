@@ -1,11 +1,11 @@
-"""Tests for hivemind_cli.core — regression tests and filesystem operations."""
+"""Tests for hivemind.core — regression tests and filesystem operations."""
 
 from __future__ import annotations
 
 import json
 from typing import TYPE_CHECKING
 
-from hivemind_cli.config import get_head_commit, load_json, save_json
+from hivemind.config import get_head_commit, load_json, save_json
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -94,9 +94,9 @@ class TestStdoutStderrNotSwapped:
         """Verify the swapped stdout/stderr bug is fixed by checking source code."""
         import inspect
 
-        import hivemind_cli.core as core
+        import hivemind.analysis as analysis
 
-        source = inspect.getsource(core)
+        source = inspect.getsource(analysis)
         # The bug was: stdout=stderr_file.fileno(), stderr=stdout_file.fileno()
         # Fixed to: stdout=stdout_file.fileno(), stderr=stderr_file.fileno()
         assert "stdout=stderr_file.fileno()" not in source

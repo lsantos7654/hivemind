@@ -16,7 +16,7 @@ def core_paths(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
 
     Tests using this fixture never touch real project files.
     """
-    import hivemind_cli.core as core
+    import hivemind.core as core
 
     hivemind_root = tmp_path / "hivemind"
     hivemind_root.mkdir()

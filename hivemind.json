@@ -377,6 +377,10 @@
     "llm-scraper": {
       "remote": "https://github.com/mishushakov/llm-scraper",
       "commit": "6b277da033a32f4577468c4d9e92f0dc42b17cf9"
+    },
+    "cpython": {
+      "remote": "https://github.com/python/cpython.git",
+      "commit": "d6e044512c59ab7b83f14e00e7047756a31ac3e3"
     }
   }
 }

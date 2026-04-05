@@ -14,7 +14,7 @@ uv run hivemind init          # Set up provider directory structure
 
 No test suite exists. Verify changes by importing and running CLI commands:
 ```bash
-uv run python -c "from hivemind_cli.deployment import redeploy_all_agents; print('OK')"
+uv run python -c "from hivemind.deployment import redeploy_all_agents; print('OK')"
 uv run hivemind expert list
 uv run hivemind team list
 uv run hivemind redeploy
@@ -25,7 +25,7 @@ uv run pre-commit run --all-files
 
 Hivemind is a context management layer that feeds expert knowledge into any AI coding platform (Claude Code, OpenCode) via a provider abstraction.
 
-### Core modules (`hivemind_cli/`)
+### Core modules (`src/hivemind/`)
 
 - **`config.py`** — Path constants, config I/O (`load_config`, `save_config`, `load_hivemind`, etc.), filesystem helpers (`expert_names`, `get_expert_dir`, `get_head_commit`), provider cache (`get_active_provider`).
 - **`experts.py`** — Expert lifecycle: `enable_expert`, `disable_expert`, `delete_expert`, `update_expert`, `update_expert_async_internal`, `switch_version_async`, `switch_provider`.
@@ -36,10 +36,10 @@ Hivemind is a context management layer that feeds expert knowledge into any AI c
 - **`cli.py`** — Typer CLI with Rich output. Thin entrypoint over the modules above. Expert and team subcommand groups.
 - **`providers.py`** — Abstract `Provider` base class with `ClaudeProvider` and `OpenCodeProvider`. Handles frontmatter formatting, path transforms (`{EXPERTS_DIR}` → actual paths), `init_dirs()` symlink setup, analysis command building.
 - **`models.py`** — Pydantic models for config schemas (`AppConfig`, `HivemindConfig`, `ProviderConfig`) and operation results (`OperationResult`, `UpdateResult`, etc.).
-- **`templates.py`** — Jinja2 template rendering for agent/lead/hivemind content.
+- **`templates.py`** — Jinja2 template rendering for agent/lead/hivemind content. Uses `PackageLoader` to find templates inside the package.
 - **`crawler.py`** — Web documentation crawler for supplementing expert knowledge.
 
-### TUI (`hivemind_cli/tui/`)
+### TUI (`src/hivemind/tui/`)
 
 Textual-based TUI with tabbed layout (Experts, Teams). `app.py` is the main app with `HivemindApp`. Screens in `screens/`, reusable widgets in `widgets/`. `VimDataTable` provides vim-style navigation.
 
@@ -64,5 +64,7 @@ Textual-based TUI with tabbed layout (Experts, Teams). `app.py` is the main app 
 - Modern Python type hints (PEP 604): `str | None` not `Optional[str]`, `list[str]` not `List[str]`
 - Only import from `typing` for `Callable`, `Protocol`, etc.
 - No brittle meta-checks, no one-time migration commands in core CLI
+- No backwards-compat shims, re-export facades, or alias layers — update callers directly
+- Only editable installs supported (`uv tool install -e .`)
 - When editing experts, edit `experts/<name>/HEAD/agent.md` then `hivemind redeploy`
 - Templates in `templates.py` affect NEW agents only; existing agents deploy from their `lead.md` or `agent.md` files

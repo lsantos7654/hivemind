@@ -1,8 +1,8 @@
-"""Tests for hivemind_cli.providers — pure string function tests."""
+"""Tests for hivemind.providers — pure string function tests."""
 
 from __future__ import annotations
 
-from hivemind_cli.providers import extract_description, strip_frontmatter
+from hivemind.providers import extract_description, strip_frontmatter
 
 
 class TestExtractDescription:
