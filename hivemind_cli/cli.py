@@ -60,6 +60,9 @@ from hivemind_cli.core import (
     add_expert_to_team as core_add_expert_to_team,
 )
 from hivemind_cli.core import (
+    add_experts_to_team as core_add_experts_to_team,
+)
+from hivemind_cli.core import (
     create_team as core_create_team,
 )
 from hivemind_cli.core import (
@@ -1045,18 +1048,39 @@ def team_show(
 @team_app.command(name="add-expert")
 def team_add_expert(
     team: str = typer.Argument(help="Team name", autocompletion=_complete_team),
-    expert: str = typer.Argument(help="Expert name", autocompletion=_complete_expert),
+    experts: list[str] = typer.Argument(help="Expert name(s)", autocompletion=_complete_expert),  # noqa: B008
 ) -> None:
-    """Add an expert to a team's roster."""
-    with console.status(
-        f"[heading]Generating expert section for {expert}...[/heading]",
-        spinner="dots",
-    ):
-        result = core_add_expert_to_team(team, expert)
+    """Add one or more experts to a team's roster."""
+    if len(experts) == 1:
+        with console.status(
+            f"[heading]Generating expert section for {experts[0]}...[/heading]",
+            spinner="dots",
+        ):
+            result = core_add_expert_to_team(team, experts[0])
+        if not result["success"]:
+            console.print(f"[error]Error: {escape(str(result['error']))}[/error]")
+            raise typer.Exit(1)
+        console.print(f"[success]✓[/success] Added {experts[0]} to team {team}")
+        return
+
+    status = console.status("", spinner="dots")
+    with status:
+
+        def _on_progress(name: str) -> None:
+            status.update(f"[heading]Generating expert section for {name}...[/heading]")
+
+        result = core_add_experts_to_team(team, experts, on_progress=_on_progress)
+
     if not result["success"]:
         console.print(f"[error]Error: {escape(str(result['error']))}[/error]")
         raise typer.Exit(1)
-    console.print(f"[success]✓[/success] Added {expert} to team {team}")
+
+    for name in result["added"]:
+        console.print(f"[success]✓[/success] Added {name} to team {team}")
+    for name in result["skipped"]:
+        console.print(f"[dim]⊘ Skipped {name} (already on team)[/dim]")
+    for entry in result["failed"]:
+        console.print(f"[error]✗ Failed {entry['name']}: {escape(str(entry['error']))}[/error]")
 
 
 @team_app.command(name="remove-expert")

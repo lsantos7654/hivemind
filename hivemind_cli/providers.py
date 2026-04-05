@@ -100,16 +100,18 @@ def replace_expert_paths(body: str, *, old_base: str, new_base: str) -> str:
 class Provider(ABC):
     """Abstract base for AI coding platform providers."""
 
-    def __init__(self, config: dict):
+    def __init__(self, config: dict, *, providers_dir: Path | None = None):
         """Initialize provider from its config section.
 
         Args:
             config: Provider config dict with keys: engine, home_dir, settings
+            providers_dir: Path to the providers directory (for context append lookups)
         """
         self._config: dict = config
         self._home_dir = Path(config.get("home_dir", "")).expanduser()
         self._engine: str = config.get("engine", "")
         self._settings: dict = config.get("settings", {})
+        self._providers_dir: Path | None = providers_dir
 
     @property
     @abstractmethod
@@ -185,12 +187,13 @@ class Provider(ABC):
         Returns:
             Markdown text to append, or empty string
         """
-        from hivemind_cli.core import PROVIDERS_DIR
+        if self._providers_dir is None:
+            return ""
 
         parts: list[str] = []
 
         # Provider defaults
-        context_path = PROVIDERS_DIR / self.name / "context.json"
+        context_path = self._providers_dir / self.name / "context.json"
         if context_path.exists():
             try:
                 data = json.loads(context_path.read_text(encoding="utf-8"))
@@ -201,7 +204,7 @@ class Provider(ABC):
                 pass
 
         # User overrides (not committed)
-        overrides_path = PROVIDERS_DIR / self.name / "overrides.json"
+        overrides_path = self._providers_dir / self.name / "overrides.json"
         if overrides_path.exists():
             try:
                 data = json.loads(overrides_path.read_text(encoding="utf-8"))
@@ -228,12 +231,19 @@ class Provider(ABC):
             Complete agent.md content with provider frontmatter + transformed body
         """
 
+    def _lead_extra_tools(self) -> dict | list:
+        """Extra tools to add for lead agents. Override in subclasses."""
+        return []
+
+    def _lead_extra_permissions(self) -> list[str]:
+        """Extra permission path patterns for lead agents. Override in subclasses."""
+        return []
+
     def format_lead_md(self, agent_name: str, description: str, body: str) -> str:
         """Wrap lead agent body with provider-specific frontmatter.
 
-        Generic method for team leads and project leads. Uses the same
-        formatting as format_agent_md but with a custom agent name
-        (no 'expert-' prefix).
+        Generic method for team leads and project leads. Delegates to
+        _format_agent_md_internal with lead-specific extra tools and permissions.
 
         Args:
             agent_name: Full agent name (e.g. "team-lead-nix-infra", "project-lead-foo")
@@ -243,24 +253,47 @@ class Provider(ABC):
         Returns:
             Complete agent content with provider frontmatter + transformed body
         """
-        # Default implementation delegates to _format_agent_md_internal
-        # Subclasses can override if needed
-        return self._format_agent_md_internal(agent_name, description, body)
+        return self._format_agent_md_internal(
+            agent_name,
+            description,
+            body,
+            extra_tools=self._lead_extra_tools(),
+            extra_permissions=self._lead_extra_permissions(),
+        )
 
     @abstractmethod
-    def _format_agent_md_internal(self, agent_name: str, description: str, body: str) -> str:
+    def _format_agent_md_internal(
+        self,
+        agent_name: str,
+        description: str,
+        body: str,
+        *,
+        extra_tools: dict | list | None = None,
+        extra_permissions: list[str] | None = None,
+    ) -> str:
         """Internal formatting — override in subclasses."""
 
+    LIBRARIAN_DESCRIPTION: str = (
+        "Hivemind librarian -- knows every expert agent and their "
+        "capabilities. Ask the librarian to find the right expert for a question "
+        "before delegating to specialists."
+    )
+
+    def _get_librarian_tools(self) -> dict | list:
+        """Return the tool set for the librarian agent. Override in subclasses."""
+        return []
+
     @abstractmethod
+    def _format_librarian_md_internal(self, tools: dict | list, description: str, body: str) -> str:
+        """Format librarian frontmatter — provider-specific. Override in subclasses."""
+
     def format_librarian_md(self, body: str) -> str:
-        """Wrap librarian body with provider-specific frontmatter.
-
-        Args:
-            body: Librarian markdown body (no frontmatter)
-
-        Returns:
-            Complete librarian.md content with provider frontmatter
-        """
+        """Wrap librarian body with provider-specific frontmatter."""
+        return self._format_librarian_md_internal(
+            self._get_librarian_tools(),
+            self.LIBRARIAN_DESCRIPTION,
+            body,
+        )
 
     # --- Analysis engine ---
 
@@ -312,22 +345,32 @@ class Provider(ABC):
         transformed = transformed.replace("{CACHE_DIR}", self.cache_base_path)
         return transformed
 
-    @abstractmethod
     def deploy_expert(self, name: str, source_dir: Path) -> None:
-        """Deploy expert directory to provider's expert location.
+        """Create symlink in provider's experts directory."""
+        provider_experts = self._home_dir / "experts"
+        provider_experts.mkdir(parents=True, exist_ok=True)
 
-        Args:
-            name: Expert name
-            source_dir: Path to expert directory in hivemind
-        """
+        expert_link = provider_experts / name
+        if expert_link.is_symlink():
+            if expert_link.resolve() == source_dir.resolve():
+                return
+            expert_link.unlink()
+        elif expert_link.exists():
+            if expert_link.is_dir():
+                shutil.rmtree(expert_link)
+            else:
+                expert_link.unlink()
 
-    @abstractmethod
+        expert_link.symlink_to(source_dir)
+
     def undeploy_expert(self, name: str) -> None:
-        """Remove expert from provider's expert location.
-
-        Args:
-            name: Expert name
-        """
+        """Remove expert from provider's experts directory."""
+        expert_link = self._home_dir / "experts" / name
+        if expert_link.is_symlink() or expert_link.exists():
+            if expert_link.is_dir() and not expert_link.is_symlink():
+                shutil.rmtree(expert_link)
+            else:
+                expert_link.unlink()
 
     def init_dirs(
         self,
@@ -427,27 +470,27 @@ class ClaudeProvider(Provider):
     def rules_file_name(self) -> str:
         return "CLAUDE.md"
 
-    def format_lead_md(self, agent_name: str, description: str, body: str) -> str:
-        """Format lead agent with Edit tool added for self-management."""
+    def _lead_extra_tools(self) -> list:
+        return ["Edit"]
+
+    def _format_agent_md_internal(
+        self,
+        agent_name: str,
+        description: str,
+        body: str,
+        *,
+        extra_tools: dict | list | None = None,
+        extra_permissions: list[str] | None = None,
+    ) -> str:
+        """Internal Claude Code agent formatting with custom name."""
         tools = list(self._settings.get("tools", []))
-        if "Edit" not in tools:
-            tools.append("Edit")
+        if isinstance(extra_tools, list):
+            for t in extra_tools:
+                if t not in tools:
+                    tools.append(t)
         model = self._settings.get("model", "sonnet")
 
         tools_str = ", ".join(tools)
-
-        frontmatter = (
-            f"---\nname: {agent_name}\ndescription: {description}\ntools: {tools_str}\nmodel: {model}\n---\n\n"
-        )
-
-        return frontmatter + self._transform_body(body)
-
-    def _format_agent_md_internal(self, agent_name: str, description: str, body: str) -> str:
-        """Internal Claude Code agent formatting with custom name."""
-        tools = self._settings.get("tools", [])
-        model = self._settings.get("model", "sonnet")
-
-        tools_str = ", ".join(tools) if isinstance(tools, list) else str(tools)
 
         frontmatter = (
             f"---\nname: {agent_name}\ndescription: {description}\ntools: {tools_str}\nmodel: {model}\n---\n\n"
@@ -459,27 +502,16 @@ class ClaudeProvider(Provider):
         """Format agent.md with Claude Code YAML frontmatter."""
         return self._format_agent_md_internal(f"expert-{name}", description, body)
 
-    def format_librarian_md(self, body: str) -> str:
-        """Format librarian.md with Claude Code YAML frontmatter."""
+    def _get_librarian_tools(self) -> list:
         tools = self._settings.get("tools", [])
-        model = self._settings.get("model", "sonnet")
-
-        # Librarian uses a subset of tools (no Write, no MCP)
         librarian_tools = [t for t in tools if t in ("Read", "Grep", "Glob")]
-        if not librarian_tools:
-            librarian_tools = ["Read", "Grep", "Glob"]
-        tools_str = ", ".join(librarian_tools)
+        return librarian_tools or ["Read", "Grep", "Glob"]
 
-        frontmatter = (
-            f"---\n"
-            f"name: librarian\n"
-            f'description: "Hivemind librarian -- knows every expert agent and their '
-            f"capabilities. Ask the librarian to find the right expert for a question "
-            f'before delegating to specialists."\n'
-            f"tools: {tools_str}\n"
-            f"model: {model}\n"
-            f"---\n\n"
-        )
+    def _format_librarian_md_internal(self, tools: dict | list, description: str, body: str) -> str:
+        model = self._settings.get("model", "sonnet")
+        tools_str = ", ".join(tools) if isinstance(tools, list) else str(tools)
+
+        frontmatter = f'---\nname: librarian\ndescription: "{description}"\ntools: {tools_str}\nmodel: {model}\n---\n\n'
 
         return frontmatter + body
 
@@ -519,33 +551,6 @@ class ClaudeProvider(Provider):
         model = self._settings.get("model", "sonnet")
         return ["claude", "-p", "--model", model]
 
-    def deploy_expert(self, name: str, source_dir: Path) -> None:
-        """Create symlink ~/.claude/experts/<name> -> source_dir."""
-        provider_experts = self._home_dir / "experts"
-        provider_experts.mkdir(parents=True, exist_ok=True)
-
-        expert_link = provider_experts / name
-        if expert_link.is_symlink():
-            if expert_link.resolve() == source_dir.resolve():
-                return  # Already correct
-            expert_link.unlink()
-        elif expert_link.exists():
-            if expert_link.is_dir():
-                shutil.rmtree(expert_link)
-            else:
-                expert_link.unlink()
-
-        expert_link.symlink_to(source_dir)
-
-    def undeploy_expert(self, name: str) -> None:
-        """Remove ~/.claude/experts/<name> symlink."""
-        expert_link = self._home_dir / "experts" / name
-        if expert_link.is_symlink() or expert_link.exists():
-            if expert_link.is_dir() and not expert_link.is_symlink():
-                shutil.rmtree(expert_link)
-            else:
-                expert_link.unlink()
-
     def _post_init_dirs(self, *, permissions: dict | None = None) -> list[tuple[str, str]]:
         """Generate settings.json from permissions config."""
         import json as _json
@@ -563,7 +568,7 @@ class ClaudeProvider(Provider):
                     "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1",
                 },
             }
-            settings_path.write_text(_json.dumps(settings_data, indent=2, encoding="utf-8") + "\n")
+            settings_path.write_text(_json.dumps(settings_data, indent=2) + "\n")
             results.append(("settings.json", "generated from hivemind.json"))
 
         return results
@@ -583,50 +588,30 @@ class OpenCodeProvider(Provider):
     def rules_file_name(self) -> str:
         return "AGENTS.md"
 
-    def _format_agent_md_internal(self, agent_name: str, description: str, body: str) -> str:
+    def _lead_extra_tools(self) -> dict:
+        return {"edit": True}
+
+    def _lead_extra_permissions(self) -> list[str]:
+        return [
+            f'"{self.hivemind_base_path}/teams/**": allow',
+            f'"{self.hivemind_base_path}/projects/**": allow',
+        ]
+
+    def _format_agent_md_internal(
+        self,
+        agent_name: str,
+        description: str,
+        body: str,
+        *,
+        extra_tools: dict | list | None = None,
+        extra_permissions: list[str] | None = None,
+    ) -> str:
         """Internal OpenCode agent formatting with custom name."""
         model = self._settings.get("model", "anthropic/claude-sonnet-4-20250514")
         temperature = self._settings.get("temperature", 0.1)
-        tools = self._settings.get("tools", {})
-
-        lines = [
-            "---",
-            f"description: {description}",
-            "mode: subagent",
-            f"model: {model}",
-            f"temperature: {temperature}",
-        ]
-
-        if isinstance(tools, dict) and tools:
-            lines.append("tools:")
-            for tool_name, enabled in sorted(tools.items()):
-                lines.append(f"  {tool_name}: {str(enabled).lower()}")
-
-        # Generic permissions for hivemind paths
-        lines.append("permission:")
-        lines.append("  external_directory:")
-        lines.append(f'    "{self.cache_base_path}/**": allow')
-        lines.append(f'    "{self.experts_base_path}/**": allow')
-
-        lines.append("---")
-        lines.append("")
-        lines.append("")
-
-        frontmatter = "\n".join(lines)
-
-        return frontmatter + self._transform_body(body)
-
-    def format_agent_md(self, name: str, description: str, body: str) -> str:
-        """Format agent.md with OpenCode YAML frontmatter."""
-        return self._format_agent_md_internal(f"expert-{name}", description, body)
-
-    def format_lead_md(self, agent_name: str, description: str, body: str) -> str:
-        """Format lead agent with edit tool added for self-management."""
-        model = self._settings.get("model", "anthropic/claude-sonnet-4-20250514")
-        temperature = self._settings.get("temperature", 0.1)
         tools = dict(self._settings.get("tools", {}))
-        if "edit" not in tools:
-            tools["edit"] = True
+        if isinstance(extra_tools, dict):
+            tools.update(extra_tools)
 
         lines = [
             "---",
@@ -641,13 +626,13 @@ class OpenCodeProvider(Provider):
             for tool_name, enabled in sorted(tools.items()):
                 lines.append(f"  {tool_name}: {str(enabled).lower()}")
 
-        # Permissions for hivemind paths including teams/projects context
+        # Permissions for hivemind paths
         lines.append("permission:")
         lines.append("  external_directory:")
         lines.append(f'    "{self.cache_base_path}/**": allow')
         lines.append(f'    "{self.experts_base_path}/**": allow')
-        lines.append(f'    "{self.hivemind_base_path}/teams/**": allow')
-        lines.append(f'    "{self.hivemind_base_path}/projects/**": allow')
+        if extra_permissions:
+            lines.extend(f"    {perm}" for perm in extra_permissions)
 
         lines.append("---")
         lines.append("")
@@ -657,27 +642,31 @@ class OpenCodeProvider(Provider):
 
         return frontmatter + self._transform_body(body)
 
-    def format_librarian_md(self, body: str) -> str:
-        """Format librarian.md with OpenCode YAML frontmatter."""
+    def format_agent_md(self, name: str, description: str, body: str) -> str:
+        """Format agent.md with OpenCode YAML frontmatter."""
+        return self._format_agent_md_internal(f"expert-{name}", description, body)
+
+    def _get_librarian_tools(self) -> dict:
+        return {"read": True, "grep": True, "glob": True}
+
+    def _format_librarian_md_internal(self, tools: dict | list, description: str, body: str) -> str:
         model = self._settings.get("model", "anthropic/claude-sonnet-4-20250514")
         temperature = self._settings.get("temperature", 0.1)
 
         lines = [
             "---",
-            'description: "Hivemind librarian -- knows every expert agent and their '
-            "capabilities. Ask the librarian to find the right expert for a question "
-            'before delegating to specialists."',
+            f'description: "{description}"',
             "mode: subagent",
             f"model: {model}",
             f"temperature: {temperature}",
-            "tools:",
-            "  read: true",
-            "  grep: true",
-            "  glob: true",
-            "---",
-            "",
-            "",
         ]
+
+        if isinstance(tools, dict):
+            lines.append("tools:")
+            for tool_name, enabled in sorted(tools.items()):
+                lines.append(f"  {tool_name}: {str(enabled).lower()}")
+
+        lines.extend(["---", "", ""])
 
         return "\n".join(lines) + body
 
@@ -712,33 +701,6 @@ class OpenCodeProvider(Provider):
         model = self._settings.get("model", "github-copilot/claude-sonnet-4")
         cmd.extend(["--model", model])
         return cmd
-
-    def deploy_expert(self, name: str, source_dir: Path) -> None:
-        """Create symlink in provider's experts directory."""
-        provider_experts = self._home_dir / "experts"
-        provider_experts.mkdir(parents=True, exist_ok=True)
-
-        expert_link = provider_experts / name
-        if expert_link.is_symlink():
-            if expert_link.resolve() == source_dir.resolve():
-                return
-            expert_link.unlink()
-        elif expert_link.exists():
-            if expert_link.is_dir():
-                shutil.rmtree(expert_link)
-            else:
-                expert_link.unlink()
-
-        expert_link.symlink_to(source_dir)
-
-    def undeploy_expert(self, name: str) -> None:
-        """Remove expert from provider's experts directory."""
-        expert_link = self._home_dir / "experts" / name
-        if expert_link.is_symlink() or expert_link.exists():
-            if expert_link.is_dir() and not expert_link.is_symlink():
-                shutil.rmtree(expert_link)
-            else:
-                expert_link.unlink()
 
     def _post_init_dirs(self, *, permissions: dict | None = None) -> list[tuple[str, str]]:
         """Generate/merge global permissions into opencode.json."""
@@ -799,7 +761,7 @@ class OpenCodeProvider(Provider):
                 existing_perms[tool_key].update(patterns)
 
         existing["permission"] = existing_perms
-        config_path.write_text(_json.dumps(existing, indent=2, encoding="utf-8") + "\n")
+        config_path.write_text(_json.dumps(existing, indent=2) + "\n")
         results.append(("opencode.json", "permissions merged for hivemind paths"))
 
         return results
@@ -814,12 +776,13 @@ PROVIDER_CLASSES: dict[str, type[Provider]] = {
 }
 
 
-def get_provider(name: str, provider_config: dict) -> Provider:
+def get_provider(name: str, provider_config: dict, *, providers_dir: Path | None = None) -> Provider:
     """Create a provider instance by name.
 
     Args:
         name: Provider name (e.g. "claude", "opencode")
         provider_config: Provider's config dict from config.json
+        providers_dir: Path to the providers directory (for context append lookups)
 
     Returns:
         Provider instance
@@ -830,7 +793,7 @@ def get_provider(name: str, provider_config: dict) -> Provider:
     cls = PROVIDER_CLASSES.get(name)
     if cls is None:
         raise ValueError(f"Unknown provider '{name}'. Available: {', '.join(PROVIDER_CLASSES)}")
-    return cls(provider_config)
+    return cls(provider_config, providers_dir=providers_dir)
 
 
 # --- Internal Helpers ---

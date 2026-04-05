@@ -7,11 +7,13 @@ from typing import TYPE_CHECKING
 from textual.binding import Binding
 from textual.screen import ModalScreen
 
+from hivemind_cli.tui.widgets.button_nav_mixin import ButtonNavigationMixin
+
 if TYPE_CHECKING:
     from textual.widgets import Button, Input
 
 
-class FormModal(ModalScreen):
+class FormModal(ButtonNavigationMixin, ModalScreen):
     """Base modal for form-based CRUD operations.
 
     Subclasses should override compose() to add form fields inside a
@@ -49,17 +51,3 @@ class FormModal(ModalScreen):
 
     def action_dismiss_modal(self) -> None:
         self.dismiss(None)
-
-    def action_prev_button(self) -> None:
-        """Move focus to previous button (h)."""
-        from textual.widgets import Button
-
-        if isinstance(self.focused, Button):
-            self.focus_previous("Button")
-
-    def action_next_button(self) -> None:
-        """Move focus to next button (l)."""
-        from textual.widgets import Button
-
-        if isinstance(self.focused, Button):
-            self.focus_next("Button")

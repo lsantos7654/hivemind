@@ -9,11 +9,13 @@ from textual.containers import Horizontal, Vertical
 from textual.screen import ModalScreen
 from textual.widgets import Button, Label
 
+from hivemind_cli.tui.widgets.button_nav_mixin import ButtonNavigationMixin
+
 if TYPE_CHECKING:
     from textual.app import ComposeResult
 
 
-class ConfirmationModal(ModalScreen[bool]):
+class ConfirmationModal(ButtonNavigationMixin, ModalScreen[bool]):
     """Modal dialog for confirming destructive actions.
 
     CSS is in styles.tcss under ConfirmationModal.
@@ -58,17 +60,3 @@ class ConfirmationModal(ModalScreen[bool]):
 
     def action_dismiss_modal(self) -> None:
         self.dismiss(False)
-
-    def action_prev_button(self) -> None:
-        """Move focus to previous button (h)."""
-        from textual.widgets import Button
-
-        if isinstance(self.focused, Button):
-            self.focus_previous("Button")
-
-    def action_next_button(self) -> None:
-        """Move focus to next button (l)."""
-        from textual.widgets import Button
-
-        if isinstance(self.focused, Button):
-            self.focus_next("Button")

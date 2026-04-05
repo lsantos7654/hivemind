@@ -150,7 +150,7 @@ def _get_provider() -> Provider:
         raise RuntimeError("No active_provider set in config.json. Run 'hivemind init' first.")
     hivemind = _load_hivemind()
     provider_config = hivemind.get("providers", {}).get(active, {})
-    _provider_cache = get_provider(active, provider_config)
+    _provider_cache = get_provider(active, provider_config, providers_dir=PROVIDERS_DIR)
     return _provider_cache
 
 
@@ -182,7 +182,7 @@ def _load_private_repos() -> dict:
 
 def _save_private_repos(repos: dict) -> None:
     """Save private-repos.json."""
-    PRIVATE_REPOS_JSON.write_text(json.dumps(repos, indent=2, encoding="utf-8") + "\n")
+    PRIVATE_REPOS_JSON.write_text(json.dumps(repos, indent=2) + "\n")
 
 
 # --- Expert File Store (future: adapters/filesystem_store.py) ---
@@ -2076,6 +2076,84 @@ def update_team(
         _flush_librarian()
 
     return {"success": True}
+
+
+def add_experts_to_team(
+    team_name: str,
+    expert_names: list[str],
+    *,
+    on_progress: Callable[[str], None] | None = None,
+) -> dict:
+    """Add multiple experts to a team's roster in one operation.
+
+    AI-generates expert sections, creates notes stubs, and redeploys
+    the team lead + librarian only once at the end.
+
+    Returns:
+        dict with keys: success (bool), added (list), skipped (list),
+        failed (list of dicts with name/error), error (str | None)
+    """
+    teams = _load_teams()
+    if team_name not in teams:
+        return {
+            "success": False,
+            "error": f"Team '{team_name}' does not exist",
+            "added": [],
+            "skipped": [],
+            "failed": [],
+        }
+
+    team = teams[team_name]
+    existing = team.get("experts", [])
+    all_experts = set(_expert_names())
+
+    added: list[str] = []
+    skipped: list[str] = []
+    failed: list[dict] = []
+
+    lead_md = TEAMS_DIR / team_name / "lead.md"
+
+    for expert_name in expert_names:
+        if expert_name in existing:
+            skipped.append(expert_name)
+            continue
+        if expert_name not in all_experts:
+            failed.append({"name": expert_name, "error": "does not exist"})
+            continue
+
+        if on_progress:
+            on_progress(expert_name)
+
+        section = _generate_expert_section(expert_name, team_name)
+        if not section:
+            failed.append({"name": expert_name, "error": "AI generation failed"})
+            continue
+
+        # Append section to lead.md
+        if lead_md.exists():
+            content = lead_md.read_text(encoding="utf-8")
+            for marker in ["## Expert Notes", "## Instructions"]:
+                if marker in content:
+                    idx = content.index(marker)
+                    content = content[:idx] + section + "\n\n" + content[idx:]
+                    break
+            else:
+                content += "\n\n" + section + "\n"
+            lead_md.write_text(content, encoding="utf-8")
+
+        _create_expert_notes_stub(team_name, expert_name)
+        existing.append(expert_name)
+        added.append(expert_name)
+
+    # Save config and redeploy once
+    if added:
+        team["experts"] = existing
+        _save_teams(teams)
+        _deploy_team_lead(team_name)
+        _mark_librarian_dirty()
+        _flush_librarian()
+
+    return {"success": True, "added": added, "skipped": skipped, "failed": failed}
 
 
 def add_expert_to_team(team_name: str, expert_name: str) -> dict:

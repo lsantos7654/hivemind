@@ -404,6 +404,31 @@
       "remote": "https://github.com/pydantic/pydantic.git",
       "commit": "46dea928844edfdbee5ca1f36cbc3b042e2a8abd",
       "ref_name": ""
+    },
+    "awesome-design-patterns": {
+      "remote": "https://github.com/DovAmir/awesome-design-patterns",
+      "commit": "9006287f27e720000cc8763ae4cd150789b8571d",
+      "ref_name": ""
+    },
+    "awesome-software-architecture": {
+      "remote": "https://github.com/mehdihadeli/awesome-software-architecture",
+      "commit": "45708a3144490e81f2f5249e845bc591675a9a7e",
+      "ref_name": ""
+    },
+    "code": {
+      "remote": "https://github.com/cosmicpython/code",
+      "commit": "14c84797ffa77255d53cf1a02fe6aafda2b68aeb",
+      "ref_name": ""
+    },
+    "python-patterns": {
+      "remote": "https://github.com/faif/python-patterns",
+      "commit": "74151cfec27663a968f44185adada7c2a1f38165",
+      "ref_name": ""
+    },
+    "domain-driven-hexagon": {
+      "remote": "https://github.com/Sairyss/domain-driven-hexagon",
+      "commit": "5c2d15a7e2d69e83dfddf28468ee9f30e02c30de",
+      "ref_name": ""
     }
   }
 }
