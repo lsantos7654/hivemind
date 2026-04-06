@@ -12,7 +12,11 @@ from hivemind.deployment import (
     regenerate_hivemind_md,
 )
 from hivemind.models import AppConfig, RedeployResult
-from hivemind.teams import refresh_expert_notes_header, refresh_team_lead_body
+from hivemind.teams import (
+    refresh_expert_notes_header,
+    refresh_team_lead_body,
+    refresh_team_lead_notes_header,
+)
 
 __all__ = ["redeploy_all_agents"]
 
@@ -38,6 +42,7 @@ def redeploy_all_agents(config: AppConfig) -> RedeployResult:
     teams = load_teams()
     for team_name, team_data in teams.items():
         refresh_team_lead_body(team_name)
+        refresh_team_lead_notes_header(team_name)
         if deploy_team_lead(team_name):
             teams_deployed.append(f"team-lead-{team_name}")
         for expert_name in team_data.experts:

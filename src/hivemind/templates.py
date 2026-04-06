@@ -27,8 +27,8 @@ def render(template_name: str, **kwargs: object) -> str:
 # --- HIVEMIND.md ---
 
 
-def hivemind_md_base(root_path: str) -> str:
-    return render("hivemind.md.j2", root_path=root_path)
+def hivemind_md_base(teams_path: str) -> str:
+    return render("hivemind.md.j2", teams_path=teams_path)
 
 
 # --- Team Lead ---
@@ -54,6 +54,16 @@ def expert_notes_template(expert_name: str, team_name: str) -> str:
     return render(
         "expert_notes.md.j2",
         expert_name=expert_name,
+        team_name=team_name,
+    )
+
+
+# --- Team Lead Notes ---
+
+
+def team_lead_notes_template(team_name: str) -> str:
+    return render(
+        "team_lead_notes.md.j2",
         team_name=team_name,
     )
 

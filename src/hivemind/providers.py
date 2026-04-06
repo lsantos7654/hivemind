@@ -160,13 +160,13 @@ class Provider(ABC):
         return str(self._home_dir / "experts")
 
     @property
-    def hivemind_base_path(self) -> str:
-        """Absolute base path for hivemind dir as it appears in agent bodies.
+    def teams_base_path(self) -> str:
+        """Absolute base path for teams dir as it appears in agent bodies.
 
         Used for path replacement at deploy time.
         Uses expanded absolute path so AI tools don't need to resolve ~.
         """
-        return str(self._home_dir / "hivemind")
+        return str(self._home_dir / "teams")
 
     @property
     def cache_base_path(self) -> str:
@@ -345,7 +345,7 @@ class Provider(ABC):
     def _transform_body(self, body: str) -> str:
         """Apply standard path replacements to agent body."""
         body = replace_expert_paths(body, old_base="{EXPERTS_DIR}", new_base=self.experts_base_path)
-        body = body.replace("{HIVEMIND_DIR}", self.hivemind_base_path)
+        body = body.replace("{TEAMS_DIR}", self.teams_base_path)
         return body.replace("{CACHE_DIR}", self.cache_base_path)
 
     def deploy_expert(self, name: str, source_dir: Path) -> None:
@@ -410,13 +410,9 @@ class Provider(ABC):
         experts_dir.mkdir(parents=True, exist_ok=True)
         results.append(InitResult(label="experts/", status="directory ready"))
 
-        # teams/ under hivemind/ subdirectory
-        # (avoids conflicts with provider-owned directories)
-        hivemind_subdir = self._home_dir / "hivemind"
-        hivemind_subdir.mkdir(parents=True, exist_ok=True)
-
+        # teams/ symlink directly under provider home
         if teams_dir:
-            results.append(_setup_symlink(teams_dir, hivemind_subdir / "teams", "hivemind/teams/"))
+            results.append(_setup_symlink(teams_dir, self._home_dir / "teams", "teams/"))
 
         # Provider-specific hook
         results.extend(self._post_init_dirs(permissions=permissions))
@@ -457,13 +453,12 @@ class Provider(ABC):
                 link_path=self._home_dir / self.rules_file_name,
             ),
         ]
-        hivemind_subdir = self._home_dir / "hivemind"
         if teams_dir:
             checks.append(
                 SymlinkCheck(
-                    display_name=f"{hivemind_subdir}/teams/",
+                    display_name=f"{self._home_dir}/teams/",
                     expected_target=teams_dir,
-                    link_path=hivemind_subdir / "teams",
+                    link_path=self._home_dir / "teams",
                 )
             )
         return checks
@@ -606,8 +601,7 @@ class OpenCodeProvider(Provider):
 
     def _lead_extra_permissions(self) -> list[str]:
         return [
-            f'"{self.hivemind_base_path}/teams/**": allow',
-            f'"{self.hivemind_base_path}/projects/**": allow',
+            f'"{self.teams_base_path}/**": allow',
         ]
 
     def _format_agent_md_internal(
@@ -723,7 +717,7 @@ class OpenCodeProvider(Provider):
 
         cache_path = self.cache_base_path
         experts_path = self.experts_base_path
-        hivemind_path = self.hivemind_base_path
+        teams_path = self.teams_base_path
 
         hivemind_permissions = {
             "bash": {
@@ -732,14 +726,12 @@ class OpenCodeProvider(Provider):
             "external_directory": {
                 f"{cache_path}/**": "allow",
                 f"{experts_path}/**": "allow",
-                f"{hivemind_path}/teams/**": "allow",
-                f"{hivemind_path}/projects/**": "allow",
+                f"{teams_path}/**": "allow",
             },
             "read": {
                 f"{cache_path}/**": "allow",
                 f"{experts_path}/**": "allow",
-                f"{hivemind_path}/teams/**": "allow",
-                f"{hivemind_path}/projects/**": "allow",
+                f"{teams_path}/**": "allow",
             },
             "grep": {
                 f"{cache_path}/**": "allow",
@@ -750,8 +742,7 @@ class OpenCodeProvider(Provider):
                 f"{experts_path}/**": "allow",
             },
             "edit": {
-                f"{hivemind_path}/teams/**": "allow",
-                f"{hivemind_path}/projects/**": "allow",
+                f"{teams_path}/**": "allow",
             },
         }
 

@@ -9,7 +9,6 @@ from hivemind.config import (
     AGENTS_DIR,
     EXPERTS_DIR,
     HIVEMIND_MD,
-    HIVEMIND_ROOT,
     PRIVATE_EXPERTS_DIR,
     PROVIDERS_DIR,
     TEAMS_DIR,
@@ -219,7 +218,8 @@ def regenerate_hivemind_md(config: AppConfig) -> None:
     """Regenerate HIVEMIND.md from base template + provider instructions."""
     from hivemind.templates import hivemind_md_base
 
-    content = hivemind_md_base(str(HIVEMIND_ROOT))
+    provider = get_active_provider()
+    content = hivemind_md_base(provider.teams_base_path)
 
     # Append provider-specific orchestration instructions
     active_provider = config.active_provider

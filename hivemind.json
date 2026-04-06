@@ -20,10 +20,10 @@
           "Read(~/.claude/experts/**)",
           "Grep(~/.claude/experts/**)",
           "Glob(~/.claude/experts/**)",
-          "Read(~/.claude/hivemind/teams/**)",
-          "Grep(~/.claude/hivemind/teams/**)",
-          "Glob(~/.claude/hivemind/teams/**)",
-          "Edit(~/.claude/hivemind/teams/**)"
+          "Read(~/.claude/teams/**)",
+          "Grep(~/.claude/teams/**)",
+          "Glob(~/.claude/teams/**)",
+          "Edit(~/.claude/teams/**)"
         ]
       }
     },

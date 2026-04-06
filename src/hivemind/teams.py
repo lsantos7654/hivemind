@@ -32,10 +32,12 @@ __all__ = [
     "add_experts_to_team",
     "create_expert_notes_stub",
     "create_team",
+    "create_team_lead_notes_stub",
     "delete_team",
     "generate_expert_section",
     "refresh_expert_notes_header",
     "refresh_team_lead_body",
+    "refresh_team_lead_notes_header",
     "remove_expert_from_team",
     "remove_expert_section",
     "update_team",
@@ -152,6 +154,40 @@ def refresh_expert_notes_header(team_name: str, expert_name: str) -> None:
         notes_file.write_text(template, encoding="utf-8")
 
 
+def create_team_lead_notes_stub(team_name: str) -> None:
+    """Create teams/{team}/notes.md from template."""
+    from hivemind.templates import team_lead_notes_template
+
+    team_dir = TEAMS_DIR / team_name
+    team_dir.mkdir(parents=True, exist_ok=True)
+    notes_file = team_dir / "notes.md"
+    if not notes_file.exists():
+        notes_file.write_text(team_lead_notes_template(team_name), encoding="utf-8")
+
+
+def refresh_team_lead_notes_header(team_name: str) -> None:
+    """Regenerate the template header in team notes.md, preserving entries below ---."""
+    from hivemind.templates import team_lead_notes_template
+
+    notes_file = TEAMS_DIR / team_name / "notes.md"
+    if not notes_file.exists():
+        create_team_lead_notes_stub(team_name)
+        return
+
+    content = notes_file.read_text(encoding="utf-8")
+    template = team_lead_notes_template(team_name)
+
+    # Template ends with "---\n", entries live below that
+    separator = "\n---\n"
+    if separator in content:
+        _, entries = content.split(separator, 1)
+        # Template already ends with "---\n", append preserved entries
+        notes_file.write_text(template + entries, encoding="utf-8")
+    else:
+        # No entries yet — rewrite from template
+        notes_file.write_text(template, encoding="utf-8")
+
+
 def refresh_team_lead_body(team_name: str) -> None:
     """Regenerate lead.md wrapper from template, preserving ## expert-{name} sections."""
     from hivemind.templates import team_lead_template
@@ -233,6 +269,7 @@ async def create_team(
     # Create notes stubs (only after all sections generated successfully)
     for expert_name in experts:
         create_expert_notes_stub(name, expert_name)
+    create_team_lead_notes_stub(name)
 
     # Assemble lead.md
     from hivemind.templates import team_lead_template
