@@ -62,21 +62,21 @@ class VersionDetailScreen(BaseScreen):
         )
         yield Footer()
 
-    def on_mount(self) -> None:
+    async def on_mount(self) -> None:
         table = self.query_one("#version-table", VimDataTable)
         table.add_columns("Status", "Type", "Commit", "Date", "Name/Message")
         table.cursor_type = "row"
 
-        self._load_versions()
+        await self._load_versions()
         self._populate_table()
 
         table.focus()
 
-    def _load_versions(self) -> None:
+    async def _load_versions(self) -> None:
         expert_dir = (
             PRIVATE_EXPERTS_DIR / self.expert.name if self.expert.is_private else EXPERTS_DIR / self.expert.name
         )
-        self.versions = get_git_versions(self.expert.name, expert_dir)
+        self.versions = await get_git_versions(self.expert.name, expert_dir)
 
     def _populate_table(self) -> None:
         table = self.query_one("#version-table", VimDataTable)
@@ -121,7 +121,7 @@ class VersionDetailScreen(BaseScreen):
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
         if event.input.id == "commit-input":
-            self._handle_commit_input()
+            self.run_worker(self._handle_commit_input(), exit_on_error=False)
         elif event.input.id == "search-input":
             self.query_one(SearchBar).hide()
             self.query_one("#version-table", VimDataTable).focus()
@@ -206,9 +206,9 @@ class VersionDetailScreen(BaseScreen):
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "analyze-button":
-            self._handle_commit_input()
+            self.run_worker(self._handle_commit_input(), exit_on_error=False)
 
-    def _handle_commit_input(self) -> None:
+    async def _handle_commit_input(self) -> None:
         input_field = self.query_one("#commit-input", Input)
         commit = input_field.value.strip()
 
@@ -216,7 +216,7 @@ class VersionDetailScreen(BaseScreen):
             self.notify("Please enter a commit hash", severity="warning")
             return
 
-        if not commit_exists_in_repo(self.expert.name, commit):
+        if not await commit_exists_in_repo(self.expert.name, commit):
             self.notify(f"Commit {commit[:12]} not found in repository", severity="error")
             return
 
@@ -227,11 +227,11 @@ class VersionDetailScreen(BaseScreen):
 
         self._start_version_switch(commit)
 
-    def action_refresh(self) -> None:
+    async def action_refresh(self) -> None:
         table = self.query_one("#version-table", VimDataTable)
         current_cursor = table.cursor_row
 
-        self._load_versions()
+        await self._load_versions()
         self._populate_table()
 
         if current_cursor is not None and current_cursor < len(self._filtered_versions):

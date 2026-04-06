@@ -3,30 +3,25 @@
 from __future__ import annotations
 
 import asyncio
-import shutil
-import subprocess
-import tempfile
-import time
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import typer
+
+if TYPE_CHECKING:
+    from pathlib import Path
 from rich import box
 from rich.console import Console
-from rich.live import Live
 from rich.markup import escape
 from rich.panel import Panel
 from rich.table import Table
 from rich.theme import Theme
 from rich.traceback import install as install_traceback
 
-from hivemind.analysis import finish_analysis, start_analysis
 from hivemind.config import (
     AGENTS_DIR,
     COMMANDS_DIR,
-    EXPERTS_DIR,
     EXTERNAL_DOCS_DIR,
     HIVEMIND_ROOT,
-    PRIVATE_EXPERTS_DIR,
     REPOS_DIR,
     TEAMS_DIR,
     count_versions,
@@ -43,13 +38,10 @@ from hivemind.config import (
     load_repos,
     load_teams,
     save_config,
-    save_private_repos,
-    save_repos,
 )
 from hivemind.deployment import (
     deploy_agent,
     deploy_expert,
-    redeploy_all_agents,
     regenerate_hivemind_md,
     undeploy_agent,
     update_librarian,
@@ -65,10 +57,10 @@ from hivemind.experts import (
 )
 from hivemind.experts import (
     switch_provider,
-    update_expert,
 )
 from hivemind.git import clone_repo
 from hivemind.models import ProgressInfo, RepoEntry, UpdatePhase
+from hivemind.redeploy import redeploy_all_agents
 from hivemind.teams import (
     add_expert_to_team as core_add_expert_to_team,
 )
@@ -213,7 +205,7 @@ def _clone_repo_cli(name: str, repos: dict[str, RepoEntry]) -> bool:
     else:
         console.print(f"  Cloning {name} (default branch)...")
 
-    result = clone_repo(name, repos, silent=False)
+    result = asyncio.run(clone_repo(name, repos, silent=False))
 
     if result:
         if commit:
@@ -465,31 +457,6 @@ def show_expert(
     console.print(Panel("\n".join(lines), border_style="blue"))
 
 
-_SPINNER_FRAMES = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
-
-
-def _render_analysis_progress(
-    name: str,
-    expected: list[str],
-    found: set[str],
-    tick: int,
-) -> str:
-    """Render analysis progress as a Rich-compatible string."""
-    spinner = _SPINNER_FRAMES[tick % len(_SPINNER_FRAMES)]
-    lines = [f"  [heading]Analyzing {name}...[/heading]"]
-    hit_first_pending = False
-    for f in expected:
-        if f in found:
-            lines.append(f"    [success]✓[/success] {f}")
-        elif not hit_first_pending:
-            hit_first_pending = True
-            lines.append(f"    [info]{spinner}[/info] {f}")
-        else:
-            lines.append(f"    [dim]·[/dim] {f}")
-    lines.append(f"    [dim]{len(found)}/{len(expected)} files generated[/dim]")
-    return "\n".join(lines)
-
-
 @expert_app.command()
 def add(
     url: str = typer.Argument(help="Git remote URL"),
@@ -497,7 +464,8 @@ def add(
     private: bool = typer.Option(False, "--private", help="Mark as private (won't be committed to git)"),
 ) -> None:
     """Register a new repo expert, clone, analyze, and create agent."""
-    # Derive name from URL
+    from hivemind.experts import add_expert
+
     name = url.rstrip("/").split("/")[-1].removesuffix(".git")
 
     console.print(f"[heading]Adding expert: {name}[/heading]")
@@ -505,196 +473,32 @@ def add(
     if private:
         console.print("  [warning]Mode: PRIVATE (will not be committed to git)[/warning]")
 
-    # Error out early if expert already exists (check both public and private)
-    public_expert_dir = EXPERTS_DIR / name
-    private_expert_dir = PRIVATE_EXPERTS_DIR / name
-    if public_expert_dir.is_dir() or private_expert_dir.is_dir():
-        console.print(
-            f"[error]Error: expert '{name}' already exists. Use [bold]hivemind update {name}[/bold] instead.[/error]",
+    def on_progress(info: ProgressInfo) -> None:
+        console.print(f"  [info]→[/info] {info.message}")
+
+    result = asyncio.run(
+        add_expert(
+            name,
+            url,
+            ref_name=ref or "",
+            is_private=private,
+            on_progress=on_progress,
         )
+    )
+
+    if not result.success:
+        console.print(f"[error]Error: {escape(str(result.error))}[/error]")
         raise typer.Exit(1)
 
-    # Resolve commit from ref (if provided)
-    commit = ""
-    ref_name = ref or ""
-    if ref:
-        console.print(f"  Resolving ref '{ref}'...")
-        try:
-            result = subprocess.run(
-                ["git", "ls-remote", url, ref],
-                capture_output=True,
-                text=True,
-                timeout=30,
-            )
-            if result.stdout.strip():
-                commit = result.stdout.strip().split()[0]
-            else:
-                commit = ref
-                ref_name = ref
-        except (subprocess.TimeoutExpired, FileNotFoundError):
-            commit = ref
-        console.print(f"  Commit: {commit}")
-
-    # All work happens in a temp directory — nothing visible until success
-    tmpdir = tempfile.mkdtemp(prefix=f"hivemind-{name}-")
-    tmp_repo = Path(tmpdir) / "repo"
-    tmp_expert = Path(tmpdir) / "expert"
-    tmp_expert.mkdir()
-
-    try:
-        # Clone repo into temp directory
-        console.print(f"  Cloning {name}...")
-        if commit and ref_name:
-            subprocess.run(
-                ["git", "clone", "--progress", url, str(tmp_repo)],
-                check=True,
-            )
-            subprocess.run(
-                ["git", "checkout", "--quiet", commit],
-                cwd=str(tmp_repo),
-                check=True,
-            )
-        elif ref_name:
-            subprocess.run(
-                [
-                    "git",
-                    "clone",
-                    "--progress",
-                    "--branch",
-                    ref_name,
-                    url,
-                    str(tmp_repo),
-                ],
-                check=True,
-            )
-        else:
-            subprocess.run(
-                ["git", "clone", "--progress", url, str(tmp_repo)],
-                check=True,
-            )
-        console.print("  [success]✓[/success] Cloned to staging area")
-
-        # Resolve commit hash from clone if not pinned
-        if not commit:
-            result = subprocess.run(
-                ["git", "rev-parse", "HEAD"],
-                cwd=str(tmp_repo),
-                capture_output=True,
-                text=True,
-                check=True,
-            )
-            commit = result.stdout.strip()
-            console.print(f"  [success]✓[/success] Resolved commit: {commit[:12]}")
-
-        # Create versioned directory in temp expert dir
-        tmp_commit_dir = tmp_expert / commit
-        tmp_commit_dir.mkdir(parents=True, exist_ok=True)
-        console.print(f"  [success]✓[/success] Created staging experts/{name}/{commit[:12]}/")
-
-        # Run AI analysis — writes into temp dirs, with live progress
-        handle = start_analysis(name, commit, tmp_repo, tmp_expert)
-        found: set[str] = set()
-        tick = 0
-
-        with Live(
-            _render_analysis_progress(name, handle.expected_files, found, tick),
-            console=console,
-            refresh_per_second=4,
-        ) as live:
-            while handle.proc.poll() is None:
-                for f in handle.expected_files:
-                    if f not in found and (handle.commit_dir / f).exists():
-                        found.add(f)
-                tick += 1
-                live.update(_render_analysis_progress(name, handle.expected_files, found, tick))
-                time.sleep(0.25)
-
-            # Final check for files written just before exit
-            for f in handle.expected_files:
-                if f not in found and (handle.commit_dir / f).exists():
-                    found.add(f)
-            live.update(_render_analysis_progress(name, handle.expected_files, found, tick))
-
-        success = finish_analysis(handle)
-        if not success:
-            console.print(f"[error]Error: AI analysis failed for {name}[/error]")
-            raise typer.Exit(1)
-        console.print("  [success]✓[/success] AI analysis complete")
-
-        # --- Success: move everything to final locations ---
-
-        # Move repo to final location
-        ensure_repos_link()
-        final_repo = REPOS_DIR / name
-        if final_repo.exists():
-            shutil.rmtree(final_repo)
-        shutil.move(str(tmp_repo), str(final_repo))
-        console.print(f"  [success]✓[/success] Repo installed to repos/{name}/")
-
-        # Move expert dir to final location (public or private)
-        if private:
-            expert_dir = PRIVATE_EXPERTS_DIR / name
-            PRIVATE_EXPERTS_DIR.mkdir(parents=True, exist_ok=True)
-            shutil.move(str(tmp_expert), str(expert_dir))
-            console.print(f"  [success]✓[/success] Expert installed to private-experts/{name}/")
-        else:
-            expert_dir = EXPERTS_DIR / name
-            EXPERTS_DIR.mkdir(parents=True, exist_ok=True)
-            shutil.move(str(tmp_expert), str(expert_dir))
-            console.print(f"  [success]✓[/success] Expert installed to experts/{name}/")
-
-        # Create HEAD symlink
-        head_link = expert_dir / "HEAD"
-        head_link.symlink_to(commit)
-        console.print(f"  [success]✓[/success] HEAD → {commit[:12]}")
-
-        # Update repos.json or private-repos.json
-        from hivemind.models import RepoEntry
-
-        repo_entry = RepoEntry(remote=url, commit=commit, ref_name=ref_name)
-        if private:
-            repos = load_private_repos()
-            repos[name] = repo_entry
-            save_private_repos(repos)
-            console.print("  [success]✓[/success] Added to hivemind.json (private)")
-        else:
-            repos = load_repos()
-            repos[name] = repo_entry
-            save_repos(repos)
-            console.print("  [success]✓[/success] Added to hivemind.json")
-
-        # Enable in config and mark as private if needed
-        config = load_config()
-        if name not in config.enabled:
-            config.enabled.append(name)
-        if name in config.disabled:
-            config.disabled.remove(name)
-        if private and name not in config.private:
-            config.private.append(name)
-        save_config(config)
-        console.print("  [success]✓[/success] Enabled in config.json")
-
-        # Deploy agent and expert
-        _deploy_agent_cli(name)
-        _deploy_expert_cli(name)
-        _update_librarian_cli()
-
-        summary_lines = [
-            f"[success]✓[/success] Expert [heading]{name}[/heading] is ready",
-            f"[success]✓[/success] HEAD → [commit]{commit[:12]}[/commit]",
+    console.print()
+    console.print(
+        Panel(
+            f"[success]✓[/success] Expert [heading]{name}[/heading] is ready\n"
             f"[success]✓[/success] Agent: [heading]expert-{name}[/heading]",
-        ]
-        console.print()
-        console.print(
-            Panel(
-                "\n".join(summary_lines),
-                title="[bold success]Expert created successfully[/bold success]",
-                border_style="green",
-            ),
-        )
-
-    finally:
-        shutil.rmtree(tmpdir, ignore_errors=True)
+            title="[bold success]Expert created successfully[/bold success]",
+            border_style="green",
+        ),
+    )
 
 
 @expert_app.command()
@@ -703,15 +507,11 @@ def enable(
 ) -> None:
     """Enable an expert (clones repo if needed, creates agent symlink)."""
     config = load_config()
-    result = core_enable_expert(name, config=config)
+    result = asyncio.run(core_enable_expert(name, config=config))
 
     if not result.success:
         console.print(f"[error]Error: {escape(str(result.error))}[/error]")
         raise typer.Exit(1)
-
-    repos = load_repos()
-    _clone_repo_cli(name, repos)
-    _deploy_agent_cli(name)
 
     if result.already_enabled:
         console.print(f"[success]✓[/success] {name}: already enabled, ensured repo and agent link")
@@ -803,7 +603,9 @@ def update(
             elif info.phase not in [UpdatePhase.CLONING, UpdatePhase.FETCHING]:
                 console.print(f"  [success]✓[/success] {info.message}")
 
-        result = update_expert(expert_name, on_progress=on_progress, skip_analysis=skip_analysis)
+        from hivemind.experts import update_expert
+
+        result = asyncio.run(update_expert(expert_name, on_progress=on_progress, skip_analysis=skip_analysis))
 
         if not result.success:
             console.print(f"  [error]✗[/error] {escape(str(result.error))}")
@@ -836,15 +638,20 @@ def query(
     system_prompt = librarian.read_text()
     cmd = provider.build_query_command()
 
-    with console.status("Asking the librarian...", spinner="dots"):
-        result = subprocess.run(
-            cmd,
-            input=f"{system_prompt}\n\n{question}",
-            text=True,
-            capture_output=True,
+    async def _run_query() -> str:
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.DEVNULL,
         )
-    if result.stdout:
-        console.print(result.stdout.rstrip())
+        stdout, _ = await proc.communicate(f"{system_prompt}\n\n{question}".encode())
+        return stdout.decode() if stdout else ""
+
+    with console.status("Asking the librarian...", spinner="dots"):
+        output = asyncio.run(_run_query())
+    if output:
+        console.print(output.rstrip())
 
 
 # --- Provider subcommands ---
@@ -1008,8 +815,9 @@ def team_create(
     console.print(f"  Description: {description}")
     console.print(f"  Experts: {', '.join(expert_list)}")
 
+    config = load_config()
     with console.status("[heading]Generating team lead agent...[/heading]", spinner="dots"):
-        result = core_create_team(name, description, expert_list)
+        result = asyncio.run(core_create_team(name, description, expert_list, config=config))
 
     if not result.success:
         console.print(f"[error]Error: {escape(str(result.error))}[/error]")
@@ -1057,12 +865,13 @@ def team_add_expert(
     experts: list[str] = typer.Argument(help="Expert name(s)", autocompletion=_complete_expert),  # noqa: B008
 ) -> None:
     """Add one or more experts to a team's roster."""
+    config = load_config()
     if len(experts) == 1:
         with console.status(
             f"[heading]Generating expert section for {experts[0]}...[/heading]",
             spinner="dots",
         ):
-            result = core_add_expert_to_team(team, experts[0])
+            result = asyncio.run(core_add_expert_to_team(team, experts[0], config=config))
         if not result.success:
             console.print(f"[error]Error: {escape(str(result.error))}[/error]")
             raise typer.Exit(1)
@@ -1075,7 +884,7 @@ def team_add_expert(
         def _on_progress(name: str) -> None:
             status.update(f"[heading]Generating expert section for {name}...[/heading]")
 
-        result = core_add_experts_to_team(team, experts, on_progress=_on_progress)
+        result = asyncio.run(core_add_experts_to_team(team, experts, on_progress=_on_progress, config=config))
 
     if not result.success:
         console.print(f"[error]Error: {escape(str(result.error))}[/error]")
@@ -1095,7 +904,8 @@ def team_remove_expert(
     expert: str = typer.Argument(help="Expert name", autocompletion=_complete_expert),
 ) -> None:
     """Remove an expert from a team's roster."""
-    result = core_remove_expert_from_team(team, expert)
+    config = load_config()
+    result = core_remove_expert_from_team(team, expert, config=config)
     if not result.success:
         console.print(f"[error]Error: {escape(str(result.error))}[/error]")
         raise typer.Exit(1)
@@ -1111,7 +921,8 @@ def team_delete(
         console.print("[warning]Cancelled[/warning]")
         raise typer.Exit(0)
 
-    result = core_delete_team(name)
+    config = load_config()
+    result = core_delete_team(name, config=config)
     if not result.success:
         console.print(f"[error]Error: {escape(str(result.error))}[/error]")
         raise typer.Exit(1)

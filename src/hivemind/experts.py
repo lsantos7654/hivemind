@@ -5,27 +5,29 @@ from __future__ import annotations
 import asyncio
 import logging
 import shutil
-import subprocess
 import tempfile
-import time
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from hivemind.analysis import (
-    analyze_repo,
     handle_async_cancellation,
     make_cancellation_checker,
     run_async_analysis,
 )
 from hivemind.config import (
+    EXPERTS_DIR,
+    GIT_CLONE_TIMEOUT,
     GIT_FETCH_TIMEOUT,
     GIT_LOCAL_TIMEOUT,
+    PRIVATE_EXPERTS_DIR,
     REPOS_DIR,
+    ensure_repos_link,
     get_expert_dir,
     get_head_commit,
     get_repos_for_expert,
     invalidate_provider_cache,
     is_private_expert,
+    load_config,
     load_private_repos,
     load_repos,
     load_teams,
@@ -45,10 +47,8 @@ from hivemind.deployment import (
     undeploy_expert,
 )
 from hivemind.git import (
-    cleanup_log_files,
     clone_repo,
     commit_analysis_results,
-    read_analysis_error,
     resolve_latest_commit,
     revert_checkout,
     save_commit_to_repos,
@@ -61,6 +61,7 @@ from hivemind.models import (
     EnableResult,
     OperationResult,
     ProgressCallback,
+    RepoEntry,
     SwitchProviderResult,
     UpdatePhase,
     UpdateResult,
@@ -75,6 +76,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 __all__ = [
+    "add_expert",
     "commit_exists_in_repo",
     "delete_expert",
     "disable_expert",
@@ -83,125 +85,18 @@ __all__ = [
     "switch_provider",
     "switch_version_async",
     "update_expert",
-    "update_expert_async_internal",
 ]
 
 
-def update_expert(
-    name: str,
-    on_progress: ProgressCallback | None = None,
-    *,
-    skip_analysis: bool = False,
-) -> UpdateResult:
-    """Update a single expert with progress reporting."""
-    emit = make_emit(name, on_progress)
-    repo_lookup = get_repos_for_expert(name)
-    repos, is_private = repo_lookup.repos, repo_lookup.is_private
-
-    if name not in repos:
-        return UpdateResult(success=False, error=f"{name} not in repos")
-
-    # Clone/fetch
-    emit(UpdatePhase.CLONING, "Cloning repository...")
-    if not clone_repo(name, repos, silent=True):
-        return UpdateResult(success=False, error="Failed to clone repository")
-
-    repo_dir = REPOS_DIR / name
-    emit(UpdatePhase.FETCHING, "Fetching latest commits...")
-    try:
-        subprocess.run(
-            ["git", "fetch", "origin"],
-            cwd=str(repo_dir),
-            capture_output=True,
-            check=True,
-            timeout=GIT_FETCH_TIMEOUT,
-        )
-    except subprocess.CalledProcessError as e:
-        return UpdateResult(success=False, error=f"Failed to fetch: {e.stderr.decode()}")
-
-    # Resolve latest commit
-    emit(UpdatePhase.CHECKING, "Checking for updates...")
-    new_commit = resolve_latest_commit(repo_dir)
-    if not new_commit:
-        return UpdateResult(success=False, error="Could not resolve latest commit")
-
-    expert_dir = get_expert_dir(name)
-    old_commit = get_head_commit(expert_dir)
-
-    if old_commit == new_commit:
-        return UpdateResult(success=True, already_up_to_date=True, new_commit=new_commit, old_commit=old_commit)
-
-    # Stage
-    emit(
-        UpdatePhase.STAGING,
-        f"Staging update from {old_commit[:12] if old_commit else 'none'} to {new_commit[:12]}...",
-        new_commit=new_commit,
-        old_commit=old_commit,
-    )
-    staging = stage_for_analysis(name, new_commit, expert_dir, old_commit, repo_dir)
-    tmpdir, staged_path, tmp_commit_dir = staging.tmpdir, staging.staged_path, staging.commit_dir
-
-    try:
-        # Analyze
-        if not skip_analysis:
-            emit(
-                UpdatePhase.ANALYZING,
-                f"Analyzing {new_commit[:12]} (this may take 2-5 minutes)...",
-                progress_percent=0,
-                new_commit=new_commit,
-                old_commit=old_commit,
-            )
-
-            handle = analyze_repo(name, new_commit, repo_dir, staged_path, is_update=True)
-
-            while handle.proc.poll() is None:
-                time.sleep(1)
-                emit(
-                    UpdatePhase.ANALYZING,
-                    f"Analyzing {new_commit[:12]}...",
-                    new_commit=new_commit,
-                    old_commit=old_commit,
-                )
-
-            if handle._stderr_file is not None:
-                handle._stderr_file.close()
-            if handle._stdout_file is not None:
-                handle._stdout_file.close()
-
-            if handle.proc.returncode != 0:
-                error_msg = read_analysis_error(handle.proc.returncode, handle.stderr_path, handle.stdout_path)
-                cleanup_log_files(handle.stderr_path, handle.stdout_path)
-                revert_checkout(repo_dir, old_commit)
-                return UpdateResult(success=False, error=error_msg, new_commit=new_commit, old_commit=old_commit)
-
-            cleanup_log_files(handle.stderr_path, handle.stdout_path)
-        else:
-            emit(
-                UpdatePhase.ANALYZING,
-                "Skipping analysis (reusing existing docs)...",
-                new_commit=new_commit,
-                old_commit=old_commit,
-            )
-
-        # Commit + HEAD
-        emit(UpdatePhase.COMMITTING, "Committing changes...")
-        commit_analysis_results(tmp_commit_dir, expert_dir, new_commit)
-        emit(UpdatePhase.UPDATING_HEAD, "Updating HEAD symlink...")
-        save_commit_to_repos(name, new_commit, repos, is_private)
-
-        return UpdateResult(success=True, new_commit=new_commit, old_commit=old_commit)
-
-    finally:
-        shutil.rmtree(tmpdir, ignore_errors=True)
-
-
-async def update_expert_async_internal(
+async def update_expert(
     name: str,
     on_progress: ProgressCallback | None = None,
     on_subprocess_start: Callable[[int], None] | None = None,
     cancellation_token: CancellationToken | None = None,
+    *,
+    skip_analysis: bool = False,
 ) -> UpdateResult:
-    """Async version of update_expert with cancellation support."""
+    """Update a single expert with progress reporting and cancellation support."""
     emit = make_emit(name, on_progress)
     check_cancel = make_cancellation_checker(cancellation_token)
     repo_lookup = get_repos_for_expert(name)
@@ -218,26 +113,27 @@ async def update_expert_async_internal(
         # Clone/fetch
         check_cancel(UpdatePhase.CLONING)
         emit(UpdatePhase.CLONING, "Cloning repository...")
-        if not clone_repo(name, repos, silent=True):
+        if not await clone_repo(name, repos, silent=True):
             return UpdateResult(success=False, error="Failed to clone repository")
 
         check_cancel(UpdatePhase.FETCHING)
         emit(UpdatePhase.FETCHING, "Fetching latest commits...")
-        try:
-            subprocess.run(
-                ["git", "fetch", "origin"],
-                cwd=str(repo_dir),
-                capture_output=True,
-                check=True,
-                timeout=GIT_FETCH_TIMEOUT,
-            )
-        except subprocess.CalledProcessError as e:
-            return UpdateResult(success=False, error=f"Failed to fetch: {e.stderr.decode()}")
+        proc = await asyncio.create_subprocess_exec(
+            "git",
+            "fetch",
+            "origin",
+            cwd=str(repo_dir),
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        _, stderr = await asyncio.wait_for(proc.communicate(), timeout=GIT_FETCH_TIMEOUT)
+        if proc.returncode != 0:
+            return UpdateResult(success=False, error=f"Failed to fetch: {stderr.decode()}")
 
         # Resolve latest commit
         check_cancel(UpdatePhase.CHECKING)
         emit(UpdatePhase.CHECKING, "Checking for updates...")
-        new_commit = resolve_latest_commit(repo_dir)
+        new_commit = await resolve_latest_commit(repo_dir)
         if not new_commit:
             return UpdateResult(success=False, error="Could not resolve latest commit")
 
@@ -255,36 +151,44 @@ async def update_expert_async_internal(
             new_commit=new_commit,
             old_commit=old_commit,
         )
-        staging = stage_for_analysis(name, new_commit, expert_dir, old_commit, repo_dir)
+        staging = await stage_for_analysis(name, new_commit, expert_dir, old_commit, repo_dir)
         tmpdir, staged_path, tmp_commit_dir = staging.tmpdir, staging.staged_path, staging.commit_dir
 
         # Async analysis
-        check_cancel(UpdatePhase.ANALYZING)
-        emit(
-            UpdatePhase.ANALYZING,
-            f"Analyzing {new_commit[:12]} (this may take 2-5 minutes)...",
-            progress_percent=0,
-            new_commit=new_commit,
-            old_commit=old_commit,
-        )
+        if not skip_analysis:
+            check_cancel(UpdatePhase.ANALYZING)
+            emit(
+                UpdatePhase.ANALYZING,
+                f"Analyzing {new_commit[:12]} (this may take 2-5 minutes)...",
+                progress_percent=0,
+                new_commit=new_commit,
+                old_commit=old_commit,
+            )
 
-        prompt = update_expert_prompt(name, new_commit, repo_dir, tmp_commit_dir)
-        analysis_result = await run_async_analysis(
-            name,
-            new_commit,
-            prompt,
-            staged_path,
-            repo_dir,
-            emit,
-            old_commit=old_commit,
-            cancellation_token=cancellation_token,
-            on_subprocess_start=on_subprocess_start,
-        )
+            prompt = update_expert_prompt(name, new_commit, repo_dir, tmp_commit_dir)
+            analysis_result = await run_async_analysis(
+                name,
+                new_commit,
+                prompt,
+                staged_path,
+                repo_dir,
+                emit,
+                old_commit=old_commit,
+                cancellation_token=cancellation_token,
+                on_subprocess_start=on_subprocess_start,
+            )
 
-        if not analysis_result.success:
-            revert_checkout(repo_dir, old_commit)
-            return UpdateResult(
-                success=False, error=analysis_result.error, new_commit=new_commit, old_commit=old_commit
+            if not analysis_result.success:
+                await revert_checkout(repo_dir, old_commit)
+                return UpdateResult(
+                    success=False, error=analysis_result.error, new_commit=new_commit, old_commit=old_commit
+                )
+        else:
+            emit(
+                UpdatePhase.ANALYZING,
+                "Skipping analysis (reusing existing docs)...",
+                new_commit=new_commit,
+                old_commit=old_commit,
             )
 
         # Commit + HEAD
@@ -296,14 +200,14 @@ async def update_expert_async_internal(
         return UpdateResult(success=True, new_commit=new_commit, old_commit=old_commit)
 
     except asyncio.CancelledError:
-        return handle_async_cancellation(None, None, None, repo_dir, old_commit, "Update cancelled by user")
+        return await handle_async_cancellation(None, None, None, repo_dir, old_commit, "Update cancelled by user")
 
     finally:
         if tmpdir:
             shutil.rmtree(tmpdir, ignore_errors=True)
 
 
-def get_git_versions(name: str, expert_dir: Path) -> list[VersionInfo]:
+async def get_git_versions(name: str, expert_dir: Path) -> list[VersionInfo]:
     """Retrieve all available versions from git repo (tags + recent commits).
 
     Args:
@@ -323,14 +227,15 @@ def get_git_versions(name: str, expert_dir: Path) -> list[VersionInfo]:
         # Check if repo is shallow and unshallow it to get full history
         shallow_file = repo_dir / ".git" / "shallow"
         if shallow_file.exists():
-            # Repo is shallow - fetch full history
-            subprocess.run(
-                ["git", "fetch", "--unshallow"],
+            proc = await asyncio.create_subprocess_exec(
+                "git",
+                "fetch",
+                "--unshallow",
                 cwd=str(repo_dir),
-                capture_output=True,
-                text=True,
-                timeout=GIT_FETCH_TIMEOUT,
+                stdout=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.DEVNULL,
             )
+            await asyncio.wait_for(proc.wait(), timeout=GIT_FETCH_TIMEOUT)
 
         # Get current HEAD commit
         current_head = get_head_commit(expert_dir)
@@ -346,21 +251,20 @@ def get_git_versions(name: str, expert_dir: Path) -> list[VersionInfo]:
         commit_to_info = {}  # Track commits to avoid duplicates
 
         # Query git tags
-        result = subprocess.run(
-            [
-                "git",
-                "tag",
-                "-l",
-                "--format=%(refname:short)|%(creatordate:short)|%(objectname)",
-            ],
+        proc = await asyncio.create_subprocess_exec(
+            "git",
+            "tag",
+            "-l",
+            "--format=%(refname:short)|%(creatordate:short)|%(objectname)",
             cwd=str(repo_dir),
-            capture_output=True,
-            text=True,
-            timeout=GIT_LOCAL_TIMEOUT,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.DEVNULL,
         )
+        stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=GIT_LOCAL_TIMEOUT)
+        tag_output = stdout.decode().strip()
 
-        if result.returncode == 0 and result.stdout.strip():
-            for line in result.stdout.strip().split("\n"):
+        if proc.returncode == 0 and tag_output:
+            for line in tag_output.split("\n"):
                 if not line:
                     continue
                 parts = line.split("|")
@@ -368,15 +272,20 @@ def get_git_versions(name: str, expert_dir: Path) -> list[VersionInfo]:
                     tag_name, date, _ = parts[0], parts[1], parts[2]
 
                     # Resolve tag to commit hash
-                    resolve_result = subprocess.run(
-                        ["git", "rev-parse", tag_name],
+                    resolve_proc = await asyncio.create_subprocess_exec(
+                        "git",
+                        "rev-parse",
+                        tag_name,
                         cwd=str(repo_dir),
-                        capture_output=True,
-                        text=True,
+                        stdout=asyncio.subprocess.PIPE,
+                        stderr=asyncio.subprocess.DEVNULL,
+                    )
+                    resolve_stdout, _ = await asyncio.wait_for(
+                        resolve_proc.communicate(),
                         timeout=GIT_LOCAL_TIMEOUT,
                     )
-                    if resolve_result.returncode == 0:
-                        commit = resolve_result.stdout.strip()
+                    if resolve_proc.returncode == 0:
+                        commit = resolve_stdout.decode().strip()
 
                         version_info = VersionInfo(
                             commit=commit,
@@ -390,16 +299,22 @@ def get_git_versions(name: str, expert_dir: Path) -> list[VersionInfo]:
                         commit_to_info[commit] = version_info
 
         # Query recent commits (exclude ones already added as tags)
-        result = subprocess.run(
-            ["git", "log", "--all", "--format=%H|%cs|%s", "-n", "50"],
+        proc = await asyncio.create_subprocess_exec(
+            "git",
+            "log",
+            "--all",
+            "--format=%H|%cs|%s",
+            "-n",
+            "50",
             cwd=str(repo_dir),
-            capture_output=True,
-            text=True,
-            timeout=GIT_LOCAL_TIMEOUT,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.DEVNULL,
         )
+        stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=GIT_LOCAL_TIMEOUT)
+        log_output = stdout.decode().strip()
 
-        if result.returncode == 0 and result.stdout.strip():
-            for line in result.stdout.strip().split("\n"):
+        if proc.returncode == 0 and log_output:
+            for line in log_output.split("\n"):
                 if not line:
                     continue
                 parts = line.split("|", 2)
@@ -436,7 +351,7 @@ def get_git_versions(name: str, expert_dir: Path) -> list[VersionInfo]:
         return versions
 
 
-def commit_exists_in_repo(name: str, commit: str) -> bool:
+async def commit_exists_in_repo(name: str, commit: str) -> bool:
     """Validate that a commit hash exists in the git repo.
 
     Args:
@@ -451,16 +366,20 @@ def commit_exists_in_repo(name: str, commit: str) -> bool:
         return False
 
     try:
-        result = subprocess.run(
-            ["git", "rev-parse", "--verify", commit],
+        proc = await asyncio.create_subprocess_exec(
+            "git",
+            "rev-parse",
+            "--verify",
+            commit,
             cwd=str(repo_dir),
-            capture_output=True,
-            timeout=GIT_LOCAL_TIMEOUT,
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.DEVNULL,
         )
+        await asyncio.wait_for(proc.wait(), timeout=GIT_LOCAL_TIMEOUT)
     except Exception:
         return False
     else:
-        return result.returncode == 0
+        return proc.returncode == 0
 
 
 async def switch_version_async(
@@ -494,7 +413,7 @@ async def switch_version_async(
         if old_commit == target_commit:
             return UpdateResult(success=True, already_up_to_date=True, old_commit=old_commit, new_commit=target_commit)
 
-        if not commit_exists_in_repo(name, target_commit):
+        if not await commit_exists_in_repo(name, target_commit):
             return UpdateResult(success=False, error=f"Commit {target_commit[:12]} not found in repository")
 
         target_dir = expert_dir / target_commit
@@ -509,15 +428,18 @@ async def switch_version_async(
                 new_commit=target_commit,
             )
 
-            try:
-                subprocess.run(
-                    ["git", "checkout", "--quiet", target_commit],
-                    cwd=str(repo_dir),
-                    check=True,
-                    timeout=GIT_LOCAL_TIMEOUT,
-                )
-            except subprocess.CalledProcessError as e:
-                return UpdateResult(success=False, error=f"Failed to checkout commit: {e}")
+            proc = await asyncio.create_subprocess_exec(
+                "git",
+                "checkout",
+                "--quiet",
+                target_commit,
+                cwd=str(repo_dir),
+                stdout=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            _, stderr = await asyncio.wait_for(proc.communicate(), timeout=GIT_LOCAL_TIMEOUT)
+            if proc.returncode != 0:
+                return UpdateResult(success=False, error=f"Failed to checkout commit: {stderr.decode()}")
 
             check_cancel(UpdatePhase.STAGING)
             emit(
@@ -558,7 +480,7 @@ async def switch_version_async(
             )
 
             if not analysis_result.success:
-                revert_checkout(repo_dir, old_commit)
+                await revert_checkout(repo_dir, old_commit)
                 return UpdateResult(
                     success=False, error=analysis_result.error, old_commit=old_commit, new_commit=target_commit
                 )
@@ -568,12 +490,18 @@ async def switch_version_async(
             commit_analysis_results(tmp_commit_dir, expert_dir, target_commit)
 
         # Checkout in repo to keep in sync
-        try:
-            subprocess.run(
-                ["git", "checkout", "--quiet", target_commit], cwd=str(repo_dir), check=True, timeout=GIT_LOCAL_TIMEOUT
-            )
-        except subprocess.CalledProcessError as e:
-            return UpdateResult(success=False, error=f"Failed to checkout commit in repo: {e}")
+        proc = await asyncio.create_subprocess_exec(
+            "git",
+            "checkout",
+            "--quiet",
+            target_commit,
+            cwd=str(repo_dir),
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        _, stderr = await asyncio.wait_for(proc.communicate(), timeout=GIT_LOCAL_TIMEOUT)
+        if proc.returncode != 0:
+            return UpdateResult(success=False, error=f"Failed to checkout commit in repo: {stderr.decode()}")
 
         # Update HEAD (for already-analyzed versions, commit_analysis_results already did this for new ones)
         emit(UpdatePhase.UPDATING_HEAD, "Updating HEAD symlink...", old_commit=old_commit, new_commit=target_commit)
@@ -588,17 +516,188 @@ async def switch_version_async(
         return UpdateResult(success=True, old_commit=old_commit, new_commit=target_commit)
 
     except asyncio.CancelledError:
-        return handle_async_cancellation(None, None, None, repo_dir, old_commit, "Version switch cancelled by user")
+        return await handle_async_cancellation(
+            None, None, None, repo_dir, old_commit, "Version switch cancelled by user"
+        )
 
     finally:
         if tmpdir:
             shutil.rmtree(tmpdir, ignore_errors=True)
 
 
+async def add_expert(
+    name: str,
+    url: str,
+    *,
+    ref_name: str = "",
+    is_private: bool = False,
+    on_progress: ProgressCallback | None = None,
+) -> OperationResult:
+    """Register a new expert: clone, analyze, and deploy.
+
+    All work happens in temp directories — nothing visible until success.
+    """
+    from hivemind.analysis import run_async_analysis
+    from hivemind.templates import create_expert_prompt
+
+    emit = make_emit(name, on_progress)
+
+    expert_dir = (PRIVATE_EXPERTS_DIR if is_private else EXPERTS_DIR) / name
+    if expert_dir.is_dir():
+        return OperationResult(success=False, error=f"Expert '{name}' already exists")
+
+    # Resolve commit from ref
+    commit = ""
+    if ref_name:
+        emit(UpdatePhase.CHECKING, f"Resolving ref '{ref_name}'...")
+        proc = await asyncio.create_subprocess_exec(
+            "git",
+            "ls-remote",
+            url,
+            ref_name,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+        stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=30)
+        output = stdout.decode().strip()
+        commit = output.split()[0] if output else ref_name
+
+    # Clone to temp directory
+    tmpdir = tempfile.mkdtemp(prefix=f"hivemind-{name}-")
+    tmp_repo = Path(tmpdir) / "repo"
+    tmp_expert = Path(tmpdir) / "expert"
+    tmp_expert.mkdir()
+
+    try:
+        emit(UpdatePhase.CLONING, f"Cloning {name}...")
+        if commit and ref_name:
+            proc = await asyncio.create_subprocess_exec(
+                "git",
+                "clone",
+                "--progress",
+                url,
+                str(tmp_repo),
+            )
+            await asyncio.wait_for(proc.wait(), timeout=GIT_CLONE_TIMEOUT)
+            if proc.returncode != 0:
+                return OperationResult(success=False, error="Failed to clone repository")
+            proc = await asyncio.create_subprocess_exec(
+                "git",
+                "checkout",
+                "--quiet",
+                commit,
+                cwd=str(tmp_repo),
+            )
+            await asyncio.wait_for(proc.wait(), timeout=GIT_LOCAL_TIMEOUT)
+        elif ref_name:
+            proc = await asyncio.create_subprocess_exec(
+                "git",
+                "clone",
+                "--progress",
+                "--branch",
+                ref_name,
+                url,
+                str(tmp_repo),
+            )
+            await asyncio.wait_for(proc.wait(), timeout=GIT_CLONE_TIMEOUT)
+            if proc.returncode != 0:
+                return OperationResult(success=False, error="Failed to clone repository")
+        else:
+            proc = await asyncio.create_subprocess_exec(
+                "git",
+                "clone",
+                "--progress",
+                url,
+                str(tmp_repo),
+            )
+            await asyncio.wait_for(proc.wait(), timeout=GIT_CLONE_TIMEOUT)
+            if proc.returncode != 0:
+                return OperationResult(success=False, error="Failed to clone repository")
+
+        # Resolve commit hash if not pinned
+        if not commit:
+            proc = await asyncio.create_subprocess_exec(
+                "git",
+                "rev-parse",
+                "HEAD",
+                cwd=str(tmp_repo),
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.DEVNULL,
+            )
+            stdout, _ = await proc.communicate()
+            commit = stdout.decode().strip()
+
+        # Create versioned directory and run analysis
+        tmp_commit_dir = tmp_expert / commit
+        tmp_commit_dir.mkdir(parents=True, exist_ok=True)
+
+        emit(UpdatePhase.ANALYZING, f"Analyzing {name} (this may take 2-5 minutes)...")
+        prompt = create_expert_prompt(name, commit, tmp_repo, tmp_commit_dir)
+
+        analysis_result = await run_async_analysis(
+            name,
+            commit,
+            prompt,
+            tmp_expert,
+            tmp_repo,
+            emit,
+        )
+        if not analysis_result.success:
+            return OperationResult(success=False, error=analysis_result.error or "AI analysis failed")
+
+        # --- Success: move everything to final locations ---
+        ensure_repos_link()
+        final_repo = REPOS_DIR / name
+        if final_repo.exists():
+            shutil.rmtree(final_repo)
+        shutil.move(str(tmp_repo), str(final_repo))
+
+        target_dir = PRIVATE_EXPERTS_DIR if is_private else EXPERTS_DIR
+        target_dir.mkdir(parents=True, exist_ok=True)
+        final_expert = target_dir / name
+        shutil.move(str(tmp_expert), str(final_expert))
+
+        # Create HEAD symlink
+        head_link = final_expert / "HEAD"
+        head_link.symlink_to(commit)
+
+        # Update repos config
+        repo_entry = RepoEntry(remote=url, commit=commit, ref_name=ref_name)
+        if is_private:
+            repos = load_private_repos()
+            repos[name] = repo_entry
+            save_private_repos(repos)
+        else:
+            repos = load_repos()
+            repos[name] = repo_entry
+            save_repos(repos)
+
+        # Enable in config
+        config = load_config()
+        if name not in config.enabled:
+            config.enabled.append(name)
+        if name in config.disabled:
+            config.disabled.remove(name)
+        if is_private and name not in config.private:
+            config.private.append(name)
+        save_config(config)
+
+        # Deploy
+        deploy_agent(name)
+        deploy_expert(name)
+        mark_librarian_dirty()
+        flush_librarian(config=config)
+
+        return OperationResult(success=True)
+
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)
+
+
 # --- Expert Lifecycle (future: use_cases/expert/) ---
 
 
-def enable_expert(name: str, config: AppConfig) -> EnableResult:
+async def enable_expert(name: str, config: AppConfig) -> EnableResult:
     """Enable an expert (clone repo + create agent symlink)."""
     expert_dir = get_expert_dir(name)
     if not expert_dir.is_dir():
@@ -613,7 +712,7 @@ def enable_expert(name: str, config: AppConfig) -> EnableResult:
         save_config(config)
 
     repo_lookup = get_repos_for_expert(name)
-    if not clone_repo(name, repo_lookup.repos, silent=True):
+    if not await clone_repo(name, repo_lookup.repos, silent=True):
         return EnableResult(success=False, error="Failed to clone repository")
 
     deploy_agent(name)
@@ -687,7 +786,7 @@ def delete_expert(name: str, config: AppConfig) -> OperationResult:
     for team_data in teams.values():
         if name in team_data.experts:
             team_data.experts.remove(name)
-    save_teams(teams)
+    save_teams(teams, config=config)
 
     # Delete expert directory
     if expert_dir.exists():

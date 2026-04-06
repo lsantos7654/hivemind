@@ -37,7 +37,7 @@ def create_tui_progress_callback(screen: ExpertsPane, expert_name: str) -> Calla
 
 async def update_expert_async(screen: ExpertsPane, expert_name: str, token: CancellationToken):
     """Async wrapper for updating an expert with cancellation support."""
-    from hivemind.experts import update_expert_async_internal
+    from hivemind.experts import update_expert
 
     callback = create_tui_progress_callback(screen, expert_name)
 
@@ -46,7 +46,7 @@ async def update_expert_async(screen: ExpertsPane, expert_name: str, token: Canc
         screen.register_subprocess_pid(expert_name, pid)
 
     try:
-        result = await update_expert_async_internal(
+        result = await update_expert(
             expert_name,
             on_progress=callback,
             on_subprocess_start=on_pid,
@@ -92,7 +92,7 @@ async def enable_expert_async_op(pane: ExpertsPane, expert_name: str) -> None:
         pane.set_expert_operation_status(expert_name, OperationStatus.IN_PROGRESS)
         pane.set_expert_status_message(expert_name, "enabling...")
         config = load_config()
-        result = await asyncio.to_thread(enable_expert, expert_name, config)
+        result = await enable_expert(expert_name, config)
         if result.success:
             if result.already_enabled:
                 pane.notify(f"{expert_name}: already enabled", severity="information")
@@ -150,26 +150,17 @@ async def delete_expert_async_op(pane: ExpertsPane, expert_name: str) -> None:
 
 
 async def add_expert_async(pane: ExpertsPane, url: str) -> None:
-    """Async wrapper for adding an expert via subprocess."""
-    import sys
+    """Async wrapper for adding an expert."""
+    from hivemind.experts import add_expert
+
+    name = url.rstrip("/").split("/")[-1].removesuffix(".git")
 
     try:
-        proc = await asyncio.create_subprocess_exec(
-            sys.executable,
-            "-m",
-            "hivemind.cli",
-            "add",
-            url,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        _, stderr = await proc.communicate()
-
-        if proc.returncode == 0:
-            pane.notify("Expert added successfully", severity="information")
+        result = await add_expert(name, url)
+        if result.success:
+            pane.notify(f"Expert '{name}' added successfully", severity="information")
         else:
-            error = stderr.decode().strip() or "Unknown error"
-            pane.notify(f"Failed to add expert: {error}", severity="error")
+            pane.notify(f"Failed to add expert: {result.error}", severity="error")
     except Exception as e:
         pane.notify(f"Error: {e}", severity="error")
     finally:
@@ -218,7 +209,7 @@ async def switch_version_async_tui(
                 # Refresh the version detail screen to show updated active status
                 if hasattr(screen, "_load_versions"):
                     screen.expert.commit = target_commit  # Update expert object
-                    screen._load_versions()
+                    await screen._load_versions()
                     screen._populate_table()
                     # Update the expert header to show new HEAD
                     if hasattr(screen, "query_one"):

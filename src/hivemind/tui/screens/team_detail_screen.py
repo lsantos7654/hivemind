@@ -113,7 +113,10 @@ class TeamDetailScreen(SearchMixin, BaseScreen):
             if new_name is None and new_desc is None:
                 return
 
-            result = update_team(self.team_name, new_name=new_name, description=new_desc)
+            from hivemind.config import load_config
+
+            config = load_config()
+            result = update_team(self.team_name, new_name=new_name, description=new_desc, config=config)
             if result.success:
                 if new_name:
                     self.team_name = new_name
@@ -125,7 +128,6 @@ class TeamDetailScreen(SearchMixin, BaseScreen):
         self.app.push_screen(EditTeamModal(self.team_name, current_desc), _handle_result)
 
     def action_add_expert(self) -> None:
-        from hivemind.teams import add_expert_to_team
         from hivemind.tui.widgets.selection_modal import SelectionListModal
 
         all_experts = [e.name for e in self.app.experts]
@@ -139,18 +141,24 @@ class TeamDetailScreen(SearchMixin, BaseScreen):
         def _handle_add(selected: list[str] | None) -> None:
             if not selected:
                 return
-            for expert_name in selected:
-                result = add_expert_to_team(self.team_name, expert_name)
-                if result.success:
-                    self.notify(f"Added {expert_name}", severity="information")
-                else:
-                    self.notify(f"Failed: {result.error or 'Unknown'}", severity="error")
-            self._reload()
+            self.run_worker(self._add_experts_async(selected), exit_on_error=False)
 
         self.app.push_screen(SelectionListModal(available, title="Add Experts"), _handle_add)
 
+    async def _add_experts_async(self, selected: list[str]) -> None:
+        from hivemind.config import load_config
+        from hivemind.teams import add_expert_to_team
+
+        config = load_config()
+        for expert_name in selected:
+            result = await add_expert_to_team(self.team_name, expert_name, config=config)
+            if result.success:
+                self.notify(f"Added {expert_name}", severity="information")
+            else:
+                self.notify(f"Failed: {result.error or 'Unknown'}", severity="error")
+        self._reload()
+
     def action_remove_expert(self) -> None:
-        from hivemind.teams import remove_expert_from_team
         from hivemind.tui.widgets import ConfirmationModal
 
         expert_name = self.get_current_name()
@@ -159,7 +167,11 @@ class TeamDetailScreen(SearchMixin, BaseScreen):
 
         def _do_remove(confirmed: bool) -> None:
             if confirmed:
-                result = remove_expert_from_team(self.team_name, expert_name)
+                from hivemind.config import load_config
+                from hivemind.teams import remove_expert_from_team
+
+                config = load_config()
+                result = remove_expert_from_team(self.team_name, expert_name, config=config)
                 if result.success:
                     self.notify(f"Removed {expert_name}", severity="information")
                     self._reload()

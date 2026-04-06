@@ -186,9 +186,8 @@ def load_teams() -> dict[str, TeamData]:
     return load_config().teams
 
 
-def save_teams(teams: dict[str, TeamData]) -> None:
+def save_teams(teams: dict[str, TeamData], config: AppConfig) -> None:
     """Save teams to config.json."""
-    config = load_config()
     config.teams = teams
     save_config(config)
 

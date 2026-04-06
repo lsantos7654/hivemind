@@ -80,20 +80,21 @@ class TeamsPane(BasePane):
 
         def _handle_result(data: dict | None) -> None:
             if data:
-                from hivemind.teams import create_team
-
-                result = create_team(
-                    data["name"],
-                    data["description"],
-                    data["experts"],
-                )
-                if result.success:
-                    self.notify(f"Created team: {data['name']}", severity="information")
-                    self.load_teams()
-                else:
-                    self.notify(f"Failed: {result.error or 'Unknown'}", severity="error")
+                self.run_worker(self._create_team_async(data), exit_on_error=False)
 
         self.app.push_screen(CreateTeamModal(), _handle_result)
+
+    async def _create_team_async(self, data: dict) -> None:
+        from hivemind.config import load_config
+        from hivemind.teams import create_team
+
+        config = load_config()
+        result = await create_team(data["name"], data["description"], data["experts"], config=config)
+        if result.success:
+            self.notify(f"Created team: {data['name']}", severity="information")
+            self.load_teams()
+        else:
+            self.notify(f"Failed: {result.error or 'Unknown'}", severity="error")
 
     def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
         event.stop()
@@ -107,7 +108,6 @@ class TeamsPane(BasePane):
             self.app.push_screen(TeamDetailScreen(name, self._teams[name]))
 
     def action_delete_team(self) -> None:
-        from hivemind.teams import delete_team
         from hivemind.tui.widgets import ConfirmationModal
 
         name = self.get_current_name()
@@ -116,7 +116,11 @@ class TeamsPane(BasePane):
 
         def _do_delete(confirmed: bool) -> None:
             if confirmed:
-                result = delete_team(name)
+                from hivemind.config import load_config
+                from hivemind.teams import delete_team
+
+                config = load_config()
+                result = delete_team(name, config=config)
                 if result.success:
                     self.notify(f"Deleted team: {name}", severity="information")
                     self.load_teams()

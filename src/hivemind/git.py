@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import shutil
-import subprocess
 import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -34,7 +34,7 @@ __all__ = [
 ]
 
 
-def clone_repo(name: str, repos: dict[str, RepoEntry], *, silent: bool = False) -> bool:
+async def clone_repo(name: str, repos: dict[str, RepoEntry], *, silent: bool = False) -> bool:
     """Clone a repo to cache repos dir if not already present.
 
     Args:
@@ -59,77 +59,86 @@ def clone_repo(name: str, repos: dict[str, RepoEntry], *, silent: bool = False) 
     commit = repo.commit
     ref_name = repo.ref_name
 
+    stdout = asyncio.subprocess.DEVNULL if silent else None
+    stderr = asyncio.subprocess.DEVNULL if silent else None
+
     # Determine clone command
     if commit:
-        subprocess.run(
-            [
-                "git",
-                "clone",
-                "--progress" if not silent else "--quiet",
-                remote,
-                str(repo_dir),
-            ],
-            check=True,
-            stdout=subprocess.DEVNULL if silent else None,
-            stderr=subprocess.DEVNULL if silent else None,
-            timeout=GIT_CLONE_TIMEOUT,
+        proc = await asyncio.create_subprocess_exec(
+            "git",
+            "clone",
+            "--quiet" if silent else "--progress",
+            remote,
+            str(repo_dir),
+            stdout=stdout,
+            stderr=stderr,
         )
-        subprocess.run(
-            ["git", "checkout", "--quiet", commit],
+        await asyncio.wait_for(proc.wait(), timeout=GIT_CLONE_TIMEOUT)
+        if proc.returncode != 0:
+            return False
+
+        proc = await asyncio.create_subprocess_exec(
+            "git",
+            "checkout",
+            "--quiet",
+            commit,
             cwd=str(repo_dir),
-            check=True,
-            timeout=GIT_LOCAL_TIMEOUT,
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.DEVNULL,
         )
+        await asyncio.wait_for(proc.wait(), timeout=GIT_LOCAL_TIMEOUT)
+        if proc.returncode != 0:
+            return False
     elif ref_name:
-        subprocess.run(
-            [
-                "git",
-                "clone",
-                "--progress" if not silent else "--quiet",
-                "--branch",
-                ref_name,
-                remote,
-                str(repo_dir),
-            ],
-            check=True,
-            stdout=subprocess.DEVNULL if silent else None,
-            stderr=subprocess.DEVNULL if silent else None,
-            timeout=GIT_CLONE_TIMEOUT,
+        proc = await asyncio.create_subprocess_exec(
+            "git",
+            "clone",
+            "--quiet" if silent else "--progress",
+            "--branch",
+            ref_name,
+            remote,
+            str(repo_dir),
+            stdout=stdout,
+            stderr=stderr,
         )
+        await asyncio.wait_for(proc.wait(), timeout=GIT_CLONE_TIMEOUT)
+        if proc.returncode != 0:
+            return False
     else:
-        subprocess.run(
-            [
-                "git",
-                "clone",
-                "--progress" if not silent else "--quiet",
-                remote,
-                str(repo_dir),
-            ],
-            check=True,
-            stdout=subprocess.DEVNULL if silent else None,
-            stderr=subprocess.DEVNULL if silent else None,
-            timeout=GIT_CLONE_TIMEOUT,
+        proc = await asyncio.create_subprocess_exec(
+            "git",
+            "clone",
+            "--quiet" if silent else "--progress",
+            remote,
+            str(repo_dir),
+            stdout=stdout,
+            stderr=stderr,
         )
+        await asyncio.wait_for(proc.wait(), timeout=GIT_CLONE_TIMEOUT)
+        if proc.returncode != 0:
+            return False
 
     return True
 
 
-def resolve_latest_commit(repo_dir: Path) -> str | None:
+async def resolve_latest_commit(repo_dir: Path) -> str | None:
     """Resolve the latest commit from origin/HEAD, origin/main, or origin/master."""
     for ref in ["origin/HEAD", "origin/main", "origin/master"]:
-        result = subprocess.run(
-            ["git", "rev-parse", ref],
+        proc = await asyncio.create_subprocess_exec(
+            "git",
+            "rev-parse",
+            ref,
             cwd=str(repo_dir),
-            capture_output=True,
-            text=True,
-            timeout=GIT_LOCAL_TIMEOUT,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.DEVNULL,
         )
-        if result.returncode == 0:
-            return result.stdout.strip()
+        stdout, _ = await proc.communicate()
+        if proc.returncode == 0:
+            return stdout.decode().strip()
     return None
 
 
-def stage_for_analysis(
+async def stage_for_analysis(
     name: str,
     new_commit: str,
     expert_dir: Path,
@@ -156,12 +165,19 @@ def stage_for_analysis(
                     shutil.copy2(f, tmp_commit_dir / f.name)
 
     # Checkout the target commit
-    subprocess.run(
-        ["git", "checkout", "--quiet", new_commit],
+    proc = await asyncio.create_subprocess_exec(
+        "git",
+        "checkout",
+        "--quiet",
+        new_commit,
         cwd=str(repo_dir),
-        check=True,
-        timeout=GIT_LOCAL_TIMEOUT,
+        stdout=asyncio.subprocess.DEVNULL,
+        stderr=asyncio.subprocess.DEVNULL,
     )
+    await asyncio.wait_for(proc.wait(), timeout=GIT_LOCAL_TIMEOUT)
+    if proc.returncode != 0:
+        msg = f"Failed to checkout {new_commit}"
+        raise RuntimeError(msg)
 
     return StagingResult(tmpdir=tmpdir, staged_path=staged_path, commit_dir=tmp_commit_dir)
 
@@ -231,13 +247,17 @@ def save_commit_to_repos(
         save_repos(repos)
 
 
-def revert_checkout(repo_dir: Path, old_commit: str | None) -> None:
+async def revert_checkout(repo_dir: Path, old_commit: str | None) -> None:
     """Revert git checkout to old commit on failure."""
     if old_commit:
         with contextlib.suppress(Exception):
-            subprocess.run(
-                ["git", "checkout", "--quiet", old_commit],
+            proc = await asyncio.create_subprocess_exec(
+                "git",
+                "checkout",
+                "--quiet",
+                old_commit,
                 cwd=str(repo_dir),
-                capture_output=True,
-                timeout=GIT_LOCAL_TIMEOUT,
+                stdout=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.DEVNULL,
             )
+            await asyncio.wait_for(proc.wait(), timeout=GIT_LOCAL_TIMEOUT)

@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import contextlib
+from typing import TYPE_CHECKING
+
 from hivemind.config import (
     AGENTS_DIR,
     EXPERTS_DIR,
@@ -14,8 +17,12 @@ from hivemind.config import (
     get_expert_dir,
     load_teams,
 )
-from hivemind.models import AppConfig, RedeployResult
 from hivemind.providers import extract_description, strip_frontmatter
+
+if TYPE_CHECKING:
+    from collections.abc import Generator
+
+    from hivemind.models import AppConfig
 
 __all__ = [
     "_librarian_dirty",
@@ -23,8 +30,8 @@ __all__ = [
     "deploy_expert",
     "deploy_team_lead",
     "flush_librarian",
+    "librarian_batch",
     "mark_librarian_dirty",
-    "redeploy_all_agents",
     "regenerate_hivemind_md",
     "undeploy_agent",
     "undeploy_expert",
@@ -106,6 +113,18 @@ def flush_librarian(config: AppConfig) -> None:
     if _librarian_dirty:
         update_librarian(config=config)
         _librarian_dirty = False
+
+
+@contextlib.contextmanager
+def librarian_batch(config: AppConfig) -> Generator[None, None, None]:
+    """Context manager that regenerates the librarian once at exit.
+
+    Use instead of manual mark_librarian_dirty() + flush_librarian() pairs.
+    """
+    try:
+        yield
+    finally:
+        update_librarian(config=config)
 
 
 def update_librarian(config: AppConfig) -> None:
@@ -196,47 +215,6 @@ def update_librarian(config: AppConfig) -> None:
     (AGENTS_DIR / "librarian.md").write_text(content, encoding="utf-8")
 
 
-def redeploy_all_agents(config: AppConfig) -> RedeployResult:
-    """Regenerate all enabled agent files with current provider settings."""
-    from hivemind.teams import refresh_expert_notes_header, refresh_team_lead_body
-
-    enabled = config.enabled
-
-    deployed: list[str] = []
-    failed: list[str] = []
-
-    for name in enabled:
-        if deploy_agent(name):
-            deployed.append(name)
-        else:
-            failed.append(name)
-
-    # Deploy expert directories to provider's experts/ location
-    experts_deployed = [name for name in enabled if deploy_expert(name)]
-
-    # Refresh team templates and redeploy team leads
-    teams_deployed: list[str] = []
-    teams = load_teams()
-    for team_name, team_data in teams.items():
-        refresh_team_lead_body(team_name)
-        if deploy_team_lead(team_name):
-            teams_deployed.append(f"team-lead-{team_name}")
-        for expert_name in team_data.experts:
-            refresh_expert_notes_header(team_name, expert_name)
-
-    # Regenerate librarian and HIVEMIND.md
-    mark_librarian_dirty()
-    flush_librarian(config=config)
-    regenerate_hivemind_md(config=config)
-
-    return RedeployResult(
-        success=True,
-        failed=failed,
-        experts_deployed=experts_deployed,
-        teams_deployed=teams_deployed,
-    )
-
-
 def regenerate_hivemind_md(config: AppConfig) -> None:
     """Regenerate HIVEMIND.md from base template + provider instructions."""
     from hivemind.templates import hivemind_md_base
@@ -271,25 +249,13 @@ def deploy_team_lead(team_name: str) -> bool:
     provider = get_active_provider()
     body = strip_frontmatter(lead_md.read_text(encoding="utf-8"))
 
-    # Inject current roster from config (always fresh)
+    # Inject current roster from config via sentinel replacement
     teams = load_teams()
     if team_name in teams:
         experts = teams[team_name].experts
         roster_lines = "\n".join(f"- expert-{e}" for e in experts)
-        roster_section = f"\n\n## Team Roster\n\n{roster_lines}\n"
-        # Insert after the first paragraph (before the first ## heading)
-        lines = body.split("\n")
-        insert_idx = 0
-        found_heading = False
-        for i, line in enumerate(lines):
-            if line.startswith("## ") and i > 0:
-                insert_idx = i
-                found_heading = True
-                break
-        if found_heading:
-            body = "\n".join(lines[:insert_idx]) + roster_section + "\n".join(lines[insert_idx:])
-        else:
-            body += roster_section
+        roster_section = f"## Team Roster\n\n{roster_lines}"
+        body = body.replace("<!-- ROSTER -->", roster_section)
 
     body += provider.get_context_append("team_lead")
     description = extract_description(body)

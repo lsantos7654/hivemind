@@ -2,15 +2,14 @@
 
 from __future__ import annotations
 
+import asyncio
 import shutil
-import subprocess
 from typing import TYPE_CHECKING
 
 from hivemind.config import (
     TEAMS_DIR,
     get_active_provider,
     get_expert_dir,
-    load_config,
     load_teams,
     save_teams,
 )
@@ -23,7 +22,7 @@ from hivemind.deployment import (
     mark_librarian_dirty,
     undeploy_team_lead,
 )
-from hivemind.models import AddExpertsResult, ExpertError, OperationResult, TeamData
+from hivemind.models import AddExpertsResult, AppConfig, ExpertError, OperationResult, TeamData
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -43,7 +42,7 @@ __all__ = [
 ]
 
 
-def generate_expert_section(expert_name: str, team_name: str) -> str | None:
+async def generate_expert_section(expert_name: str, team_name: str) -> str | None:
     """AI-generate a ## expert-{name} section for a team lead.
 
     Calls the provider's analysis engine with the expert's knowledge docs.
@@ -61,18 +60,19 @@ def generate_expert_section(expert_name: str, team_name: str) -> str | None:
     provider = get_active_provider()
     cmd = provider.build_analysis_command(extra_dirs=[head_dir])
 
-    proc = subprocess.run(
-        cmd,
-        input=prompt,
-        text=True,
-        capture_output=True,
+    proc = await asyncio.create_subprocess_exec(
+        *cmd,
+        stdin=asyncio.subprocess.PIPE,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
     )
+    stdout, _ = await proc.communicate(prompt.encode())
 
     if proc.returncode != 0:
         return None
 
     # The AI should write to stdout, not a file
-    output = proc.stdout.strip() if proc.stdout else ""
+    output = stdout.decode().strip() if stdout else ""
     if output and f"## expert-{expert_name}" in output:
         # Extract just the section (in case there's extra output)
         idx = output.index(f"## expert-{expert_name}")
@@ -197,13 +197,14 @@ def refresh_team_lead_body(team_name: str) -> None:
     lead_md.write_text(lead_body, encoding="utf-8")
 
 
-def create_team(
+async def create_team(
     name: str,
     description: str,
     experts: list[str],
+    config: AppConfig,
 ) -> OperationResult:
     """Create a new team."""
-    teams = load_teams()
+    teams = config.teams
     if name in teams:
         return OperationResult(success=False, error=f"Team '{name}' already exists")
 
@@ -220,7 +221,7 @@ def create_team(
     # Generate expert sections
     expert_sections: list[str] = []
     for expert_name in experts:
-        section = generate_expert_section(expert_name, name)
+        section = await generate_expert_section(expert_name, name)
         if not section:
             shutil.rmtree(team_dir)
             return OperationResult(
@@ -241,19 +242,19 @@ def create_team(
 
     # Save to config
     teams[name] = TeamData(description=description, experts=experts)
-    save_teams(teams)
+    save_teams(teams, config=config)
 
     # Deploy
     deploy_team_lead(name)
     mark_librarian_dirty()
-    flush_librarian(config=load_config())
+    flush_librarian(config=config)
 
     return OperationResult(success=True)
 
 
-def delete_team(name: str) -> OperationResult:
+def delete_team(name: str, config: AppConfig) -> OperationResult:
     """Delete a team and all its deployed agents."""
-    teams = load_teams()
+    teams = config.teams
     if name not in teams:
         return OperationResult(success=False, error=f"Team '{name}' does not exist")
 
@@ -263,26 +264,26 @@ def delete_team(name: str) -> OperationResult:
     # Remove team directory
     team_dir = TEAMS_DIR / name
     if team_dir.exists():
-        import shutil
-
         shutil.rmtree(team_dir)
 
-    # Remove from hivemind.json
+    # Remove from config
     del teams[name]
-    save_teams(teams)
+    save_teams(teams, config=config)
 
     mark_librarian_dirty()
-    flush_librarian(config=load_config())
+    flush_librarian(config=config)
     return OperationResult(success=True)
 
 
 def update_team(
     name: str,
+    *,
     new_name: str | None = None,
     description: str | None = None,
+    config: AppConfig,
 ) -> OperationResult:
     """Update a team's name and/or description."""
-    teams = load_teams()
+    teams = config.teams
     if name not in teams:
         return OperationResult(success=False, error=f"Team '{name}' does not exist")
 
@@ -306,31 +307,32 @@ def update_team(
 
         # Redeploy team agents under new name
         undeploy_team_lead(name)
-        save_teams(teams)
+        save_teams(teams, config=config)
         deploy_team_lead(new_name)
         mark_librarian_dirty()
-        flush_librarian(config=load_config())
+        flush_librarian(config=config)
     else:
-        save_teams(teams)
+        save_teams(teams, config=config)
         deploy_team_lead(name)
         mark_librarian_dirty()
-        flush_librarian(config=load_config())
+        flush_librarian(config=config)
 
     return OperationResult(success=True)
 
 
-def add_experts_to_team(
+async def add_experts_to_team(
     team_name: str,
     expert_names: list[str],
     *,
     on_progress: Callable[[str], None] | None = None,
+    config: AppConfig,
 ) -> AddExpertsResult:
     """Add multiple experts to a team's roster in one operation.
 
     AI-generates expert sections, creates notes stubs, and redeploys
     the team lead + librarian only once at the end.
     """
-    teams = load_teams()
+    teams = config.teams
     if team_name not in teams:
         return AddExpertsResult(
             success=False,
@@ -358,7 +360,7 @@ def add_experts_to_team(
         if on_progress:
             on_progress(expert_name)
 
-        section = generate_expert_section(expert_name, team_name)
+        section = await generate_expert_section(expert_name, team_name)
         if not section:
             failed.append(ExpertError(name=expert_name, error="AI generation failed"))
             continue
@@ -382,21 +384,21 @@ def add_experts_to_team(
     # Save config and redeploy once
     if added:
         team.experts = existing
-        save_teams(teams)
+        save_teams(teams, config=config)
         deploy_team_lead(team_name)
         mark_librarian_dirty()
-        flush_librarian(config=load_config())
+        flush_librarian(config=config)
 
     return AddExpertsResult(success=True, added=added, skipped=skipped, failed=failed)
 
 
-def add_expert_to_team(team_name: str, expert_name: str) -> OperationResult:
+async def add_expert_to_team(team_name: str, expert_name: str, config: AppConfig) -> OperationResult:
     """Add an expert to a team's roster.
 
     AI-generates a new ## expert-{name} section in lead.md,
     creates a notes.md stub, and redeploys the team lead.
     """
-    teams = load_teams()
+    teams = config.teams
     if team_name not in teams:
         return OperationResult(success=False, error=f"Team '{team_name}' does not exist")
 
@@ -412,7 +414,7 @@ def add_expert_to_team(team_name: str, expert_name: str) -> OperationResult:
         return OperationResult(success=False, error=f"Expert '{expert_name}' does not exist")
 
     # Generate expert section for lead.md
-    section = generate_expert_section(expert_name, team_name)
+    section = await generate_expert_section(expert_name, team_name)
     if not section:
         return OperationResult(
             success=False,
@@ -439,23 +441,23 @@ def add_expert_to_team(team_name: str, expert_name: str) -> OperationResult:
     # Update config
     experts.append(expert_name)
     team.experts = experts
-    save_teams(teams)
+    save_teams(teams, config=config)
 
     # Redeploy team lead (roster list updates automatically)
     deploy_team_lead(team_name)
     mark_librarian_dirty()
-    flush_librarian(config=load_config())
+    flush_librarian(config=config)
 
     return OperationResult(success=True)
 
 
-def remove_expert_from_team(team_name: str, expert_name: str) -> OperationResult:
+def remove_expert_from_team(team_name: str, expert_name: str, config: AppConfig) -> OperationResult:
     """Remove an expert from a team's roster.
 
     Removes the ## expert-{name} section from lead.md,
     deletes the expert's notes directory, and redeploys the team lead.
     """
-    teams = load_teams()
+    teams = config.teams
     if team_name not in teams:
         return OperationResult(success=False, error=f"Team '{team_name}' does not exist")
 
@@ -476,10 +478,10 @@ def remove_expert_from_team(team_name: str, expert_name: str) -> OperationResult
     # Update config
     experts.remove(expert_name)
     team.experts = experts
-    save_teams(teams)
+    save_teams(teams, config=config)
 
     # Redeploy team lead (roster list updates automatically)
     deploy_team_lead(team_name)
     mark_librarian_dirty()
-    flush_librarian(config=load_config())
+    flush_librarian(config=config)
     return OperationResult(success=True)
