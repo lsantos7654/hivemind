@@ -8,6 +8,7 @@ from textual.binding import Binding, BindingType
 from textual.widgets import Footer, Static
 
 from hivemind.config import load_config
+from hivemind.tui.models import OperationStatus
 from hivemind.tui.screens.base_screen import BaseScreen
 from hivemind.tui.widgets import SearchBar, VimDataTable
 from hivemind.tui.widgets.search_mixin import SearchMixin
@@ -34,7 +35,26 @@ class TeamDetailScreen(SearchMixin, BaseScreen):
         super().__init__(**kwargs)
         self.team_name = team_name
         self.team_data = team_data
+        self._pending_ops: dict[str, OperationStatus] = {}
+        self._status_messages: dict[str, str] = {}
         self._init_search()
+
+    def set_expert_operation_status(self, name: str, status: OperationStatus | None) -> None:
+        """Set or clear the operation status for an expert row."""
+        if status is None:
+            self._pending_ops.pop(name, None)
+        else:
+            self._pending_ops[name] = status
+        self._populate_table()
+        self.query_one("#team-header", Static).update(self._format_header())
+
+    def set_expert_status_message(self, name: str, message: str | None) -> None:
+        """Set or clear the status message for an expert row."""
+        if message is None:
+            self._status_messages.pop(name, None)
+        else:
+            self._status_messages[name] = message
+        self._populate_table()
 
     def _format_header(self) -> str:
         desc = self.team_data.description
@@ -77,10 +97,27 @@ class TeamDetailScreen(SearchMixin, BaseScreen):
         config = load_config()
         enabled = set(config.enabled)
 
+        # Experts already on the team
         for expert_name in sorted(self.team_data.experts):
             if self._filter_query and self._filter_query.lower() not in expert_name.lower():
                 continue
-            status = "[green]enabled[/green]" if expert_name in enabled else "[dim]disabled[/dim]"
+
+            # Check if this expert has an active operation
+            if expert_name in self._pending_ops:
+                status = self._render_op_status(expert_name)
+            else:
+                status = "[green]enabled[/green]" if expert_name in enabled else "[dim]disabled[/dim]"
+
+            table.add_row(expert_name, status)
+            self._visible_names.append(expert_name)
+
+        # Pending experts not yet in team_data (queued or currently being added)
+        for expert_name in sorted(self._pending_ops):
+            if expert_name in self.team_data.experts:
+                continue  # already rendered above
+            if self._filter_query and self._filter_query.lower() not in expert_name.lower():
+                continue
+            status = self._render_op_status(expert_name)
             table.add_row(expert_name, status)
             self._visible_names.append(expert_name)
 
@@ -89,6 +126,20 @@ class TeamDetailScreen(SearchMixin, BaseScreen):
                 table.add_row(f'[dim]No results for "{self._filter_query}"[/dim]', "")
             elif not self.team_data.experts:
                 table.add_row("[dim]No experts[/dim]", "")
+
+    def _render_op_status(self, expert_name: str) -> str:
+        """Render the status column text for an expert with an active operation."""
+        op = self._pending_ops.get(expert_name)
+        msg = self._status_messages.get(expert_name)
+        if op == OperationStatus.IN_PROGRESS:
+            return f"[yellow]{msg or 'adding...'}[/yellow]"
+        if op == OperationStatus.QUEUED:
+            return "[dim]queued[/dim]"
+        if op == OperationStatus.SUCCESS:
+            return "[green]added[/green]"
+        if op == OperationStatus.FAILED:
+            return f"[red]{msg or 'failed'}[/red]"
+        return "[dim]...[/dim]"
 
     def _reload(self) -> None:
         """Reload team data from config and refresh table."""
@@ -141,22 +192,51 @@ class TeamDetailScreen(SearchMixin, BaseScreen):
         def _handle_add(selected: list[str] | None) -> None:
             if not selected:
                 return
+            # Pre-populate all selected experts as queued so they appear in the table
+            for name in selected:
+                self._pending_ops[name] = OperationStatus.QUEUED
+                self._status_messages[name] = "queued"
+            self._populate_table()
+            self.query_one("#team-header", Static).update(self._format_header())
             self.run_worker(self._add_experts_async(selected), exit_on_error=False)
 
         self.app.push_screen(SelectionListModal(available, title="Add Experts"), _handle_add)
 
     async def _add_experts_async(self, selected: list[str]) -> None:
         from hivemind.config import load_config
-        from hivemind.teams import add_expert_to_team
+        from hivemind.teams import add_experts_to_team
 
         config = load_config()
-        for expert_name in selected:
-            result = await add_expert_to_team(self.team_name, expert_name, config=config)
-            if result.success:
-                self.notify(f"Added {expert_name}", severity="information")
-            else:
+
+        def on_progress(expert_name: str) -> None:
+            """Called when an expert starts being AI-analyzed."""
+            self.set_expert_operation_status(expert_name, OperationStatus.IN_PROGRESS)
+            self.set_expert_status_message(expert_name, "adding...")
+
+        try:
+            result = await add_experts_to_team(
+                self.team_name,
+                selected,
+                on_progress=on_progress,
+                config=config,
+            )
+
+            for name in result.added:
+                self.notify(f"Added {name}", severity="information")
+            for name in result.skipped:
+                self.notify(f"{name}: already on team", severity="warning")
+            for err in result.failed:
+                self.notify(f"Failed {err.name}: {err.error}", severity="error")
+
+            if not result.success:
                 self.notify(f"Failed: {result.error or 'Unknown'}", severity="error")
-        self._reload()
+
+        except Exception as e:
+            self.notify(f"Error adding experts: {e}", severity="error")
+        finally:
+            self._pending_ops.clear()
+            self._status_messages.clear()
+            self._reload()
 
     def action_remove_expert(self) -> None:
         from hivemind.tui.widgets import ConfirmationModal
