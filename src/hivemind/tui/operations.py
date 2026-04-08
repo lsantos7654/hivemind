@@ -25,10 +25,8 @@ def create_tui_progress_callback(screen: ExpertsPane, expert_name: str) -> Calla
         # Called from async context (main thread), so no need for call_from_thread
         if info.phase == UpdatePhase.ANALYZING:
             screen.set_expert_operation_status(expert_name, OperationStatus.IN_PROGRESS)
-            if info.new_commit:
-                screen.set_expert_status_message(expert_name, f"Analyzing {info.new_commit[:12]}...")
-            else:
-                screen.set_expert_status_message(expert_name, "Analyzing...")
+            # Use the message directly — it already contains file progress info
+            screen.set_expert_status_message(expert_name, info.message)
         else:
             screen.set_expert_status_message(expert_name, info.message)
 

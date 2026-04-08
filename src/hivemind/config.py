@@ -117,6 +117,7 @@ def make_emit(name: str, on_progress: ProgressCallback | None) -> Callable[..., 
         new_commit: str | None = None,
         old_commit: str | None = None,
         error: str | None = None,
+        files_found: list[str] | None = None,
     ) -> None:
         if on_progress:
             on_progress(
@@ -128,6 +129,7 @@ def make_emit(name: str, on_progress: ProgressCallback | None) -> Callable[..., 
                     new_commit=new_commit,
                     old_commit=old_commit,
                     error=error,
+                    files_found=files_found,
                 )
             )
 

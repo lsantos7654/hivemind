@@ -4,12 +4,9 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from enum import Enum
-from typing import TYPE_CHECKING
+from pathlib import Path  # noqa: TC003 — Pydantic needs Path at runtime for field validation
 
 from pydantic import BaseModel
-
-if TYPE_CHECKING:
-    from pathlib import Path
 
 # --- Update Progress Types ---
 
@@ -39,6 +36,7 @@ class ProgressInfo(BaseModel):
     new_commit: str | None = None
     old_commit: str | None = None
     error: str | None = None
+    files_found: list[str] | None = None  # analysis files created so far
 
 
 ProgressCallback = Callable[[ProgressInfo], None]

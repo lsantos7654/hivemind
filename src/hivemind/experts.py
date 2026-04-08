@@ -176,6 +176,8 @@ async def update_expert(
                 old_commit=old_commit,
                 cancellation_token=cancellation_token,
                 on_subprocess_start=on_subprocess_start,
+                commit_dir=tmp_commit_dir,
+                is_update=True,
             )
 
             if not analysis_result.success:
@@ -477,6 +479,8 @@ async def switch_version_async(
                 old_commit=old_commit,
                 cancellation_token=cancellation_token,
                 on_subprocess_start=on_subprocess_start,
+                commit_dir=tmp_commit_dir,
+                is_update=False,
             )
 
             if not analysis_result.success:
@@ -641,6 +645,8 @@ async def add_expert(
             tmp_expert,
             tmp_repo,
             emit,
+            commit_dir=tmp_commit_dir,
+            is_update=False,
         )
         if not analysis_result.success:
             return OperationResult(success=False, error=analysis_result.error or "AI analysis failed")

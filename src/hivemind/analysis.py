@@ -54,6 +54,9 @@ async def run_async_analysis(
     old_commit: str | None = None,
     cancellation_token: CancellationToken | None = None,
     on_subprocess_start: Callable[[int], None] | None = None,
+    *,
+    commit_dir: Path | None = None,
+    is_update: bool = False,
 ) -> AnalysisResult:
     """Run AI analysis as an async subprocess with cancellation support.
 
@@ -100,7 +103,10 @@ async def run_async_analysis(
     if on_subprocess_start:
         on_subprocess_start(proc.pid)
 
-    # Poll with cancellation checks
+    # Poll with cancellation checks and file progress tracking
+    expected = expected_analysis_files(is_update=is_update)
+    found: set[str] = set()
+
     while proc.returncode is None:
         await asyncio.sleep(1)
 
@@ -115,12 +121,34 @@ async def run_async_analysis(
             msg = "Cancelled by user"
             raise asyncio.CancelledError(msg)
 
-        emit(UpdatePhase.ANALYZING, f"Analyzing {commit[:12]}...", new_commit=commit, old_commit=old_commit)
+        # Track file creation progress
+        if commit_dir:
+            for f in expected:
+                if f not in found and (commit_dir / f).exists():
+                    found.add(f)
+
+        progress_pct = int(len(found) / len(expected) * 100) if expected else 0
+        emit(
+            UpdatePhase.ANALYZING,
+            f"Analyzing {commit[:12]}... ({len(found)}/{len(expected)} files)",
+            progress_percent=progress_pct,
+            new_commit=commit,
+            old_commit=old_commit,
+            files_found=sorted(found),
+        )
 
     if proc.returncode != 0:
         error_msg = read_analysis_error(proc.returncode, stderr_path, stdout_path)
         cleanup_log_files(stderr_path, stdout_path)
         return AnalysisResult(success=False, error=error_msg, stderr_path=stderr_path, stdout_path=stdout_path)
+
+    # Validate expected files were created
+    if commit_dir:
+        missing = [f for f in expected if not (commit_dir / f).exists()]
+        if missing:
+            error_msg = f"Analysis incomplete — missing: {', '.join(missing)}"
+            cleanup_log_files(stderr_path, stdout_path)
+            return AnalysisResult(success=False, error=error_msg, stderr_path=stderr_path, stdout_path=stdout_path)
 
     cleanup_log_files(stderr_path, stdout_path)
     return AnalysisResult(success=True, stderr_path=stderr_path, stdout_path=stdout_path)

@@ -10,13 +10,15 @@ import typer
 if TYPE_CHECKING:
     from pathlib import Path
 from rich import box
-from rich.console import Console
+from rich.console import Console, Group
+from rich.live import Live
 from rich.markup import escape
 from rich.panel import Panel
 from rich.table import Table
 from rich.theme import Theme
 from rich.traceback import install as install_traceback
 
+from hivemind.analysis import expected_analysis_files
 from hivemind.config import (
     AGENTS_DIR,
     COMMANDS_DIR,
@@ -95,6 +97,58 @@ app = typer.Typer(
 )
 console = Console(theme=THEME)
 install_traceback(show_locals=True, console=console)
+
+_SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+
+
+class AnalysisProgress:
+    """Rich Live display for analysis file progress checklist."""
+
+    def __init__(self, target_console: Console, name: str, expected_files: list[str]) -> None:
+        self._console = target_console
+        self._name = name
+        self._expected = expected_files
+        self._found: set[str] = set()
+        self._tick = 0
+        self._running = False
+        self._live = Live(self._render(), console=target_console, refresh_per_second=4)
+
+    def _render(self) -> Group:
+        spinner = _SPINNER_FRAMES[self._tick % len(_SPINNER_FRAMES)]
+        lines: list[str] = []
+        lines.append(f"  [heading]Analyzing {self._name}...[/heading]")
+        hit_first_pending = False
+        for f in self._expected:
+            if f in self._found:
+                lines.append(f"    [success]✓[/success] {f}")
+            elif not hit_first_pending and self._running:
+                hit_first_pending = True
+                lines.append(f"    [info]{spinner}[/info] {f}")
+            else:
+                lines.append(f"    [dim]·[/dim] {f}")
+        lines.append(
+            f"    [dim]{len(self._found)}/{len(self._expected)} files generated[/dim]",
+        )
+        # Render markup strings through the console so custom theme is applied
+        return Group(*(self._console.render_str(line) for line in lines))
+
+    def start(self) -> None:
+        """Start the live display."""
+        self._running = True
+        self._live.start()
+
+    def update(self, files_found: list[str] | None) -> None:
+        """Update progress with newly found files."""
+        if files_found:
+            self._found.update(files_found)
+        self._tick += 1
+        self._live.update(self._render())
+
+    def finish(self) -> None:
+        """Mark as complete and stop live display."""
+        self._running = False
+        self._live.update(self._render())
+        self._live.stop()
 
 
 @app.callback()
@@ -473,8 +527,21 @@ def add(
     if private:
         console.print("  [warning]Mode: PRIVATE (will not be committed to git)[/warning]")
 
+    expected = expected_analysis_files(is_update=False)
+    progress: AnalysisProgress | None = None
+
     def on_progress(info: ProgressInfo) -> None:
-        console.print(f"  [info]→[/info] {info.message}")
+        nonlocal progress
+        if info.phase == UpdatePhase.ANALYZING:
+            if progress is None:
+                progress = AnalysisProgress(console, name, expected)
+                progress.start()
+            progress.update(info.files_found)
+        else:
+            if progress is not None:
+                progress.finish()
+                progress = None
+            console.print(f"  [info]→[/info] {info.message}")
 
     result = asyncio.run(
         add_expert(
@@ -485,6 +552,10 @@ def add(
             on_progress=on_progress,
         )
     )
+
+    if progress is not None:
+        progress.finish()
+        progress = None
 
     if not result.success:
         console.print(f"[error]Error: {escape(str(result.error))}[/error]")
@@ -596,16 +667,35 @@ def update(
     for expert_name in names:
         console.print(f"\n[heading]Updating {expert_name}...[/heading]")
 
-        # Define progress callback for CLI
-        def on_progress(info: ProgressInfo) -> None:
+        # Define progress callback for CLI with Rich Live file checklist
+        expected = expected_analysis_files(is_update=True)
+        progress: AnalysisProgress | None = None
+
+        def on_progress(
+            info: ProgressInfo,
+            _expert_name: str = expert_name,
+            _expected: list[str] = expected,
+        ) -> None:
+            nonlocal progress
             if info.phase == UpdatePhase.ANALYZING:
-                console.print(f"  [info]→[/info] {info.message}")
-            elif info.phase not in [UpdatePhase.CLONING, UpdatePhase.FETCHING]:
-                console.print(f"  [success]✓[/success] {info.message}")
+                if progress is None:
+                    progress = AnalysisProgress(console, _expert_name, _expected)
+                    progress.start()
+                progress.update(info.files_found)
+            else:
+                if progress is not None:
+                    progress.finish()
+                    progress = None
+                if info.phase not in [UpdatePhase.CLONING, UpdatePhase.FETCHING]:
+                    console.print(f"  [success]✓[/success] {info.message}")
 
         from hivemind.experts import update_expert
 
         result = asyncio.run(update_expert(expert_name, on_progress=on_progress, skip_analysis=skip_analysis))
+
+        if progress is not None:
+            progress.finish()
+            progress = None
 
         if not result.success:
             console.print(f"  [error]✗[/error] {escape(str(result.error))}")
