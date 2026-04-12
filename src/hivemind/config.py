@@ -83,6 +83,7 @@ __all__ = [
 HIVEMIND_ROOT = Path(__file__).resolve().parent.parent.parent
 CACHE_DIR = Path.home() / ".cache" / "hivemind"
 REPOS_DIR = CACHE_DIR / "repos"
+STAGING_DIR = CACHE_DIR / "staging"
 REPOS_LINK = HIVEMIND_ROOT / "repos"
 EXTERNAL_DOCS_DIR = CACHE_DIR / "external_docs"
 EXTERNAL_DOCS_LINK = HIVEMIND_ROOT / "external_docs"

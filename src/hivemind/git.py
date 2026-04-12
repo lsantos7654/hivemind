@@ -5,14 +5,16 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import shutil
-import tempfile
+import time
 from pathlib import Path
 from typing import TYPE_CHECKING
+from uuid import uuid4
 
 from hivemind.config import (
     GIT_CLONE_TIMEOUT,
     GIT_LOCAL_TIMEOUT,
     REPOS_DIR,
+    STAGING_DIR,
     ensure_repos_link,
     save_private_repos,
     save_repos,
@@ -138,15 +140,47 @@ async def resolve_latest_commit(repo_dir: Path) -> str | None:
     return None
 
 
+_STALE_STAGING_HOURS = 6
+
+
+def _cleanup_stale_staging() -> None:
+    """Remove staging subdirectories older than _STALE_STAGING_HOURS."""
+    if not STAGING_DIR.is_dir():
+        return
+    cutoff = time.time() - _STALE_STAGING_HOURS * 3600
+    for child in STAGING_DIR.iterdir():
+        if child.is_dir():
+            try:
+                if child.stat().st_mtime < cutoff:
+                    shutil.rmtree(child)
+            except OSError:
+                pass
+
+
+def create_staging_dir(name: str) -> Path:
+    """Create a unique subdirectory under STAGING_DIR for an operation.
+
+    Returns the path to the new staging directory.  Callers are responsible
+    for cleaning it up via ``shutil.rmtree()`` when done.
+    """
+    _cleanup_stale_staging()
+    STAGING_DIR.mkdir(parents=True, exist_ok=True)
+    staging = STAGING_DIR / f"{name}-{uuid4().hex[:12]}"
+    staging.mkdir()
+    return staging
+
+
 async def stage_for_analysis(
     name: str,
     new_commit: str,
     expert_dir: Path,
     old_commit: str | None,
     repo_dir: Path,
-    prefix: str = "hivemind-update",
 ) -> StagingResult:
-    """Create temp directory, preserve agent.md, and checkout new commit.
+    """Create staging directory, preserve agent.md, and checkout new commit.
+
+    Stages under ``~/.cache/hivemind/staging/`` so both Claude Code and
+    OpenCode have consistent read/write access via pre-configured permissions.
 
     Only agent.md is copied from the previous version (it is not regenerated
     during updates).  Analysis docs (summary.md, code_structure.md, etc.) are
@@ -156,7 +190,7 @@ async def stage_for_analysis(
 
     Returns (tmpdir, staged_path, tmp_commit_dir).
     """
-    tmpdir = tempfile.mkdtemp(prefix=f"{prefix}-{name}-")
+    tmpdir = str(create_staging_dir(name))
     staged_path = Path(tmpdir) / "expert"
     staged_path.mkdir()
     tmp_commit_dir = staged_path / new_commit

@@ -821,6 +821,11 @@ class OpenCodeProvider(Provider):
                 f"{cache_path}/**": "allow",
                 f"{experts_path}/**": "allow",
             },
+            "write": {
+                f"{cache_path}/**": "allow",
+                f"{experts_path}/**": "allow",
+                f"{teams_path}/**": "allow",
+            },
             "edit": {
                 f"{teams_path}/**": "allow",
             },

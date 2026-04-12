@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import logging
 import shutil
-import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -465,7 +464,9 @@ async def switch_version_async(
                 new_commit=target_commit,
             )
 
-            tmpdir = tempfile.mkdtemp(prefix=f"hivemind-version-{name}-")
+            from hivemind.git import create_staging_dir
+
+            tmpdir = str(create_staging_dir(name))
             staged_path = Path(tmpdir) / "expert"
             staged_path.mkdir()
             tmp_commit_dir = staged_path / target_commit
@@ -586,8 +587,10 @@ async def add_expert(
         output = stdout.decode().strip()
         commit = output.split()[0] if output else ref_name
 
-    # Clone to temp directory
-    tmpdir = tempfile.mkdtemp(prefix=f"hivemind-{name}-")
+    # Clone to staging directory under ~/.cache/hivemind/staging/
+    from hivemind.git import create_staging_dir
+
+    tmpdir = str(create_staging_dir(name))
     tmp_repo = Path(tmpdir) / "repo"
     tmp_expert = Path(tmpdir) / "expert"
     tmp_expert.mkdir()

@@ -373,6 +373,10 @@
     "cpython": {
       "remote": "https://github.com/python/cpython.git",
       "commit": "d6e044512c59ab7b83f14e00e7047756a31ac3e3"
+    },
+    "claude-code": {
+      "remote": "https://github.com/anthropics/claude-code.git",
+      "commit": "9772e13f820002c9730af67a2409702799c7ddc6"
     }
   }
 }
