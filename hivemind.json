@@ -160,7 +160,7 @@
     },
     "opencode": {
       "remote": "https://github.com/anomalyco/opencode.git",
-      "commit": "9507b0eace17522f518963f7d9f651fd6e541137"
+      "commit": "8ffadde85c89230bdca6b26a6e5b957cbfae7281"
     },
     "Krohnkite": {
       "remote": "https://codeberg.org/anametologin/Krohnkite.git",
