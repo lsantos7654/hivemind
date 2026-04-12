@@ -16,7 +16,7 @@ import shutil
 from abc import ABC, abstractmethod
 from pathlib import Path
 
-from hivemind.models import InitResult, ProviderConfig, ProviderSettings, SymlinkCheck
+from hivemind.models import InitResult, OperationResult, ProviderConfig, ProviderSettings, SymlinkCheck
 
 ToolsConfig = list[str] | dict[str, bool]
 
@@ -139,6 +139,48 @@ class Provider(ABC):
     def engine(self) -> str:
         """Analysis engine command string."""
         return self._engine
+
+    @property
+    def model(self) -> str:
+        """Configured model string. Raises if not set."""
+        if not self._settings.model:
+            msg = (
+                f"No model configured for provider '{self.name}'. "
+                f"Set 'settings.model' in hivemind.json under providers.{self.name}."
+            )
+            raise ValueError(msg)
+        return self._settings.model
+
+    def validate_engine(self) -> OperationResult:
+        """Validate that the analysis engine binary and model are available.
+
+        Subclasses should override to add model-level validation.
+
+        Returns:
+            OperationResult with success=False and descriptive error if validation fails.
+        """
+        if not self._engine:
+            return OperationResult(
+                success=False,
+                error=f"No engine configured for provider '{self.name}'. "
+                f"Set 'engine' in hivemind.json under providers.{self.name}.",
+            )
+
+        binary = shlex.split(self._engine)[0]
+        if not shutil.which(binary):
+            return OperationResult(
+                success=False,
+                error=f"Analysis engine '{binary}' not found on PATH. Install it first.",
+            )
+
+        if not self._settings.model:
+            return OperationResult(
+                success=False,
+                error=f"No model configured for provider '{self.name}'. "
+                f"Set 'settings.model' in hivemind.json under providers.{self.name}.",
+            )
+
+        return OperationResult(success=True)
 
     @property
     def settings(self) -> ProviderSettings:
@@ -496,12 +538,10 @@ class ClaudeProvider(Provider):
             for t in extra_tools:
                 if t not in tools:
                     tools.append(t)
-        model = self._settings.model or "sonnet"
-
         tools_str = ", ".join(tools)
 
         frontmatter = (
-            f"---\nname: {agent_name}\ndescription: {description}\ntools: {tools_str}\nmodel: {model}\n---\n\n"
+            f"---\nname: {agent_name}\ndescription: {description}\ntools: {tools_str}\nmodel: {self.model}\n---\n\n"
         )
 
         return frontmatter + self._transform_body(body)
@@ -516,10 +556,11 @@ class ClaudeProvider(Provider):
         return librarian_tools or ["Read", "Grep", "Glob"]
 
     def _format_librarian_md_internal(self, tools: ToolsConfig, description: str, body: str) -> str:
-        model = self._settings.model or "sonnet"
         tools_str = ", ".join(tools) if isinstance(tools, list) else str(tools)
 
-        frontmatter = f'---\nname: librarian\ndescription: "{description}"\ntools: {tools_str}\nmodel: {model}\n---\n\n'
+        frontmatter = (
+            f'---\nname: librarian\ndescription: "{description}"\ntools: {tools_str}\nmodel: {self.model}\n---\n\n'
+        )
 
         return frontmatter + body
 
@@ -544,8 +585,7 @@ class ClaudeProvider(Provider):
         cmd.extend(["--allowedTools", ",".join(analysis_tools)])
 
         # Add model
-        model = self._settings.model or "sonnet"
-        cmd.extend(["--model", model])
+        cmd.extend(["--model", self.model])
 
         # Add extra directories
         if extra_dirs:
@@ -556,8 +596,7 @@ class ClaudeProvider(Provider):
 
     def build_query_command(self) -> list[str]:
         """Build claude -p command for librarian queries."""
-        model = self._settings.model or "sonnet"
-        return ["claude", "-p", "--model", model]
+        return ["claude", "-p", "--model", self.model]
 
     def _post_init_dirs(self, *, permissions: dict[str, object] | None = None) -> list[InitResult]:
         """Generate settings.json from permissions config."""
@@ -596,6 +635,51 @@ class OpenCodeProvider(Provider):
     def rules_file_name(self) -> str:
         return "AGENTS.md"
 
+    def validate_engine(self) -> OperationResult:
+        """Validate engine binary and model availability for OpenCode."""
+        import subprocess
+
+        base = super().validate_engine()
+        if not base.success:
+            return base
+
+        # Check the configured model is actually accessible
+        binary = shlex.split(self._engine)[0]
+        try:
+            result = subprocess.run(
+                [binary, "models"],
+                capture_output=True,
+                text=True,
+                timeout=15,
+            )
+        except FileNotFoundError:
+            return OperationResult(
+                success=False,
+                error=f"Engine binary '{binary}' not found.",
+            )
+        except subprocess.TimeoutExpired:
+            # If `opencode models` hangs, skip model validation
+            return OperationResult(success=True)
+
+        if result.returncode != 0:
+            return OperationResult(
+                success=False,
+                error=f"Failed to query available models: {result.stderr.strip()[:200]}",
+            )
+
+        # Check if the configured model appears in the output (exact match per line)
+        available = {line.strip() for line in result.stdout.splitlines() if line.strip()}
+        model = self._settings.model
+        if model and model not in available:
+            return OperationResult(
+                success=False,
+                error=f"Model '{model}' not available. "
+                f"Run 'opencode providers' to configure it.\n"
+                f"Available models can be listed with 'opencode models'.",
+            )
+
+        return OperationResult(success=True)
+
     def _lead_extra_tools(self) -> ToolsConfig:
         return {"edit": True}
 
@@ -614,7 +698,6 @@ class OpenCodeProvider(Provider):
         extra_permissions: list[str] | None = None,
     ) -> str:
         """Internal OpenCode agent formatting with custom name."""
-        model = self._settings.model or "anthropic/claude-sonnet-4-20250514"
         temperature = self._settings.temperature if self._settings.temperature is not None else 0.1
         tools = dict(self._settings.tools) if isinstance(self._settings.tools, dict) else {}
         if isinstance(extra_tools, dict):
@@ -624,7 +707,7 @@ class OpenCodeProvider(Provider):
             "---",
             f"description: {description}",
             "mode: subagent",
-            f"model: {model}",
+            f"model: {self.model}",
             f"temperature: {temperature}",
         ]
 
@@ -657,14 +740,13 @@ class OpenCodeProvider(Provider):
         return {"read": True, "grep": True, "glob": True}
 
     def _format_librarian_md_internal(self, tools: ToolsConfig, description: str, body: str) -> str:
-        model = self._settings.model or "anthropic/claude-sonnet-4-20250514"
         temperature = self._settings.temperature if self._settings.temperature is not None else 0.1
 
         lines = [
             "---",
             f'description: "{description}"',
             "mode: subagent",
-            f"model: {model}",
+            f"model: {self.model}",
             f"temperature: {temperature}",
         ]
 
@@ -687,8 +769,7 @@ class OpenCodeProvider(Provider):
         cmd = shlex.split(self._engine)
 
         # Add model
-        model = self._settings.model or "github-copilot/claude-sonnet-4"
-        cmd.extend(["--model", model])
+        cmd.extend(["--model", self.model])
 
         # Set working directory to common parent of extra dirs so opencode
         # can access both the cloned repo and expert staging directory
@@ -705,8 +786,7 @@ class OpenCodeProvider(Provider):
     def build_query_command(self) -> list[str]:
         """Build opencode run command for librarian queries."""
         cmd = shlex.split(self._engine)
-        model = self._settings.model or "github-copilot/claude-sonnet-4"
-        cmd.extend(["--model", model])
+        cmd.extend(["--model", self.model])
         return cmd
 
     def _post_init_dirs(self, *, permissions: dict[str, object] | None = None) -> list[InitResult]:
@@ -752,6 +832,15 @@ class OpenCodeProvider(Provider):
             with contextlib.suppress(ValueError, OSError):
                 existing = _json.loads(config_path.read_text(encoding="utf-8"))
 
+        # Top-level security hardening (force-set; hivemind is authoritative)
+        existing["share"] = "disabled"
+        existing["autoshare"] = False
+        existing["autoupdate"] = False
+        raw_server = existing.get("server")
+        server: dict[str, object] = raw_server if isinstance(raw_server, dict) else {}
+        server["hostname"] = "127.0.0.1"
+        existing["server"] = server
+
         # Deep-merge hivemind permissions into existing permission key
         existing_perms = existing.get("permission", {})
         for tool_key, patterns in hivemind_permissions.items():
@@ -766,7 +855,7 @@ class OpenCodeProvider(Provider):
 
         existing["permission"] = existing_perms
         config_path.write_text(_json.dumps(existing, indent=2) + "\n")
-        results.append(InitResult(label="opencode.json", status="permissions merged for hivemind paths"))
+        results.append(InitResult(label="opencode.json", status="hardening + permissions merged"))
 
         return results
 

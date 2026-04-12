@@ -634,9 +634,9 @@ def delete(
 
 @expert_app.command()
 def update(
-    name: str | None = typer.Argument(
-        None,
-        help="Expert name (or omit for all enabled)",
+    name: str = typer.Argument(
+        ...,
+        help="Expert name to update",
         autocompletion=_complete_expert,
     ),
     skip_analysis: bool = typer.Option(
@@ -646,72 +646,54 @@ def update(
     ),
 ) -> None:
     """Fetch latest commits and re-analyze with AI."""
-    config = load_config()
     repos = load_repos()
 
-    if name:
-        names = [name]
-        if name not in repos:
-            console.print(f"[error]Error: '{name}' not found in hivemind.json repos[/error]")
-            raise typer.Exit(1)
-    else:
-        names = config.enabled
+    if name not in repos:
+        console.print(f"[error]Error: '{name}' not found in hivemind.json repos[/error]")
+        raise typer.Exit(1)
 
-    if not names:
-        console.print("No experts to update.")
-        return
+    console.print(f"\n[heading]Updating {name}...[/heading]")
 
-    # Track which experts need updating (not already up to date)
-    experts_to_update: list[str] = []
+    # Define progress callback for CLI with Rich Live file checklist
+    expected = expected_analysis_files(is_update=True)
+    progress: AnalysisProgress | None = None
 
-    for expert_name in names:
-        console.print(f"\n[heading]Updating {expert_name}...[/heading]")
-
-        # Define progress callback for CLI with Rich Live file checklist
-        expected = expected_analysis_files(is_update=True)
-        progress: AnalysisProgress | None = None
-
-        def on_progress(
-            info: ProgressInfo,
-            _expert_name: str = expert_name,
-            _expected: list[str] = expected,
-        ) -> None:
-            nonlocal progress
-            if info.phase == UpdatePhase.ANALYZING:
-                if progress is None:
-                    progress = AnalysisProgress(console, _expert_name, _expected)
-                    progress.start()
-                progress.update(info.files_found)
-            else:
-                if progress is not None:
-                    progress.finish()
-                    progress = None
-                if info.phase not in [UpdatePhase.CLONING, UpdatePhase.FETCHING]:
-                    console.print(f"  [success]✓[/success] {info.message}")
-
-        from hivemind.experts import update_expert
-
-        result = asyncio.run(update_expert(expert_name, on_progress=on_progress, skip_analysis=skip_analysis))
-
-        if progress is not None:
-            progress.finish()
-            progress = None
-
-        if not result.success:
-            console.print(f"  [error]✗[/error] {escape(str(result.error))}")
-        elif result.already_up_to_date:
-            console.print(f"  [success]✓[/success] Already up to date ({result.new_commit[:12]})")
+    def on_progress(
+        info: ProgressInfo,
+        _expert_name: str = name,
+        _expected: list[str] = expected,
+    ) -> None:
+        nonlocal progress
+        if info.phase == UpdatePhase.ANALYZING:
+            if progress is None:
+                progress = AnalysisProgress(console, _expert_name, _expected)
+                progress.start()
+            progress.update(info.files_found)
         else:
-            old_display = result.old_commit[:12] if result.old_commit else "none"
-            console.print(f"  [success]✓[/success] Updated from {old_display} to {result.new_commit[:12]}")
-            experts_to_update.append(expert_name)
+            if progress is not None:
+                progress.finish()
+                progress = None
+            if info.phase not in [UpdatePhase.CLONING, UpdatePhase.FETCHING]:
+                console.print(f"  [success]✓[/success] {info.message}")
 
-    # Regenerate librarian if any experts were updated
-    if experts_to_update:
+    from hivemind.experts import update_expert
+
+    result = asyncio.run(update_expert(name, on_progress=on_progress, skip_analysis=skip_analysis))
+
+    if progress is not None:
+        progress.finish()
+        progress = None
+
+    if not result.success:
+        console.print(f"  [error]✗[/error] {escape(str(result.error))}")
+        raise typer.Exit(1)
+    if result.already_up_to_date:
+        console.print(f"  [success]✓[/success] Already up to date ({result.new_commit[:12]})")
+    else:
+        old_display = result.old_commit[:12] if result.old_commit else "none"
+        console.print(f"  [success]✓[/success] Updated from {old_display} to {result.new_commit[:12]}")
         _update_librarian_cli()
         console.print("\n[bold success]Update complete.[/bold success]")
-    else:
-        console.print("\n[success]All experts are up to date.[/success]")
 
 
 @expert_app.command()
@@ -1350,24 +1332,6 @@ def delete_compat(
     """Deprecated: use 'hivemind expert delete'."""
     console.print(_DEPRECATION.format(cmd="delete"))
     delete(name=name, force=force)
-
-
-@app.command("update", hidden=True)
-def update_compat(
-    name: str | None = typer.Argument(
-        None,
-        help="Expert name (or omit for all enabled)",
-        autocompletion=_complete_expert,
-    ),
-    skip_analysis: bool = typer.Option(
-        False,
-        "--skip-analysis",
-        help="Pull latest repo changes without re-running AI analysis",
-    ),
-) -> None:
-    """Deprecated: use 'hivemind expert update'."""
-    console.print(_DEPRECATION.format(cmd="update"))
-    update(name=name, skip_analysis=skip_analysis)
 
 
 @app.command("query", hidden=True)

@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, ClassVar
 from textual.binding import Binding, BindingType
 from textual.widgets import DataTable, Static
 
-from hivemind.tui.models import ExpertRow, ExpertStatus, OperationStatus, WorkerInfo
+from hivemind.tui.models import ExpertRow, OperationStatus, WorkerInfo
 from hivemind.tui.operations import (
     disable_expert_async_op,
     enable_expert_async_op,
@@ -34,7 +34,6 @@ class ExpertsPane(BasePane):
         Binding("D", "delete", "Delete", show=True),
         Binding("a", "add_expert", "Add", show=True),
         Binding("u", "update", "Update", show=True),
-        Binding("U", "update_all", "Update All", show=False),
         Binding("x", "cancel_update", "Cancel", show=False),
     ]
 
@@ -205,6 +204,8 @@ class ExpertsPane(BasePane):
         await add_expert_async(self, url)
 
     def action_update(self) -> None:
+        from hivemind.tui.widgets import UpdateModeModal
+
         table = self.query_one("#expert-table", ExpertTable)
         selected = table.get_selected_experts()
 
@@ -213,26 +214,29 @@ class ExpertsPane(BasePane):
             if current:
                 selected = [current.name]
 
-        if selected:
-            table.clear_selection()
-            for name in selected:
-                self.run_worker(self._update_expert_wrapper(name), exclusive=False)
+        if not selected:
+            return
 
-    async def _update_expert_wrapper(self, expert_name: str):
+        names = list(selected)
+
+        async def _handle_mode(skip_analysis: bool | None) -> None:
+            if skip_analysis is None:
+                return  # cancelled
+            table.clear_selection()
+            for name in names:
+                self.run_worker(
+                    self._update_expert_wrapper(name, skip_analysis=skip_analysis),
+                    exclusive=False,
+                )
+
+        self.app.push_screen(UpdateModeModal(), _handle_mode)
+
+    async def _update_expert_wrapper(self, expert_name: str, *, skip_analysis: bool = False):
         from hivemind.tui.operations import CancellationToken
 
         token = CancellationToken()
         self.register_worker(expert_name, token)
-        await update_expert_async(self, expert_name, token)
-
-    def action_update_all(self) -> None:
-        enabled = [e.name for e in self.experts if e.status == ExpertStatus.ENABLED]
-        if enabled:
-            self.notify(f"Updating {len(enabled)} enabled expert(s)...", severity="information")
-            for name in enabled:
-                self.run_worker(self._update_expert_wrapper(name), exclusive=False)
-        else:
-            self.notify("No enabled experts to update", severity="warning")
+        await update_expert_async(self, expert_name, token, skip_analysis=skip_analysis)
 
     def action_cancel_update(self) -> None:
         import os

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from hivemind.config import load_teams
+from hivemind.config import get_active_provider, load_teams
 from hivemind.deployment import (
     deploy_agent,
     deploy_expert,
@@ -23,6 +23,16 @@ __all__ = ["redeploy_all_agents"]
 
 def redeploy_all_agents(config: AppConfig) -> RedeployResult:
     """Regenerate all enabled agent files with current provider settings."""
+    # Validate engine/model before deploying any agents — deployed agents
+    # reference the configured model, so if it's invalid they'll all fail at runtime.
+    provider = get_active_provider()
+    validation = provider.validate_engine()
+    if not validation.success:
+        return RedeployResult(
+            success=False,
+            error=f"Cannot redeploy: {validation.error}",
+        )
+
     enabled = config.enabled
 
     deployed: list[str] = []

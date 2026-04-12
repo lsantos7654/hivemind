@@ -9,6 +9,7 @@ from hivemind.tui.widgets.form_modal import FormModal
 from hivemind.tui.widgets.search_bar import SearchBar
 from hivemind.tui.widgets.search_mixin import SearchMixin
 from hivemind.tui.widgets.selection_modal import SelectionListModal
+from hivemind.tui.widgets.update_mode_modal import UpdateModeModal
 from hivemind.tui.widgets.vim_data_table import VimDataTable, VimSelectionList
 
 __all__ = [
@@ -21,6 +22,7 @@ __all__ = [
     "SearchBar",
     "SearchMixin",
     "SelectionListModal",
+    "UpdateModeModal",
     "VimDataTable",
     "VimSelectionList",
 ]

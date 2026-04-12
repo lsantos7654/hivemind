@@ -33,7 +33,13 @@ def create_tui_progress_callback(screen: ExpertsPane, expert_name: str) -> Calla
     return on_progress
 
 
-async def update_expert_async(screen: ExpertsPane, expert_name: str, token: CancellationToken):
+async def update_expert_async(
+    screen: ExpertsPane,
+    expert_name: str,
+    token: CancellationToken,
+    *,
+    skip_analysis: bool = False,
+):
     """Async wrapper for updating an expert with cancellation support."""
     from hivemind.experts import update_expert
 
@@ -49,6 +55,7 @@ async def update_expert_async(screen: ExpertsPane, expert_name: str, token: Canc
             on_progress=callback,
             on_subprocess_start=on_pid,
             cancellation_token=token,
+            skip_analysis=skip_analysis,
         )
 
         if result.cancelled:

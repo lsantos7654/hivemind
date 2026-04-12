@@ -146,7 +146,13 @@ async def stage_for_analysis(
     repo_dir: Path,
     prefix: str = "hivemind-update",
 ) -> StagingResult:
-    """Create temp directory, copy baseline files, and checkout new commit.
+    """Create temp directory, preserve agent.md, and checkout new commit.
+
+    Only agent.md is copied from the previous version (it is not regenerated
+    during updates).  Analysis docs (summary.md, code_structure.md, etc.) are
+    NOT copied — the output directory starts empty so that a failed analysis
+    is detected by the missing-file check instead of silently reusing stale
+    content.
 
     Returns (tmpdir, staged_path, tmp_commit_dir).
     """
@@ -156,13 +162,11 @@ async def stage_for_analysis(
     tmp_commit_dir = staged_path / new_commit
     tmp_commit_dir.mkdir()
 
-    # Copy baseline files from previous version
+    # Preserve agent.md from previous version (not regenerated during updates)
     if old_commit:
-        old_dir = expert_dir / old_commit
-        if old_dir.is_dir():
-            for f in old_dir.iterdir():
-                if f.is_file():
-                    shutil.copy2(f, tmp_commit_dir / f.name)
+        old_agent = expert_dir / old_commit / "agent.md"
+        if old_agent.is_file():
+            shutil.copy2(old_agent, tmp_commit_dir / "agent.md")
 
     # Checkout the target commit
     proc = await asyncio.create_subprocess_exec(

@@ -31,7 +31,7 @@
       "engine": "opencode run",
       "home_dir": "~/.config/opencode",
       "settings": {
-        "model": "github-copilot/claude-sonnet-4",
+        "model": "anthropic/claude-sonnet-4-6",
         "tools": {
           "read": true,
           "grep": true,
@@ -281,14 +281,6 @@
     "design-patterns-for-humans": {
       "remote": "https://github.com/kamranahmedse/design-patterns-for-humans.git",
       "commit": "7023f30d183b6502fe8945d705f2eafdd07dcf4a"
-    },
-    "node.js-clean-architecture": {
-      "remote": "https://github.com/panagiop/node.js-clean-architecture.git",
-      "commit": "5248815b761261ca269c3d7e45f32e5f82c3ad31"
-    },
-    "realworld": {
-      "remote": "https://github.com/realworld-apps/realworld.git",
-      "commit": "e75fef393e23c6499ce3660716c0a8cb332f1f51"
     },
     "api-guidelines": {
       "remote": "https://github.com/microsoft/api-guidelines.git",

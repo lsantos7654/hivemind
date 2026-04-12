@@ -22,6 +22,7 @@ from hivemind.config import (
     PRIVATE_EXPERTS_DIR,
     REPOS_DIR,
     ensure_repos_link,
+    get_active_provider,
     get_expert_dir,
     get_head_commit,
     get_repos_for_expert,
@@ -104,6 +105,13 @@ async def update_expert(
 
     if name not in repos:
         return UpdateResult(success=False, error=f"{name} not in repos")
+
+    # Validate analysis engine and model are available before doing any work
+    if not skip_analysis:
+        provider = get_active_provider()
+        validation = provider.validate_engine()
+        if not validation.success:
+            return UpdateResult(success=False, error=validation.error)
 
     tmpdir = None
     old_commit = None
@@ -406,6 +414,12 @@ async def switch_version_async(
     if not repo_dir.exists():
         return UpdateResult(success=False, error="Repository not cloned")
 
+    # Validate engine/model before doing any work
+    provider = get_active_provider()
+    validation = provider.validate_engine()
+    if not validation.success:
+        return UpdateResult(success=False, error=validation.error)
+
     tmpdir = None
     old_commit = None
 
@@ -549,6 +563,12 @@ async def add_expert(
     expert_dir = (PRIVATE_EXPERTS_DIR if is_private else EXPERTS_DIR) / name
     if expert_dir.is_dir():
         return OperationResult(success=False, error=f"Expert '{name}' already exists")
+
+    # Validate analysis engine and model are available before doing any work
+    provider = get_active_provider()
+    validation = provider.validate_engine()
+    if not validation.success:
+        return OperationResult(success=False, error=validation.error)
 
     # Resolve commit from ref
     commit = ""
@@ -708,6 +728,13 @@ async def enable_expert(name: str, config: AppConfig) -> EnableResult:
     expert_dir = get_expert_dir(name)
     if not expert_dir.is_dir():
         return EnableResult(success=False, error=f"Expert '{name}' not found")
+
+    # Validate engine/model before deploying — a deployed agent with a broken
+    # model will fail at runtime with ProviderModelNotFoundError.
+    provider = get_active_provider()
+    validation = provider.validate_engine()
+    if not validation.success:
+        return EnableResult(success=False, error=validation.error)
 
     already_enabled = name in config.enabled
 
