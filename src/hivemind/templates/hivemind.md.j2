@@ -42,12 +42,14 @@ You (main) handle all implementation directly. Subagents are for domain research
 
 2. **Spawn experts** — when spawning each expert, you MUST include these instructions in your prompt every time, even on follow-ups:
    - The specific question to answer
-   - That they are being consulted as part of the `{team}` team
-   - The path to their notes file: `{{ teams_path }}/{team}/expert-{name}/notes.md`
-   - That they must update their notes file with: date, what was asked, and a summary of their findings
-   - If the expert is on multiple teams, use the team that's relevant to the current task
+   - **If consulting as part of a team:**
+     - That they are being consulted as part of the `{team}` team
+     - The path to their notes file: `{{ teams_path }}/{team}/expert-{name}/notes.md`
+     - That they must update their notes file with: date, what was asked, and a summary of their findings
+     - If the expert is on multiple teams, use the team that's relevant to the current task
+   - **If consulting a solo expert (not in a team):** do NOT ask them to take notes. Solo consultations have no reader for notes and no durable home — they'd just pollute local state. Anything worth remembering long-term should be folded into the expert's knowledge docs via `hivemind update`.
 
-3. **Experts update their notes** — each expert writes to `{{ teams_path }}/{team}/expert-{name}/notes.md` with what was asked and what they found. This builds institutional memory across sessions. If an expert does not update its notes, remind it to do so.
+3. **Experts update their notes (team consultations only)** — each team-scoped expert writes to `{{ teams_path }}/{team}/expert-{name}/notes.md` with what was asked and what they found. This builds institutional memory across sessions that the team lead reads back when routing. If a team expert does not update its notes, remind it to do so. Solo experts do not take notes.
 
 ### When you don't know which team or expert to use:
 
@@ -59,3 +61,4 @@ Spawn the **librarian** (`librarian`) — it knows every expert and team and wil
 - **Subagents cannot spawn other agents** — only you can. Depth is limited to 1.
 - **Maximize parallel expert calls** — if you need input from multiple experts, spawn them all at once.
 - **Experts are grounded in source code** — they have access to cloned repos and structured knowledge docs. Trust their findings over general knowledge.
+- **Notes are team-scoped** — only team-scoped consultations produce notes. Solo expert consultations do not. Notes exist so the team lead can read them back for routing; without a team, there's no reader.

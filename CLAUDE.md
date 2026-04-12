@@ -12,13 +12,15 @@ uv run hivemind redeploy      # Regenerate all agent files
 uv run hivemind init          # Set up provider directory structure
 ```
 
-No test suite exists. Verify changes by importing and running CLI commands:
+Verify changes:
 ```bash
-uv run python -c "from hivemind.deployment import redeploy_all_agents; print('OK')"
-uv run hivemind expert list
-uv run hivemind team list
-uv run hivemind redeploy
-uv run pre-commit run --all-files
+uv run pytest                              # run full test suite
+uv run pytest tests/test_core.py::test_x   # run single test
+uv run ruff check src/                     # lint
+uv run ruff format src/                    # format
+uv run mypy src/                           # type-check (strict; TUI + crawler relaxed)
+uv run pre-commit run --all-files          # all hooks
+uv run hivemind redeploy                   # smoke test: regenerate all agents
 ```
 
 ## Architecture
@@ -31,6 +33,7 @@ Hivemind is a context management layer that feeds expert knowledge into any AI c
 - **`experts.py`** — Expert lifecycle: `enable_expert`, `disable_expert`, `delete_expert`, `update_expert`, `update_expert_async_internal`, `switch_version_async`, `switch_provider`.
 - **`teams.py`** — Team management: `create_team`, `delete_team`, `update_team`, `add_expert_to_team`, `remove_expert_from_team`.
 - **`deployment.py`** — Agent deployment (`deploy_agent`, `redeploy_all_agents`), librarian generation (`update_librarian`), HIVEMIND.md regeneration.
+- **`redeploy.py`** — High-level redeploy entrypoint wiring deployment + templates together for CLI/TUI.
 - **`git.py`** — Git subprocess operations: `clone_repo`, `resolve_latest_commit`, `stage_for_analysis`, `commit_analysis_results`.
 - **`analysis.py`** — AI analysis orchestration: `start_analysis`, `finish_analysis`, `analyze_repo`, `run_async_analysis`.
 - **`cli.py`** — Typer CLI with Rich output. Thin entrypoint over the modules above. Expert and team subcommand groups.
