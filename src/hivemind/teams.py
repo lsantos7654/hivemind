@@ -35,6 +35,7 @@ __all__ = [
     "create_team_lead_notes_stub",
     "delete_team",
     "generate_expert_section",
+    "generate_expert_sections",
     "refresh_expert_notes_header",
     "refresh_team_lead_body",
     "refresh_team_lead_notes_header",
@@ -44,42 +45,113 @@ __all__ = [
 ]
 
 
-async def generate_expert_section(expert_name: str, team_name: str) -> str | None:
-    """AI-generate a ## expert-{name} section for a team lead.
+_SECTION_BATCH_SIZE = 15
+"""Max experts per AI call when generating team lead sections."""
 
-    Calls the provider's analysis engine with the expert's knowledge docs.
-    Returns the generated markdown section, or None on failure.
-    """
-    from hivemind.templates import expert_section_prompt
 
+def _read_expert_summary(expert_name: str) -> str:
+    """Read an expert's summary.md content. Returns empty string if missing."""
     expert_dir = get_expert_dir(expert_name)
-    head_dir = expert_dir / "HEAD"
-    if not head_dir.exists():
-        return None
+    summary = expert_dir / "HEAD" / "summary.md"
+    if summary.is_file():
+        return summary.read_text(encoding="utf-8").strip()
+    return ""
 
-    prompt = expert_section_prompt(expert_name, team_name, head_dir)
 
-    provider = get_active_provider()
-    cmd = provider.build_analysis_command(extra_dirs=[head_dir])
+def _parse_expert_sections(output: str, expert_names: list[str]) -> dict[str, str]:
+    """Parse AI output into per-expert sections keyed by name.
 
-    proc = await asyncio.create_subprocess_exec(
-        *cmd,
-        stdin=asyncio.subprocess.PIPE,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-    )
-    stdout, _ = await proc.communicate(prompt.encode())
+    Expects output containing '## expert-{name}' headings.
+    Returns a dict mapping expert name to its full section text.
+    """
+    sections: dict[str, str] = {}
+    for name in expert_names:
+        marker = f"## expert-{name}"
+        if marker not in output:
+            continue
+        start = output.index(marker)
+        # Find the next ## heading or end of output
+        next_start = len(output)
+        for other_name in expert_names:
+            if other_name == name:
+                continue
+            other_marker = f"## expert-{other_name}"
+            pos = output.find(other_marker, start + len(marker))
+            if pos != -1 and pos < next_start:
+                next_start = pos
+        sections[name] = output[start:next_start].strip()
+    return sections
 
-    if proc.returncode != 0:
-        return None
 
-    # The AI should write to stdout, not a file
-    output = stdout.decode().strip() if stdout else ""
-    if output and f"## expert-{expert_name}" in output:
-        # Extract just the section (in case there's extra output)
-        idx = output.index(f"## expert-{expert_name}")
-        return output[idx:]
-    return None
+async def generate_expert_sections(
+    expert_names: list[str],
+    team_name: str,
+) -> dict[str, str]:
+    """AI-generate ## expert-{name} sections for multiple experts in batched parallel calls.
+
+    Embeds each expert's summary.md content directly in the prompt so the AI
+    does not need file-reading tools. Batches experts into groups of
+    _SECTION_BATCH_SIZE and runs batches in parallel.
+
+    Returns a dict mapping expert name to its generated section text.
+    Missing experts (no summary, AI failure) are omitted from the result.
+    """
+    from hivemind.templates import expert_sections_prompt
+
+    # Build expert data with embedded summaries
+    expert_data = []
+    for name in expert_names:
+        summary = _read_expert_summary(name)
+        if not summary:
+            continue
+        expert_data.append({"name": name, "summary": summary})
+
+    if not expert_data:
+        return {}
+
+    # Split into batches
+    batches: list[list[dict[str, str]]] = [
+        expert_data[i : i + _SECTION_BATCH_SIZE] for i in range(0, len(expert_data), _SECTION_BATCH_SIZE)
+    ]
+
+    async def _run_batch(batch: list[dict[str, str]]) -> dict[str, str]:
+        prompt = expert_sections_prompt(batch, team_name)
+        provider = get_active_provider()
+        cmd = provider.build_analysis_command()
+
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, _ = await proc.communicate(prompt.encode())
+
+        if proc.returncode != 0:
+            return {}
+
+        output = stdout.decode().strip() if stdout else ""
+        names = [e["name"] for e in batch]
+        return _parse_expert_sections(output, names)
+
+    # Run batches in parallel
+    batch_results = await asyncio.gather(*[_run_batch(batch) for batch in batches])
+
+    # Merge results
+    merged: dict[str, str] = {}
+    for result in batch_results:
+        merged.update(result)
+    return merged
+
+
+async def generate_expert_section(expert_name: str, team_name: str) -> str | None:
+    """AI-generate a single ## expert-{name} section for a team lead.
+
+    Convenience wrapper around generate_expert_sections for single-expert
+    additions.
+    """
+    results = await generate_expert_sections([expert_name], team_name)
+    return results.get(expert_name)
 
 
 def remove_expert_section(team_name: str, expert_name: str) -> bool:
@@ -254,17 +326,17 @@ async def create_team(
     team_dir = TEAMS_DIR / name
     team_dir.mkdir(parents=True, exist_ok=True)
 
-    # Generate expert sections
-    expert_sections: list[str] = []
-    for expert_name in experts:
-        section = await generate_expert_section(expert_name, name)
-        if not section:
-            shutil.rmtree(team_dir)
-            return OperationResult(
-                success=False,
-                error=f"AI generation failed for expert section: {expert_name}",
-            )
-        expert_sections.append(section)
+    # Generate all expert sections in batched parallel AI calls
+    sections = await generate_expert_sections(experts, name)
+    failed = [e for e in experts if e not in sections]
+    if failed:
+        shutil.rmtree(team_dir)
+        return OperationResult(
+            success=False,
+            error=f"AI generation failed for expert section(s): {', '.join(failed)}",
+        )
+
+    expert_sections = [sections[e] for e in experts]
 
     # Create notes stubs (only after all sections generated successfully)
     for expert_name in experts:
@@ -386,18 +458,25 @@ async def add_experts_to_team(
 
     lead_md = TEAMS_DIR / team_name / "lead.md"
 
+    # Filter out already-existing and non-existent experts
+    to_generate: list[str] = []
     for expert_name in expert_names:
         if expert_name in existing:
             skipped.append(expert_name)
-            continue
-        if expert_name not in all_experts:
+        elif expert_name not in all_experts:
             failed.append(ExpertError(name=expert_name, error="does not exist"))
-            continue
+        else:
+            to_generate.append(expert_name)
 
-        if on_progress:
-            on_progress(expert_name)
+    if on_progress:
+        for name in to_generate:
+            on_progress(name)
 
-        section = await generate_expert_section(expert_name, team_name)
+    # Generate all sections in batched parallel AI calls
+    sections = await generate_expert_sections(to_generate, team_name) if to_generate else {}
+
+    for expert_name in to_generate:
+        section = sections.get(expert_name)
         if not section:
             failed.append(ExpertError(name=expert_name, error="AI generation failed"))
             continue

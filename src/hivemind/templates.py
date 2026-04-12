@@ -125,14 +125,16 @@ def regenerate_agent_prompt(
     )
 
 
-def expert_section_prompt(
-    expert_name: str,
+def expert_sections_prompt(
+    experts: list[dict[str, str]],
     team_name: str,
-    expert_dir: Path,
 ) -> str:
+    """Render a prompt for generating expert sections for a team lead.
+
+    Each entry in experts should have 'name' and 'summary' keys.
+    """
     return render(
-        "prompts/expert_section.md.j2",
-        expert_name=expert_name,
+        "prompts/expert_sections.md.j2",
+        experts=experts,
         team_name=team_name,
-        expert_dir=expert_dir,
     )

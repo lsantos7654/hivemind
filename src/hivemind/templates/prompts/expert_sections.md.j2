@@ -1,0 +1,15 @@
+You are writing expert sections for a team lead agent definition. The team is "{{ team_name }}".
+
+For each expert below, write a `## expert-{name}` section with a substantial, detailed paragraph (8-15 sentences) describing what the expert covers, its core capabilities, key APIs and patterns it knows about, and specific scenarios when the orchestrator should consult it. Be concrete — mention actual class names, modules, CLI commands, or architectural patterns. These sections are used by the team lead to make routing decisions, so they need enough detail to distinguish experts from each other.
+
+Write ONLY the ## headings and paragraphs. No frontmatter, no extra sections, no preamble.
+
+{% for expert in experts %}
+---
+
+Expert: {{ expert.name }}
+
+Summary:
+{{ expert.summary }}
+
+{% endfor %}
