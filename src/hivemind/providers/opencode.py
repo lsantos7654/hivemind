@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 
 from hivemind.constants import DEFAULT_TEMPERATURE, ENGINE_VALIDATION_TIMEOUT
 from hivemind.models import InitResult, OperationResult
-from hivemind.providers.base import Provider
+from hivemind.providers.base import Provider, yaml_escape_double_quoted
 from hivemind.templates import LIBRARIAN_DESCRIPTION
 
 if TYPE_CHECKING:
@@ -95,7 +95,7 @@ class OpenCodeProvider(Provider):
 
         lines = [
             "---",
-            f'description: "{description}"',
+            f'description: "{yaml_escape_double_quoted(description)}"',
             "mode: subagent",
             f"model: {self.model}",
             f"temperature: {temperature}",

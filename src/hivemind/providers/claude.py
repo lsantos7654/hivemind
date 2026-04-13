@@ -7,7 +7,7 @@ import shlex
 from typing import TYPE_CHECKING
 
 from hivemind.models import InitResult
-from hivemind.providers.base import Provider
+from hivemind.providers.base import Provider, yaml_escape_double_quoted
 from hivemind.templates import LIBRARIAN_DESCRIPTION
 
 if TYPE_CHECKING:
@@ -44,8 +44,9 @@ class ClaudeProvider(Provider):
             body: Markdown body (will be path-transformed)
         """
         tools_str = ", ".join(tools)
+        escaped = yaml_escape_double_quoted(description)
         frontmatter = (
-            f'---\nname: {agent_name}\ndescription: "{description}"\ntools: {tools_str}\nmodel: {self.model}\n---\n\n'
+            f'---\nname: {agent_name}\ndescription: "{escaped}"\ntools: {tools_str}\nmodel: {self.model}\n---\n\n'
         )
         return frontmatter + self._transform_body(body)
 

@@ -1053,10 +1053,10 @@ app.add_typer(crawl_app, name="crawl")
 def crawl_start() -> None:
     """Start the Firecrawl Docker service.
 
-    Clones the Firecrawl repo if needed and runs docker compose up.
-    Requires Docker to be installed and running.
+    Copies the bundled docker-compose.yaml to ~/.cache/hivemind/firecrawl/
+    on first run, then starts all containers. Requires Docker.
     """
-    from hivemind.crawler import is_firecrawl_running, start_firecrawl
+    from hivemind.crawl import is_firecrawl_running, start_firecrawl
 
     if is_firecrawl_running():
         console.print("[success]Firecrawl is already running.[/success]")
@@ -1075,7 +1075,7 @@ def crawl_start() -> None:
 @crawl_app.command(name="stop")
 def crawl_stop() -> None:
     """Stop the Firecrawl Docker service."""
-    from hivemind.crawler import stop_firecrawl
+    from hivemind.crawl import stop_firecrawl
 
     console.print("[info]Stopping Firecrawl service...[/info]")
     try:
@@ -1090,7 +1090,7 @@ def crawl_stop() -> None:
 @crawl_app.command(name="status")
 def crawl_status_cmd() -> None:
     """Check if the Firecrawl service is running."""
-    from hivemind.crawler import FIRECRAWL_URL, is_firecrawl_running
+    from hivemind.crawl import FIRECRAWL_URL, is_firecrawl_running
 
     if is_firecrawl_running():
         console.print(f"[success]Firecrawl is running at {FIRECRAWL_URL}[/success]")
@@ -1107,19 +1107,11 @@ def crawl(
     url: str = typer.Argument(..., help="Starting URL to crawl"),
     agent: str = typer.Argument(..., help="Agent name for output directory", autocompletion=_complete_expert),
     max_pages: int | None = typer.Option(None, "--max-pages", "-n", help="Maximum pages to crawl (default: no limit)"),
-    raw_markdown: bool = typer.Option(
-        False,
-        "--raw-markdown",
-        help="Force raw markdown fetching (.md endpoints only, no Firecrawl)",
-    ),
 ) -> None:
     """Crawl a website and save documentation for an expert agent.
 
-    Crawls the specified URL and saves markdown files to
+    Crawls the specified URL using Firecrawl and saves markdown files to
     ~/.cache/hivemind/external_docs/<agent>/ for use by expert agents.
-
-    Uses Firecrawl (self-hosted) by default. Pass --raw-markdown for sites
-    that serve source markdown at .md endpoints (e.g. rspress-based docs).
 
     The Firecrawl service must be running first: hivemind crawl start
     """
@@ -1136,98 +1128,27 @@ def crawl(
             console.print("  [dim]No experts configured. Use [bold]hivemind add <url>[/bold] to add one.[/dim]")
         raise typer.Exit(1)
 
-    from hivemind.crawler import (
-        FirecrawlNotRunningError,
-        crawl_urls_raw_markdown,
-        crawl_website,
-        discover_urls,
-    )
+    from hivemind.crawl import FirecrawlNotRunningError, crawl_website
 
     output_dir = EXTERNAL_DOCS_DIR / agent
 
     console.print(f"[heading]Crawling Documentation for {agent}[/heading]\n")
     console.print(f"[info]URL:[/info] {escape(url)}")
     console.print(f"[info]Output:[/info] {escape(str(output_dir))}")
-    console.print()
+    console.print("[info]Crawling via Firecrawl...[/info]\n")
 
-    if raw_markdown:
-        # Raw markdown mode: discover URLs via Firecrawl /map, then fetch .md directly
-        console.print("[info]Raw markdown mode — discovering URLs via Firecrawl...[/info]")
-        try:
-            discovered_urls = discover_urls(url=url, max_pages=max_pages)
-        except FirecrawlNotRunningError as e:
-            console.print(f"[error]{escape(str(e))}[/error]")
-            raise typer.Exit(1) from None
-        except Exception as e:
-            console.print(f"[error]Failed to discover URLs: {escape(str(e))}[/error]")
-            raise typer.Exit(1) from None
-
-        if not discovered_urls:
-            console.print("[error]No URLs discovered[/error]")
-            raise typer.Exit(1)
-
-        console.print(f"\n[success]Found {len(discovered_urls)} pages:[/success]\n")
-        for i, discovered_url in enumerate(discovered_urls, 1):
-            console.print(f"  {i}. {discovered_url}")
-        console.print()
-
-        if not typer.confirm(f"Fetch raw markdown for all {len(discovered_urls)} pages?", default=True):
-            console.print("[warning]Crawl cancelled[/warning]")
-            raise typer.Exit(0)
-
-        console.print("\n[info]Fetching raw markdown...[/info]\n")
-
-        from rich.progress import BarColumn, Progress, TextColumn, TimeRemainingColumn
-
-        progress = Progress(
-            TextColumn("[bold blue]{task.fields[current_url]}"),
-            BarColumn(bar_width=None),
-            "[progress.percentage]{task.percentage:>3.0f}%",
-            TextColumn("{task.completed}/{task.total} pages"),
-            TimeRemainingColumn(),
-            console=console,
+    try:
+        result = crawl_website(
+            url=url,
+            max_pages=max_pages,
+            output_dir=str(output_dir),
         )
-
-        def on_page(page_url: str, success: bool) -> None:
-            progress.update(task_id, advance=1, current_url=page_url)
-            if success:
-                progress.console.log(f"[success]✓[/success] {page_url}")
-
-        with progress:
-            task_id = progress.add_task(
-                "fetching",
-                total=len(discovered_urls),
-                current_url=url,
-            )
-
-            try:
-                result = asyncio.run(
-                    crawl_urls_raw_markdown(
-                        urls=discovered_urls,
-                        output_dir=str(output_dir),
-                        on_page_callback=on_page,
-                    ),
-                )
-            except Exception as e:
-                console.print(f"\n[error]Crawl failed: {escape(str(e))}[/error]")
-                raise typer.Exit(1) from None
-
-    else:
-        # Firecrawl mode: crawl the entire site
-        console.print("[info]Crawling via Firecrawl...[/info]\n")
-
-        try:
-            result = crawl_website(
-                url=url,
-                max_pages=max_pages,
-                output_dir=str(output_dir),
-            )
-        except FirecrawlNotRunningError as e:
-            console.print(f"[error]{escape(str(e))}[/error]")
-            raise typer.Exit(1) from None
-        except Exception as e:
-            console.print(f"\n[error]Crawl failed: {escape(str(e))}[/error]")
-            raise typer.Exit(1) from None
+    except FirecrawlNotRunningError as e:
+        console.print(f"[error]{escape(str(e))}[/error]")
+        raise typer.Exit(1) from None
+    except Exception as e:
+        console.print(f"\n[error]Crawl failed: {escape(str(e))}[/error]")
+        raise typer.Exit(1) from None
 
     # Display summary
     console.print()
@@ -1380,12 +1301,7 @@ def crawl_compat(
     url: str = typer.Argument(..., help="Starting URL to crawl"),
     agent: str = typer.Argument(..., help="Agent name for output directory", autocompletion=_complete_expert),
     max_pages: int | None = typer.Option(None, "--max-pages", "-n", help="Maximum pages to crawl (default: no limit)"),
-    raw_markdown: bool = typer.Option(
-        False,
-        "--raw-markdown",
-        help="Force raw markdown fetching (.md endpoints only, no browser fallback)",
-    ),
 ) -> None:
     """Deprecated: use 'hivemind expert crawl'."""
     console.print(_DEPRECATION.format(cmd="crawl"))
-    crawl(url=url, agent=agent, max_pages=max_pages, raw_markdown=raw_markdown)
+    crawl(url=url, agent=agent, max_pages=max_pages)

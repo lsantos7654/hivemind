@@ -85,6 +85,15 @@ def strip_frontmatter(content: str) -> str:
     return content
 
 
+def yaml_escape_double_quoted(s: str) -> str:
+    """Escape a string for use inside a YAML double-quoted scalar.
+
+    Per the YAML spec, inside double-quoted scalars backslash is the
+    escape character, so both ``\\`` and ``"`` must be escaped.
+    """
+    return s.replace("\\", "\\\\").replace('"', '\\"')
+
+
 def replace_expert_paths(body: str, *, old_base: str, new_base: str) -> str:
     """Replace expert base directory paths in agent body.
 

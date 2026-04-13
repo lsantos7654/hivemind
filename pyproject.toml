@@ -79,8 +79,6 @@ disallow_untyped_defs = false
 disallow_incomplete_defs = false
 disable_error_code = ["attr-defined", "arg-type", "no-any-return", "assignment"]
 
-
-
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"

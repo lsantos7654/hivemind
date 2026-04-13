@@ -3,7 +3,13 @@
 Re-exports public API so callers can continue using ``from hivemind.providers import ...``.
 """
 
-from hivemind.providers.base import Provider, extract_description, replace_expert_paths, strip_frontmatter
+from hivemind.providers.base import (
+    Provider,
+    extract_description,
+    replace_expert_paths,
+    strip_frontmatter,
+    yaml_escape_double_quoted,
+)
 from hivemind.providers.registry import PROVIDER_CLASSES, get_provider
 
 __all__ = [
@@ -13,4 +19,5 @@ __all__ = [
     "get_provider",
     "replace_expert_paths",
     "strip_frontmatter",
+    "yaml_escape_double_quoted",
 ]
