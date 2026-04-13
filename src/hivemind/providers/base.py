@@ -246,18 +246,6 @@ class Provider(ABC):
         msg = f"Provider '{self.name}' does not support a backend server."
         raise NotImplementedError(msg)
 
-    def connect_args(self, port: int, hostname: str) -> list[str]:
-        """Extra CLI args to append when connecting to a running server.
-
-        Args:
-            port: Server port
-            hostname: Server hostname
-
-        Returns:
-            List of extra arguments (e.g. ["--port", "4096", "--hostname", "127.0.0.1"])
-        """
-        return []
-
     def launch_command(self, extra_args: list[str] | None = None) -> list[str]:
         """Command to launch the provider's client (TUI/CLI).
 
@@ -269,6 +257,19 @@ class Provider(ABC):
         """
         msg = f"Provider '{self.name}' does not define a launch command."
         raise NotImplementedError(msg)
+
+    def attach_command(self, server_url: str, extra_args: list[str] | None = None) -> list[str]:
+        """Command to attach to a running backend server.
+
+        Args:
+            server_url: URL of the running server (e.g. "http://127.0.0.1:4096")
+            extra_args: Additional arguments to pass through
+
+        Returns:
+            Command list suitable for os.execvp. If the provider doesn't
+            support attaching, falls back to launch_command.
+        """
+        return self.launch_command(extra_args)
 
     def health_check_url(self, port: int, hostname: str) -> str:
         """URL to check if the server is healthy.

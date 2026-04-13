@@ -166,20 +166,19 @@ def main(ctx: typer.Context) -> None:
 
 
 def _launch_provider(extra_args: list[str]) -> None:
-    """Launch the active provider, connecting to server if running."""
-    provider = get_active_provider()
-    cmd = provider.launch_command(extra_args or None)
-
+    """Launch the active provider, attaching to server if running."""
     from hivemind.server import is_server_running, load_server_state
+
+    provider = get_active_provider()
 
     if is_server_running() and provider.supports_server:
         state = load_server_state()
         if state:
-            server_args = provider.connect_args(state.port, state.hostname)
-            # Insert server connection args before any extra args
-            binary = cmd[0]
-            cmd = [binary, *server_args, *cmd[1:]]
+            url = f"http://{state.hostname}:{state.port}"
+            cmd = provider.attach_command(url, extra_args or None)
+            os.execvp(cmd[0], cmd)
 
+    cmd = provider.launch_command(extra_args or None)
     os.execvp(cmd[0], cmd)
 
 

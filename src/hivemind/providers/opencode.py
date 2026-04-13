@@ -197,12 +197,17 @@ class OpenCodeProvider(Provider):
         binary = shlex.split(self._engine)[0]
         return [binary, "serve", "--port", str(port), "--hostname", hostname]
 
-    def connect_args(self, port: int, hostname: str) -> list[str]:
-        return ["--port", str(port), "--hostname", hostname]
-
     def launch_command(self, extra_args: list[str] | None = None) -> list[str]:
         binary = shlex.split(self._engine)[0]
         return [binary, *(extra_args or [])]
+
+    def attach_command(self, server_url: str, extra_args: list[str] | None = None) -> list[str]:
+        binary = shlex.split(self._engine)[0]
+        if extra_args:
+            # Headless mode: opencode run --attach <url> <extra_args>
+            return [binary, "run", "--attach", server_url, *extra_args]
+        # TUI mode: opencode attach <url>
+        return [binary, "attach", server_url]
 
     def health_check_url(self, port: int, hostname: str) -> str:
         return f"http://{hostname}:{port}/global/health"
