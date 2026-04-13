@@ -1039,66 +1039,6 @@ def redeploy() -> None:
     console.print(f"\n[bold success]Redeployed {total} agent(s), {len(experts_deployed)} expert dir(s).[/bold success]")
 
 
-# --- Crawl service subcommands ---
-
-crawl_app = typer.Typer(
-    name="crawl",
-    help="Manage the Firecrawl crawling service.",
-    no_args_is_help=True,
-)
-app.add_typer(crawl_app, name="crawl")
-
-
-@crawl_app.command(name="start")
-def crawl_start() -> None:
-    """Start the Firecrawl Docker service.
-
-    Copies the bundled docker-compose.yaml to ~/.cache/hivemind/firecrawl/
-    on first run, then starts all containers. Requires Docker.
-    """
-    from hivemind.crawl import is_firecrawl_running, start_firecrawl
-
-    if is_firecrawl_running():
-        console.print("[success]Firecrawl is already running.[/success]")
-        return
-
-    console.print("[info]Starting Firecrawl service...[/info]")
-    try:
-        start_firecrawl()
-    except Exception as e:
-        console.print(f"[error]Failed to start Firecrawl: {escape(str(e))}[/error]")
-        raise typer.Exit(1) from None
-
-    console.print("[success]Firecrawl service started at http://localhost:3002[/success]")
-
-
-@crawl_app.command(name="stop")
-def crawl_stop() -> None:
-    """Stop the Firecrawl Docker service."""
-    from hivemind.crawl import stop_firecrawl
-
-    console.print("[info]Stopping Firecrawl service...[/info]")
-    try:
-        stop_firecrawl()
-    except Exception as e:
-        console.print(f"[error]Failed to stop Firecrawl: {escape(str(e))}[/error]")
-        raise typer.Exit(1) from None
-
-    console.print("[success]Firecrawl service stopped.[/success]")
-
-
-@crawl_app.command(name="status")
-def crawl_status_cmd() -> None:
-    """Check if the Firecrawl service is running."""
-    from hivemind.crawl import FIRECRAWL_URL, is_firecrawl_running
-
-    if is_firecrawl_running():
-        console.print(f"[success]Firecrawl is running at {FIRECRAWL_URL}[/success]")
-    else:
-        console.print(f"[warning]Firecrawl is not running at {FIRECRAWL_URL}[/warning]")
-        console.print("[info]Start it with: hivemind crawl start[/info]")
-
-
 # --- Expert crawl command ---
 
 
@@ -1110,10 +1050,10 @@ def crawl(
 ) -> None:
     """Crawl a website and save documentation for an expert agent.
 
-    Crawls the specified URL using Firecrawl and saves markdown files to
-    ~/.cache/hivemind/external_docs/<agent>/ for use by expert agents.
+    Discovers pages via sitemap, fetches HTML, extracts clean markdown
+    using trafilatura, and saves to ~/.cache/hivemind/external_docs/<agent>/.
 
-    The Firecrawl service must be running first: hivemind crawl start
+    Automatically filters out language variants and non-content pages.
     """
     # Validate that the agent exists
     expert_dir = get_expert_dir(agent)
@@ -1128,24 +1068,23 @@ def crawl(
             console.print("  [dim]No experts configured. Use [bold]hivemind add <url>[/bold] to add one.[/dim]")
         raise typer.Exit(1)
 
-    from hivemind.crawl import FirecrawlNotRunningError, crawl_website
+    from hivemind.crawl import crawl_website
 
     output_dir = EXTERNAL_DOCS_DIR / agent
 
     console.print(f"[heading]Crawling Documentation for {agent}[/heading]\n")
     console.print(f"[info]URL:[/info] {escape(url)}")
     console.print(f"[info]Output:[/info] {escape(str(output_dir))}")
-    console.print("[info]Crawling via Firecrawl...[/info]\n")
+    console.print("[info]Discovering pages and extracting content...[/info]\n")
 
     try:
-        result = crawl_website(
-            url=url,
-            max_pages=max_pages,
-            output_dir=str(output_dir),
+        result = asyncio.run(
+            crawl_website(
+                url=url,
+                max_pages=max_pages,
+                output_dir=str(output_dir),
+            ),
         )
-    except FirecrawlNotRunningError as e:
-        console.print(f"[error]{escape(str(e))}[/error]")
-        raise typer.Exit(1) from None
     except Exception as e:
         console.print(f"\n[error]Crawl failed: {escape(str(e))}[/error]")
         raise typer.Exit(1) from None
@@ -1294,14 +1233,3 @@ def query_compat(
     """Deprecated: use 'hivemind expert query'."""
     console.print(_DEPRECATION.format(cmd="query"))
     query(question=question)
-
-
-@app.command("crawl", hidden=True)
-def crawl_compat(
-    url: str = typer.Argument(..., help="Starting URL to crawl"),
-    agent: str = typer.Argument(..., help="Agent name for output directory", autocompletion=_complete_expert),
-    max_pages: int | None = typer.Option(None, "--max-pages", "-n", help="Maximum pages to crawl (default: no limit)"),
-) -> None:
-    """Deprecated: use 'hivemind expert crawl'."""
-    console.print(_DEPRECATION.format(cmd="crawl"))
-    crawl(url=url, agent=agent, max_pages=max_pages)

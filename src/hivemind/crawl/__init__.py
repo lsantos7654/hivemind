@@ -1,30 +1,16 @@
-"""Web crawling via Firecrawl self-hosted instance.
+"""Web crawling for documentation sites.
 
-One mode: Firecrawl. No fallbacks. If the service isn't running, fail fast.
+Uses crawl4ai for URL discovery (sitemap parsing) and trafilatura for
+HTML-to-markdown extraction. Pure Python, no Docker, no browser.
 
 Usage:
-    hivemind crawl start                          # Start the Docker service
-    hivemind expert crawl <url> <agent>           # Crawl a site
-    hivemind crawl stop                           # Stop the Docker service
+    hivemind expert crawl <url> <agent> [--max-pages N]
 """
 
-from hivemind.crawl.client import crawl_website, discover_urls
-from hivemind.crawl.service import (
-    FIRECRAWL_URL,
-    FirecrawlNotRunningError,
-    is_firecrawl_running,
-    start_firecrawl,
-    stop_firecrawl,
-)
+from hivemind.crawl.extractor import crawl_website
 from hivemind.crawl.urls import CrawlResult
 
 __all__ = [
-    "FIRECRAWL_URL",
     "CrawlResult",
-    "FirecrawlNotRunningError",
     "crawl_website",
-    "discover_urls",
-    "is_firecrawl_running",
-    "start_firecrawl",
-    "stop_firecrawl",
 ]

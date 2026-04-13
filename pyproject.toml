@@ -7,7 +7,9 @@ dependencies = [
     "typer>=0.12.0",
     "rich>=13.7.0",
     "textual>=0.90.0",
-    "firecrawl-py>=2.0.0",
+    "crawl4ai>=0.8.0",
+    "trafilatura>=2.0.0",
+    "lxml_html_clean>=0.4.1",
     "httpx>=0.27.0",
     "jinja2>=3.1.0",
     "pydantic>=2.12.5",
@@ -69,8 +71,14 @@ warn_unused_configs = true
 
 # Third-party packages lacking type stubs
 [[tool.mypy.overrides]]
-module = ["firecrawl.*", "typer.*"]
+module = ["crawl4ai.*", "trafilatura.*", "typer.*"]
 ignore_missing_imports = true
+
+# crawl: crawl4ai + trafilatura lack type stubs, heavy use of Any
+[[tool.mypy.overrides]]
+module = "hivemind.crawl.*"
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
 
 # TUI: Textual mixin patterns produce false positives
 [[tool.mypy.overrides]]
