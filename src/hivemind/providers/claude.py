@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 import shlex
 from typing import TYPE_CHECKING
@@ -82,6 +83,32 @@ class ClaudeProvider(Provider):
             tools=tools,
             body=body,
         )
+
+    # --- Server support (Claude Code has no server mode) ---
+
+    def launch_command(self, extra_args: list[str] | None = None) -> list[str]:
+        binary = shlex.split(self._engine)[0]
+        return [binary, *(extra_args or [])]
+
+    def deploy_mcp_config(self, project_dir: Path) -> None:
+        """Write hivemind MCP server entry to .mcp.json in project root."""
+        mcp_path = project_dir / ".mcp.json"
+        existing: dict[str, object] = {}
+        if mcp_path.exists():
+            with contextlib.suppress(json.JSONDecodeError, OSError):
+                raw = json.loads(mcp_path.read_text(encoding="utf-8"))
+                if isinstance(raw, dict):
+                    existing = raw
+
+        existing["hivemind"] = {
+            "command": "hivemind",
+            "args": ["mcp"],
+            "env": {
+                "PYTHONUNBUFFERED": "1",
+            },
+        }
+
+        mcp_path.write_text(json.dumps(existing, indent=2) + "\n", encoding="utf-8")
 
     # --- Analysis engine ---
 

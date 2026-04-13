@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from datetime import datetime  # noqa: TC003 — Pydantic needs datetime at runtime for field validation
 from enum import StrEnum
 from pathlib import Path  # noqa: TC003 — Pydantic needs Path at runtime for field validation
 from typing import Self
@@ -76,6 +77,27 @@ class TeamData(BaseModel):
     experts: list[str] = []
 
 
+class ServerConfig(BaseModel):
+    """Provider backend server configuration in hivemind.json."""
+
+    port: int = 4096
+    hostname: str = "127.0.0.1"
+
+
+class ServerState(BaseModel):
+    """Runtime state of a running provider backend server.
+
+    Persisted to ~/.cache/hivemind/server.json while the server is running.
+    """
+
+    pid: int
+    port: int
+    hostname: str
+    provider: str
+    started_at: datetime
+    log_file: str
+
+
 class ProviderSettings(BaseModel):
     """Provider-specific settings."""
 
@@ -95,6 +117,7 @@ class ProviderConfig(BaseModel):
     engine: str = ""
     home_dir: str = ""
     settings: ProviderSettings = ProviderSettings()
+    server: ServerConfig = ServerConfig()
     permissions: dict[str, object] | None = None
 
     @model_validator(mode="after")

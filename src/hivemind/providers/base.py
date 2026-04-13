@@ -16,7 +16,7 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 
 from hivemind.constants import CACHE_DIR, CACHE_DIR_PLACEHOLDER, EXPERTS_DIR_PLACEHOLDER, TEAMS_DIR_PLACEHOLDER
-from hivemind.models import InitResult, OperationResult, ProviderConfig, ProviderSettings
+from hivemind.models import InitResult, OperationResult, ProviderConfig, ProviderSettings, ServerConfig
 
 # --- Helpers ---
 
@@ -220,6 +220,82 @@ class Provider(ABC):
     def cache_base_path(self) -> str:
         """Absolute base path for hivemind cache directory."""
         return str(CACHE_DIR)
+
+    # --- Server support ---
+
+    @property
+    def supports_server(self) -> bool:
+        """Whether this provider has a backend server mode."""
+        return False
+
+    @property
+    def server_config(self) -> ServerConfig:
+        """Server configuration from hivemind.json."""
+        return self._config.server
+
+    def start_server_command(self, port: int, hostname: str) -> list[str]:
+        """Command to start the provider's backend server.
+
+        Args:
+            port: Port to listen on
+            hostname: Hostname to bind to
+
+        Returns:
+            Command list suitable for subprocess.Popen
+        """
+        msg = f"Provider '{self.name}' does not support a backend server."
+        raise NotImplementedError(msg)
+
+    def connect_args(self, port: int, hostname: str) -> list[str]:
+        """Extra CLI args to append when connecting to a running server.
+
+        Args:
+            port: Server port
+            hostname: Server hostname
+
+        Returns:
+            List of extra arguments (e.g. ["--port", "4096", "--hostname", "127.0.0.1"])
+        """
+        return []
+
+    def launch_command(self, extra_args: list[str] | None = None) -> list[str]:
+        """Command to launch the provider's client (TUI/CLI).
+
+        Args:
+            extra_args: Additional arguments to pass through
+
+        Returns:
+            Command list suitable for os.execvp
+        """
+        msg = f"Provider '{self.name}' does not define a launch command."
+        raise NotImplementedError(msg)
+
+    def health_check_url(self, port: int, hostname: str) -> str:
+        """URL to check if the server is healthy.
+
+        Args:
+            port: Server port
+            hostname: Server hostname
+        """
+        msg = f"Provider '{self.name}' does not support a backend server."
+        raise NotImplementedError(msg)
+
+    # --- MCP config deployment ---
+
+    def deploy_mcp_config(self, project_dir: Path) -> None:  # noqa: B027
+        """Write MCP server configuration for this provider.
+
+        Args:
+            project_dir: Project root directory (for .mcp.json placement)
+        """
+
+    def notify_instance_reload(self) -> bool:
+        """Trigger agent cache reload on the running provider server.
+
+        Returns True if notification was sent, False if not applicable or failed.
+        Provider-specific: OpenCode sends POST /instance/dispose, Claude is no-op.
+        """
+        return False
 
     # --- Context injection ---
 

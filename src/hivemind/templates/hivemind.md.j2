@@ -1,8 +1,25 @@
 # Hivemind Expert System
 
-Expert agents are managed centrally via the `hivemind` CLI.
+Expert agents are managed via hivemind MCP tools (preferred) or the `hivemind` CLI.
 
-## Commands
+## MCP Tools
+
+You have direct access to hivemind tools for expert/team management and knowledge access.
+Use these structured tools instead of the CLI via bash:
+
+**Expert management:** `list_experts`, `show_expert`, `enable_expert`, `disable_expert`, `add_expert`, `delete_expert`, `update_expert`
+
+**Knowledge access:** `get_knowledge` (read an expert's knowledge docs without spawning a subagent), `search_knowledge` (search across all expert knowledge docs)
+
+**Team management:** `list_teams`, `show_team`, `create_team`, `delete_team`, `add_expert_to_team`, `remove_expert_from_team`
+
+**System:** `status` (full dashboard), `redeploy` (regenerate all agent files)
+
+Changes made via MCP tools take effect immediately (hot-reload).
+
+## CLI Commands
+
+For reference, the CLI equivalents are:
 
 ```
 hivemind expert list              # See all experts and their status

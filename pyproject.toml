@@ -13,10 +13,11 @@ dependencies = [
     "httpx>=0.27.0",
     "jinja2>=3.1.0",
     "pydantic>=2.12.5",
+    "mcp>=1.9.0",
 ]
 
 [project.scripts]
-hivemind = "hivemind.cli:app"
+hivemind = "hivemind.cli:main_entry"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/hivemind"]
@@ -83,6 +84,7 @@ max-complexity = 15
 "src/hivemind/experts.py" = ["C901"]
 "src/hivemind/cli.py" = ["C901", "TRY003", "EM101", "PLR0912"]
 "src/hivemind/providers/*.py" = ["ARG002"]
+"src/hivemind/mcp/*.py" = ["TRY003", "EM101"]
 "src/hivemind/tui/**/*.py" = ["TRY003", "EM101"]
 "tests/**/*.py" = ["S101", "PLR2004", "PT011", "SIM117"]
 
@@ -113,7 +115,7 @@ warn_unreachable = true
 
 # Third-party packages lacking type stubs
 [[tool.mypy.overrides]]
-module = ["crawl4ai.*", "trafilatura.*"]
+module = ["crawl4ai.*", "trafilatura.*", "mcp.*"]
 ignore_missing_imports = true
 
 # crawl: crawl4ai + trafilatura lack type stubs, heavy use of Any

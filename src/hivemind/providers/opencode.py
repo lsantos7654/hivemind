@@ -4,17 +4,22 @@ from __future__ import annotations
 
 import contextlib
 import json
+import logging
 import shlex
 import subprocess
 from typing import TYPE_CHECKING, Any
 
+import httpx
+
 from hivemind.constants import DEFAULT_TEMPERATURE, ENGINE_VALIDATION_TIMEOUT
 from hivemind.models import InitResult, OperationResult
 from hivemind.providers.base import Provider, yaml_escape_double_quoted
-from hivemind.templates import LIBRARIAN_DESCRIPTION
+from hivemind.templates import LIBRARIAN_DESCRIPTION, opencode_branding_plugin
 
 if TYPE_CHECKING:
     from pathlib import Path
+
+log = logging.getLogger(__name__)
 
 
 class OpenCodeProvider(Provider):
@@ -182,6 +187,66 @@ class OpenCodeProvider(Provider):
         cmd.extend(["--model", self.model])
         return cmd
 
+    # --- Server support ---
+
+    @property
+    def supports_server(self) -> bool:
+        return True
+
+    def start_server_command(self, port: int, hostname: str) -> list[str]:
+        binary = shlex.split(self._engine)[0]
+        return [binary, "serve", "--port", str(port), "--hostname", hostname]
+
+    def connect_args(self, port: int, hostname: str) -> list[str]:
+        return ["--port", str(port), "--hostname", hostname]
+
+    def launch_command(self, extra_args: list[str] | None = None) -> list[str]:
+        binary = shlex.split(self._engine)[0]
+        return [binary, *(extra_args or [])]
+
+    def health_check_url(self, port: int, hostname: str) -> str:
+        return f"http://{hostname}:{port}/global/health"
+
+    # --- MCP config deployment ---
+
+    def deploy_mcp_config(self, project_dir: Path) -> None:
+        """Merge hivemind MCP server entry into opencode.json."""
+        config_path = self._home_dir / "opencode.json"
+        existing: dict[str, Any] = {}
+        if config_path.exists() and not config_path.is_symlink():
+            with contextlib.suppress(FileNotFoundError, json.JSONDecodeError):
+                existing = json.loads(config_path.read_text(encoding="utf-8"))
+
+        mcp_section = existing.get("mcp", {})
+        if not isinstance(mcp_section, dict):
+            mcp_section = {}
+
+        mcp_section["hivemind"] = {
+            "type": "local",
+            "command": ["hivemind", "mcp"],
+            "environment": {
+                "PYTHONUNBUFFERED": "1",
+            },
+        }
+
+        existing["mcp"] = mcp_section
+        config_path.write_text(json.dumps(existing, indent=2) + "\n", encoding="utf-8")
+
+    def notify_instance_reload(self) -> bool:
+        """POST /instance/dispose on the running OpenCode server."""
+        from hivemind.server import get_server_url
+
+        url = get_server_url()
+        if url is None:
+            return False
+
+        try:
+            resp = httpx.post(f"{url}/instance/dispose", timeout=5.0)
+            return resp.status_code == 200
+        except (httpx.ConnectError, httpx.TimeoutException):
+            log.debug("Failed to notify OpenCode server at %s", url)
+            return False
+
     # --- Init ---
 
     def _post_init_dirs(self, *, permissions: dict[str, object] | None = None) -> list[InitResult]:
@@ -254,5 +319,34 @@ class OpenCodeProvider(Provider):
         existing["permission"] = existing_perms
         config_path.write_text(json.dumps(existing, indent=2) + "\n")
         results.append(InitResult(label="opencode.json", status="hardening + permissions merged"))
+
+        # Branding plugin: replace OpenCode's home screen logo with Hivemind
+        plugins_dir = self._home_dir / "plugins"
+        plugins_dir.mkdir(parents=True, exist_ok=True)
+        plugin_path = plugins_dir / "hivemind-branding.js"
+        plugin_path.write_text(opencode_branding_plugin(), encoding="utf-8")
+        # Remove stale .tsx version from previous installs
+        stale_tsx = plugins_dir / "hivemind-branding.tsx"
+        if stale_tsx.exists():
+            stale_tsx.unlink()
+        results.append(InitResult(label="hivemind-branding.js", status="branding plugin deployed"))
+
+        # Register branding plugin in tui.json (TUI plugins are NOT loaded from
+        # opencode.json — they require a separate tui.json config file)
+        tui_config_path = self._home_dir / "tui.json"
+        tui_existing: dict[str, Any] = {}
+        if tui_config_path.exists() and not tui_config_path.is_symlink():
+            with contextlib.suppress(FileNotFoundError, json.JSONDecodeError):
+                tui_existing = json.loads(tui_config_path.read_text(encoding="utf-8"))
+
+        plugin_url = f"file://{plugin_path}"
+        raw_plugins = tui_existing.get("plugin", [])
+        tui_plugins: list[object] = raw_plugins if isinstance(raw_plugins, list) else []
+        # Ensure our plugin is registered (replace any stale entry)
+        tui_plugins = [p for p in tui_plugins if not (isinstance(p, str) and "hivemind-branding" in p)]
+        tui_plugins.append(plugin_url)
+        tui_existing["plugin"] = tui_plugins
+        tui_config_path.write_text(json.dumps(tui_existing, indent=2) + "\n", encoding="utf-8")
+        results.append(InitResult(label="tui.json", status="branding plugin registered"))
 
         return results

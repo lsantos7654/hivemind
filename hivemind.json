@@ -40,6 +40,10 @@
         },
         "temperature": 0.1
       },
+      "server": {
+        "port": 4096,
+        "hostname": "127.0.0.1"
+      },
       "permissions": {
         "allow": [
           "Read(~/.cache/hivemind/**)",

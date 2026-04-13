@@ -82,6 +82,13 @@ def agent_md_template(name: str, commit: str) -> str:
     return render("agent.md.j2", name=name, commit=commit)
 
 
+# --- OpenCode Branding Plugin ---
+
+
+def opencode_branding_plugin() -> str:
+    return render("opencode_branding_plugin.js.j2")
+
+
 # --- AI Prompts ---
 
 

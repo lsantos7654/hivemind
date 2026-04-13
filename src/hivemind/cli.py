@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from typing import TYPE_CHECKING
 
 import typer
 
 if TYPE_CHECKING:
     from pathlib import Path
+from datetime import UTC
+
 from rich import box
 from rich.console import Console, Group
 from rich.live import Live
@@ -151,17 +154,210 @@ class AnalysisProgress:
         self._live.stop()
 
 
-@app.callback()
+@app.callback(invoke_without_command=True)
 def main(ctx: typer.Context) -> None:
-    """Manage expert agents for AI coding platforms."""
+    """Manage expert agents for AI coding platforms.
+
+    When invoked without a subcommand, launches the active provider
+    (e.g. opencode). Connects to the backend server if one is running.
+    """
     if ctx.invoked_subcommand is None:
-        from hivemind.tui import HivemindApp
-
-        app_instance = HivemindApp()
-        app_instance.run()
+        _launch_provider([])
 
 
-# Paths imported from core module
+def _launch_provider(extra_args: list[str]) -> None:
+    """Launch the active provider, connecting to server if running."""
+    provider = get_active_provider()
+    cmd = provider.launch_command(extra_args or None)
+
+    from hivemind.server import is_server_running, load_server_state
+
+    if is_server_running() and provider.supports_server:
+        state = load_server_state()
+        if state:
+            server_args = provider.connect_args(state.port, state.hostname)
+            # Insert server connection args before any extra args
+            binary = cmd[0]
+            cmd = [binary, *server_args, *cmd[1:]]
+
+    os.execvp(cmd[0], cmd)
+
+
+# --- TUI subcommand ---
+
+
+@app.command()
+def tui() -> None:
+    """Open the hivemind TUI dashboard."""
+    from hivemind.tui import HivemindApp
+
+    app_instance = HivemindApp()
+    app_instance.run()
+
+
+# --- MCP subcommand ---
+
+
+@app.command()
+def mcp() -> None:
+    """Run the hivemind MCP server (stdio transport)."""
+    from hivemind.mcp.__main__ import main as mcp_main
+
+    mcp_main()
+
+
+# --- Server subcommand group ---
+
+server_app = typer.Typer(
+    name="server",
+    help="Manage provider backend server.",
+    no_args_is_help=True,
+)
+app.add_typer(server_app, name="server")
+
+
+@server_app.command("start")
+def server_start(
+    port: int | None = typer.Option(None, "--port", "-p", help="Override server port"),
+    hostname: str | None = typer.Option(None, "--hostname", help="Override server hostname"),
+) -> None:
+    """Start the provider's backend server as a background process."""
+    from hivemind.server import is_server_running, load_server_state, start_server
+
+    if is_server_running():
+        state = load_server_state()
+        if state:
+            console.print(
+                f"[warning]Server already running on {state.hostname}:{state.port} (PID {state.pid})[/warning]"
+            )
+            raise typer.Exit(0)
+
+    provider = get_active_provider()
+    if not provider.supports_server:
+        console.print(f"[error]Provider '{provider.name}' does not support a backend server.[/error]")
+        raise typer.Exit(1)
+
+    server_cfg = provider.server_config
+    effective_port = port or server_cfg.port
+    effective_hostname = hostname or server_cfg.hostname
+
+    console.print(f"[heading]Starting {provider.name} server on {effective_hostname}:{effective_port}...[/heading]")
+
+    try:
+        state = start_server(provider, port=effective_port, hostname=effective_hostname)
+        console.print(f"[success]Server started on {state.hostname}:{state.port} (PID {state.pid})[/success]")
+    except RuntimeError as e:
+        console.print(f"[error]{e}[/error]")
+        raise typer.Exit(1) from None
+
+
+@server_app.command("stop")
+def server_stop() -> None:
+    """Stop the provider's backend server."""
+    from hivemind.server import stop_server
+
+    stopped = stop_server()
+    if stopped:
+        console.print("[success]Server stopped.[/success]")
+    else:
+        console.print("[dim]No server running.[/dim]")
+
+
+@server_app.command("status")
+def server_status_cmd() -> None:
+    """Show backend server status."""
+    from hivemind.server import is_server_running, load_server_state
+
+    if not is_server_running():
+        console.print("[dim]Server is not running.[/dim]")
+        return
+
+    state = load_server_state()
+    if not state:
+        console.print("[dim]Server is not running.[/dim]")
+        return
+
+    from datetime import datetime
+
+    uptime = datetime.now(UTC) - state.started_at
+    hours, remainder = divmod(int(uptime.total_seconds()), 3600)
+    minutes, seconds = divmod(remainder, 60)
+
+    lines = [
+        "[heading]Server Status[/heading]",
+        f"Provider: [success]{state.provider}[/success]",
+        f"Address: {state.hostname}:{state.port}",
+        f"PID: {state.pid}",
+        f"Uptime: {hours}h {minutes}m {seconds}s",
+        f"Log: {state.log_file}",
+    ]
+    console.print(Panel("\n".join(lines), border_style="blue"))
+
+
+@server_app.command("logs")
+def server_logs(
+    follow: bool = typer.Option(True, "--follow/--no-follow", "-f/-F", help="Follow log output"),
+    lines: int = typer.Option(50, "--lines", "-n", help="Number of lines to show initially"),
+) -> None:
+    """Tail the server log file."""
+    from pathlib import Path
+
+    from hivemind.server import SERVER_LOG_FILE, is_server_running, load_server_state
+
+    # Use the state file's log path if available, fall back to default
+    log_path = SERVER_LOG_FILE
+    state = load_server_state()
+    if state and state.log_file:
+        log_path = Path(state.log_file)
+
+    if not log_path.exists():
+        console.print("[dim]No server log file found.[/dim]")
+        raise typer.Exit(1)
+
+    if not follow:
+        # Just print the last N lines
+        content = log_path.read_text(encoding="utf-8")
+        tail = content.splitlines()[-lines:]
+        for line in tail:
+            console.print(line, highlight=False)
+        return
+
+    # Follow mode: print tail then watch for new content
+    running = is_server_running()
+    if not running:
+        console.print("[warning]Server is not running. Showing existing logs.[/warning]")
+
+    import time
+
+    content = log_path.read_text(encoding="utf-8")
+    tail = content.splitlines()[-lines:]
+    for line in tail:
+        console.print(line, highlight=False)
+
+    # Follow new content
+    pos = log_path.stat().st_size
+    try:
+        while True:
+            current_size = log_path.stat().st_size
+            if current_size > pos:
+                with log_path.open("r", encoding="utf-8") as fh:
+                    fh.seek(pos)
+                    new_content = fh.read()
+                    if new_content:
+                        # Print without trailing newline to avoid double spacing
+                        for line in new_content.splitlines():
+                            console.print(line, highlight=False)
+                    pos = fh.tell()
+            elif current_size < pos:
+                # File was truncated/rotated
+                pos = 0
+                continue
+            time.sleep(0.3)
+    except KeyboardInterrupt:
+        pass
+
+
+# --- Helper functions ---
 
 
 def _complete_expert(incomplete: str) -> list[str]:
@@ -1116,12 +1312,24 @@ def crawl(
 @app.command()
 def status() -> None:
     """Show a dashboard of hivemind status."""
+    from hivemind.server import is_server_running, load_server_state
+
     provider = get_active_provider()
     config = load_config()
 
     # --- Overview panel ---
     overview_lines: list[str] = []
     overview_lines.append(f"Provider: [heading]{provider.name}[/heading]")
+
+    # Server status
+    if is_server_running():
+        state = load_server_state()
+        if state:
+            overview_lines.append(
+                f"Server: [success]running[/success] on {state.hostname}:{state.port} (PID {state.pid})"
+            )
+    else:
+        overview_lines.append("Server: [dim]not running[/dim]")
 
     enabled = config.enabled
     disabled = config.disabled
@@ -1233,3 +1441,50 @@ def query_compat(
     """Deprecated: use 'hivemind expert query'."""
     console.print(_DEPRECATION.format(cmd="query"))
     query(question=question)
+
+
+# --- Entry point with provider passthrough ---
+
+# Known subcommands (collected from all registered commands and groups)
+_KNOWN_SUBCOMMANDS = {
+    "tui",
+    "mcp",
+    "init",
+    "redeploy",
+    "status",
+    "server",
+    "expert",
+    "provider",
+    "team",
+    # Hidden compat aliases
+    "list",
+    "add",
+    "enable",
+    "disable",
+    "delete",
+    "query",
+    # Typer built-ins
+    "--help",
+    "--install-completion",
+    "--show-completion",
+}
+
+
+def main_entry() -> None:
+    """Entry point that supports passthrough to the provider.
+
+    If the first argument is not a known subcommand, all arguments are
+    passed through to the active provider (e.g. ``hivemind -c "fix it"``
+    becomes ``opencode --port 4096 -c "fix it"``).
+    """
+    import sys
+
+    args = sys.argv[1:]
+
+    # If there are args and the first one isn't a known subcommand, passthrough
+    if args and args[0] not in _KNOWN_SUBCOMMANDS:
+        _launch_provider(args)
+        # _launch_provider calls os.execvp, so this line is never reached
+
+    # Otherwise, let Typer handle it normally
+    app()
