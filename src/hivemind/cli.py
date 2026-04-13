@@ -1039,6 +1039,69 @@ def redeploy() -> None:
     console.print(f"\n[bold success]Redeployed {total} agent(s), {len(experts_deployed)} expert dir(s).[/bold success]")
 
 
+# --- Crawl service subcommands ---
+
+crawl_app = typer.Typer(
+    name="crawl",
+    help="Manage the Firecrawl crawling service.",
+    no_args_is_help=True,
+)
+app.add_typer(crawl_app, name="crawl")
+
+
+@crawl_app.command(name="start")
+def crawl_start() -> None:
+    """Start the Firecrawl Docker service.
+
+    Clones the Firecrawl repo if needed and runs docker compose up.
+    Requires Docker to be installed and running.
+    """
+    from hivemind.crawler import is_firecrawl_running, start_firecrawl
+
+    if is_firecrawl_running():
+        console.print("[success]Firecrawl is already running.[/success]")
+        return
+
+    console.print("[info]Starting Firecrawl service...[/info]")
+    try:
+        start_firecrawl()
+    except Exception as e:
+        console.print(f"[error]Failed to start Firecrawl: {escape(str(e))}[/error]")
+        raise typer.Exit(1) from None
+
+    console.print("[success]Firecrawl service started at http://localhost:3002[/success]")
+
+
+@crawl_app.command(name="stop")
+def crawl_stop() -> None:
+    """Stop the Firecrawl Docker service."""
+    from hivemind.crawler import stop_firecrawl
+
+    console.print("[info]Stopping Firecrawl service...[/info]")
+    try:
+        stop_firecrawl()
+    except Exception as e:
+        console.print(f"[error]Failed to stop Firecrawl: {escape(str(e))}[/error]")
+        raise typer.Exit(1) from None
+
+    console.print("[success]Firecrawl service stopped.[/success]")
+
+
+@crawl_app.command(name="status")
+def crawl_status_cmd() -> None:
+    """Check if the Firecrawl service is running."""
+    from hivemind.crawler import FIRECRAWL_URL, is_firecrawl_running
+
+    if is_firecrawl_running():
+        console.print(f"[success]Firecrawl is running at {FIRECRAWL_URL}[/success]")
+    else:
+        console.print(f"[warning]Firecrawl is not running at {FIRECRAWL_URL}[/warning]")
+        console.print("[info]Start it with: hivemind crawl start[/info]")
+
+
+# --- Expert crawl command ---
+
+
 @expert_app.command()
 def crawl(
     url: str = typer.Argument(..., help="Starting URL to crawl"),
@@ -1047,7 +1110,7 @@ def crawl(
     raw_markdown: bool = typer.Option(
         False,
         "--raw-markdown",
-        help="Force raw markdown fetching (.md endpoints only, no browser fallback)",
+        help="Force raw markdown fetching (.md endpoints only, no Firecrawl)",
     ),
 ) -> None:
     """Crawl a website and save documentation for an expert agent.
@@ -1055,8 +1118,10 @@ def crawl(
     Crawls the specified URL and saves markdown files to
     ~/.cache/hivemind/external_docs/<agent>/ for use by expert agents.
 
-    Always runs in preview mode - you'll see all discovered URLs
-    before the crawl begins.
+    Uses Firecrawl (self-hosted) by default. Pass --raw-markdown for sites
+    that serve source markdown at .md endpoints (e.g. rspress-based docs).
+
+    The Firecrawl service must be running first: hivemind crawl start
     """
     # Validate that the agent exists
     expert_dir = get_expert_dir(agent)
@@ -1072,12 +1137,10 @@ def crawl(
         raise typer.Exit(1)
 
     from hivemind.crawler import (
-        crawl_from_sitemap,
+        FirecrawlNotRunningError,
         crawl_urls_raw_markdown,
         crawl_website,
-        is_sitemap_url,
-        preview_crawl,
-        preview_sitemap,
+        discover_urls,
     )
 
     output_dir = EXTERNAL_DOCS_DIR / agent
@@ -1087,85 +1150,57 @@ def crawl(
     console.print(f"[info]Output:[/info] {escape(str(output_dir))}")
     console.print()
 
-    # Phase 1: Preview (discover URLs)
-    # Detect and route based on URL type
-    if is_sitemap_url(url):
-        console.print("[info]🗺️  Detected sitemap URL, discovering pages...[/info]")
-        try:
-            discovered_urls = asyncio.run(preview_sitemap(sitemap_url=url, max_pages=max_pages))
-        except Exception as e:
-            console.print(f"[error]✗ Failed to fetch sitemap: {escape(str(e))}[/error]")
-            raise typer.Exit(1) from None
-        is_sitemap = True
-    else:
-        console.print("[info]Discovering URLs...[/info]")
-        try:
-            discovered_urls = asyncio.run(preview_crawl(url=url, max_pages=max_pages))
-        except Exception as e:
-            console.print(f"[error]✗ Failed to discover URLs: {escape(str(e))}[/error]")
-            raise typer.Exit(1) from None
-        is_sitemap = False
-
-    if not discovered_urls:
-        console.print("[error]✗ No URLs discovered[/error]")
-        raise typer.Exit(1)
-
-    console.print(f"\n[success]Found {len(discovered_urls)} pages:[/success]\n")
-
-    # Show ALL discovered URLs
-    for i, discovered_url in enumerate(discovered_urls, 1):
-        console.print(f"  {i}. {discovered_url}")
-
-    console.print()
-
-    # Ask for confirmation
-    if not typer.confirm(f"Crawl all {len(discovered_urls)} pages?", default=True):
-        console.print("[warning]Crawl cancelled[/warning]")
-        raise typer.Exit(0)
-
-    console.print()
-
-    # Phase 2: Full crawl with progress
-    # Determine strategy based on explicit flags
     if raw_markdown:
-        # User explicitly requested raw markdown only
-        console.print("[info]Raw markdown mode enabled (no browser fallback)[/info]\n")
-        strategy_name = "raw_markdown"
-    elif is_sitemap:
-        # Sitemap-based crawl
-        console.print("[heading]Crawling pages...[/heading]\n")
-        strategy_name = "sitemap"
-    else:
-        # Default: browser-based scraping
-        console.print("[heading]Crawling pages...[/heading]\n")
-        strategy_name = "browser"
+        # Raw markdown mode: discover URLs via Firecrawl /map, then fetch .md directly
+        console.print("[info]Raw markdown mode — discovering URLs via Firecrawl...[/info]")
+        try:
+            discovered_urls = discover_urls(url=url, max_pages=max_pages)
+        except FirecrawlNotRunningError as e:
+            console.print(f"[error]{escape(str(e))}[/error]")
+            raise typer.Exit(1) from None
+        except Exception as e:
+            console.print(f"[error]Failed to discover URLs: {escape(str(e))}[/error]")
+            raise typer.Exit(1) from None
 
-    from rich.progress import BarColumn, Progress, TextColumn, TimeRemainingColumn
+        if not discovered_urls:
+            console.print("[error]No URLs discovered[/error]")
+            raise typer.Exit(1)
 
-    progress = Progress(
-        TextColumn("[bold blue]{task.fields[current_url]}"),
-        BarColumn(bar_width=None),
-        "[progress.percentage]{task.percentage:>3.0f}%",
-        TextColumn("{task.completed}/{task.total} pages"),
-        TimeRemainingColumn(),
-        console=console,
-    )
+        console.print(f"\n[success]Found {len(discovered_urls)} pages:[/success]\n")
+        for i, discovered_url in enumerate(discovered_urls, 1):
+            console.print(f"  {i}. {discovered_url}")
+        console.print()
 
-    def on_page(page_url: str, success: bool) -> None:
-        progress.update(task_id, advance=1, current_url=page_url)
-        if success:
-            progress.console.log(f"[success]✓[/success] {page_url}")
+        if not typer.confirm(f"Fetch raw markdown for all {len(discovered_urls)} pages?", default=True):
+            console.print("[warning]Crawl cancelled[/warning]")
+            raise typer.Exit(0)
 
-    with progress:
-        task_id = progress.add_task(
-            "crawling",
-            total=len(discovered_urls),
-            current_url=url,
+        console.print("\n[info]Fetching raw markdown...[/info]\n")
+
+        from rich.progress import BarColumn, Progress, TextColumn, TimeRemainingColumn
+
+        progress = Progress(
+            TextColumn("[bold blue]{task.fields[current_url]}"),
+            BarColumn(bar_width=None),
+            "[progress.percentage]{task.percentage:>3.0f}%",
+            TextColumn("{task.completed}/{task.total} pages"),
+            TimeRemainingColumn(),
+            console=console,
         )
 
-        try:
-            if strategy_name == "raw_markdown":
-                # Pure raw markdown (no fallback)
+        def on_page(page_url: str, success: bool) -> None:
+            progress.update(task_id, advance=1, current_url=page_url)
+            if success:
+                progress.console.log(f"[success]✓[/success] {page_url}")
+
+        with progress:
+            task_id = progress.add_task(
+                "fetching",
+                total=len(discovered_urls),
+                current_url=url,
+            )
+
+            try:
                 result = asyncio.run(
                     crawl_urls_raw_markdown(
                         urls=discovered_urls,
@@ -1173,28 +1208,25 @@ def crawl(
                         on_page_callback=on_page,
                     ),
                 )
-            elif strategy_name == "sitemap":
-                # Sitemap-based browser crawl
-                result = asyncio.run(
-                    crawl_from_sitemap(
-                        sitemap_url=url,
-                        max_pages=len(discovered_urls),
-                        output_dir=str(output_dir),
-                        on_page_callback=on_page,
-                    ),
-                )
-            else:  # browser
-                # Browser crawl with BFS
-                result = asyncio.run(
-                    crawl_website(
-                        url=url,
-                        max_pages=len(discovered_urls),
-                        output_dir=str(output_dir),
-                        on_page_callback=on_page,
-                    ),
-                )
+            except Exception as e:
+                console.print(f"\n[error]Crawl failed: {escape(str(e))}[/error]")
+                raise typer.Exit(1) from None
+
+    else:
+        # Firecrawl mode: crawl the entire site
+        console.print("[info]Crawling via Firecrawl...[/info]\n")
+
+        try:
+            result = crawl_website(
+                url=url,
+                max_pages=max_pages,
+                output_dir=str(output_dir),
+            )
+        except FirecrawlNotRunningError as e:
+            console.print(f"[error]{escape(str(e))}[/error]")
+            raise typer.Exit(1) from None
         except Exception as e:
-            console.print(f"\n[error]✗ Crawl failed: {escape(str(e))}[/error]")
+            console.print(f"\n[error]Crawl failed: {escape(str(e))}[/error]")
             raise typer.Exit(1) from None
 
     # Display summary
@@ -1213,11 +1245,11 @@ def crawl(
     console.print()
 
     if result.successful_pages > 0:
-        console.print(f"[success]✓ Successfully crawled {result.successful_pages} pages[/success]")
+        console.print(f"[success]Successfully crawled {result.successful_pages} pages[/success]")
         console.print(f"\n[info]Documentation saved to:[/info] {output_dir}")
         console.print("[info]Expert agents can now access these docs[/info]")
     else:
-        console.print("[error]✗ No pages were successfully crawled[/error]")
+        console.print("[error]No pages were successfully crawled[/error]")
         raise typer.Exit(1)
 
 

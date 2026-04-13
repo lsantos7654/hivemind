@@ -49,12 +49,15 @@ def redeploy_all_agents(config: AppConfig) -> RedeployResult:
 
     # Refresh team templates and redeploy team leads
     teams_deployed: list[str] = []
+    teams_failed: list[str] = []
     teams = load_teams()
     for team_name, team_data in teams.items():
         refresh_team_lead_body(team_name)
         refresh_team_lead_notes_header(team_name)
         if deploy_team_lead(team_name):
             teams_deployed.append(f"team-lead-{team_name}")
+        else:
+            teams_failed.append(team_name)
         for expert_name in team_data.experts:
             refresh_expert_notes_header(team_name, expert_name)
 
@@ -64,8 +67,8 @@ def redeploy_all_agents(config: AppConfig) -> RedeployResult:
     regenerate_hivemind_md(config=config)
 
     return RedeployResult(
-        success=True,
         failed=failed,
+        teams_failed=teams_failed,
         experts_deployed=experts_deployed,
         teams_deployed=teams_deployed,
     )

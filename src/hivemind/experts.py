@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import shutil
+import subprocess
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -37,6 +38,7 @@ from hivemind.config import (
     save_repos,
     save_teams,
 )
+from hivemind.constants import AGENT_FILENAME
 from hivemind.deployment import (
     deploy_agent,
     deploy_expert,
@@ -221,7 +223,7 @@ async def get_git_versions(name: str, expert_dir: Path) -> list[VersionInfo]:
 
     Args:
         name: Expert name
-        expert_dir: Path to expert directory (~/.claude/experts/<name>)
+        expert_dir: Path to expert directory (experts/<name>)
 
     Returns:
         List of VersionInfo objects sorted by: active first -> tags -> commits (by date)
@@ -353,7 +355,7 @@ async def get_git_versions(name: str, expert_dir: Path) -> list[VersionInfo]:
 
         versions.sort(key=sort_key, reverse=True)
 
-    except Exception:
+    except (subprocess.SubprocessError, OSError):
         logger.exception("Error getting git versions")
         return []
     else:
@@ -385,7 +387,7 @@ async def commit_exists_in_repo(name: str, commit: str) -> bool:
             stderr=asyncio.subprocess.DEVNULL,
         )
         await asyncio.wait_for(proc.wait(), timeout=GIT_LOCAL_TIMEOUT)
-    except Exception:
+    except (TimeoutError, OSError):
         return False
     else:
         return proc.returncode == 0
@@ -434,7 +436,7 @@ async def switch_version_async(
         target_dir = expert_dir / target_commit
 
         # Analyze if not already done
-        if not target_dir.exists() or not (target_dir / "agent.md").exists():
+        if not target_dir.exists() or not (target_dir / AGENT_FILENAME).exists():
             check_cancel(UpdatePhase.CHECKING)
             emit(
                 UpdatePhase.CHECKING,

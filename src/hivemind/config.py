@@ -9,6 +9,7 @@ import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from hivemind.constants import CACHE_DIR
 from hivemind.models import (
     AppConfig,
     HivemindConfig,
@@ -81,7 +82,6 @@ __all__ = [
 
 # Allow override for testing, otherwise use the same paths as cli.py
 HIVEMIND_ROOT = Path(__file__).resolve().parent.parent.parent
-CACHE_DIR = Path.home() / ".cache" / "hivemind"
 REPOS_DIR = CACHE_DIR / "repos"
 STAGING_DIR = CACHE_DIR / "staging"
 REPOS_LINK = HIVEMIND_ROOT / "repos"
@@ -209,7 +209,12 @@ def get_active_provider() -> Provider:
         msg = "No active_provider set in config.json. Run 'hivemind init' first."
         raise RuntimeError(msg)
     hivemind = load_hivemind()
-    prov = hivemind.providers.get(active, ProviderConfig())
+    raw = hivemind.providers.get(active)
+    if raw is None:
+        msg = f"Provider '{active}' not found in hivemind.json. Add it under providers.{active}."
+        raise RuntimeError(msg)
+    # Re-validate with strict context to enforce required fields for active providers
+    prov = ProviderConfig.model_validate(raw.model_dump(), context={"strict": True})
     _provider_cache = get_provider(active, prov, providers_dir=PROVIDERS_DIR)
     return _provider_cache
 
@@ -231,14 +236,14 @@ def save_repos(repos: dict[str, RepoEntry]) -> None:
 
 
 def load_private_repos() -> dict[str, RepoEntry]:
-    """Load private-repos.json (gitignored, never committed)."""
+    """Load private-repos.json (gitignored, never committed).
+
+    Raises json.JSONDecodeError if the file exists but contains corrupt JSON.
+    """
     if not PRIVATE_REPOS_JSON.exists():
         return {}
-    try:
-        data = json.loads(PRIVATE_REPOS_JSON.read_text(encoding="utf-8"))
-        return {k: RepoEntry.model_validate(v) for k, v in data.items()}
-    except (OSError, json.JSONDecodeError):
-        return {}
+    data = json.loads(PRIVATE_REPOS_JSON.read_text(encoding="utf-8"))
+    return {k: RepoEntry.model_validate(v) for k, v in data.items()}
 
 
 def save_private_repos(repos: dict[str, RepoEntry]) -> None:

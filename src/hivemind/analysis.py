@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from hivemind.config import get_active_provider
+from hivemind.constants import AGENT_FILENAME, ANALYSIS_DOCS, PROCESS_TERMINATE_TIMEOUT
 from hivemind.git import cleanup_log_files, read_analysis_error, revert_checkout
 from hivemind.models import (
     AnalysisResult,
@@ -33,14 +34,9 @@ __all__ = [
 
 def expected_analysis_files(*, is_update: bool = False) -> list[str]:
     """Return the list of files an analysis run is expected to produce."""
-    files = [
-        "summary.md",
-        "code_structure.md",
-        "build_system.md",
-        "apis_and_interfaces.md",
-    ]
+    files = list(ANALYSIS_DOCS)
     if not is_update:
-        files.append("agent.md")
+        files.append(AGENT_FILENAME)
     return files
 
 
@@ -113,8 +109,8 @@ async def run_async_analysis(
         if cancellation_token and cancellation_token.is_cancelled():
             try:
                 proc.terminate()
-                await asyncio.wait_for(proc.wait(), timeout=5.0)
-            except asyncio.TimeoutError:
+                await asyncio.wait_for(proc.wait(), timeout=PROCESS_TERMINATE_TIMEOUT)
+            except TimeoutError:
                 proc.kill()
                 await proc.wait()
             cleanup_log_files(stderr_path, stdout_path)

@@ -377,6 +377,34 @@
     "claude-code": {
       "remote": "https://github.com/anthropics/claude-code.git",
       "commit": "9772e13f820002c9730af67a2409702799c7ddc6"
+    },
+    "trafilatura": {
+      "remote": "https://github.com/adbar/trafilatura",
+      "commit": "ee1865b22f03e8c52922b3274df621d2f56fe79d"
+    },
+    "pydoll": {
+      "remote": "https://github.com/autoscrape-labs/pydoll",
+      "commit": "fd27c9268ae5f957e40a7a9ec148538316ff04df"
+    },
+    "markitdown": {
+      "remote": "https://github.com/microsoft/markitdown",
+      "commit": "63cbbd9de6afa01ee3b97127e4945c5706a29472"
+    },
+    "curl_cffi": {
+      "remote": "https://github.com/lexiforest/curl_cffi",
+      "commit": "f8f88fd04ccb5acf1142aaa97ee00e12ac7881f9"
+    },
+    "Scrapling": {
+      "remote": "https://github.com/D4Vinci/Scrapling",
+      "commit": "2046527575c879a0586b953966387eacad2b3aff"
+    },
+    "crawlee-python": {
+      "remote": "https://github.com/apify/crawlee-python",
+      "commit": "2eda2802144e9c11e90c5f1ff9bf2cfcebbc5761"
+    },
+    "reader": {
+      "remote": "https://github.com/jina-ai/reader",
+      "commit": "5f07900eabe07b1dd0e8d09e6c8ea022e6b2c176"
     }
   }
 }

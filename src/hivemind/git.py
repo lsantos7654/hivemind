@@ -19,6 +19,7 @@ from hivemind.config import (
     save_private_repos,
     save_repos,
 )
+from hivemind.constants import AGENT_FILENAME
 from hivemind.models import StagingResult
 
 if TYPE_CHECKING:
@@ -198,9 +199,9 @@ async def stage_for_analysis(
 
     # Preserve agent.md from previous version (not regenerated during updates)
     if old_commit:
-        old_agent = expert_dir / old_commit / "agent.md"
+        old_agent = expert_dir / old_commit / AGENT_FILENAME
         if old_agent.is_file():
-            shutil.copy2(old_agent, tmp_commit_dir / "agent.md")
+            shutil.copy2(old_agent, tmp_commit_dir / AGENT_FILENAME)
 
     # Checkout the target commit
     proc = await asyncio.create_subprocess_exec(

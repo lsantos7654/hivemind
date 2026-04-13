@@ -263,7 +263,9 @@ class ExpertsPane(BasePane):
         if worker_info.pid:
             try:
                 os.kill(worker_info.pid, signal.SIGTERM)
-                self.set_timer(5.0, lambda: self._force_kill_if_alive(worker_info.pid))
+                from hivemind.constants import PROCESS_TERMINATE_TIMEOUT
+
+                self.set_timer(PROCESS_TERMINATE_TIMEOUT, lambda: self._force_kill_if_alive(worker_info.pid))
             except ProcessLookupError:
                 pass
 

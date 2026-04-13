@@ -3,15 +3,16 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from enum import Enum
+from enum import StrEnum
 from pathlib import Path  # noqa: TC003 — Pydantic needs Path at runtime for field validation
+from typing import Self
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationInfo, model_validator
 
 # --- Update Progress Types ---
 
 
-class UpdatePhase(str, Enum):
+class UpdatePhase(StrEnum):
     """Phases of the update process."""
 
     CLONING = "cloning"
@@ -84,12 +85,34 @@ class ProviderSettings(BaseModel):
 
 
 class ProviderConfig(BaseModel):
-    """Provider configuration from hivemind.json."""
+    """Provider configuration from hivemind.json.
+
+    Fields default to empty strings because inactive providers in hivemind.json
+    may have incomplete config.  Use ``context={'strict': True}`` when loading
+    the *active* provider to enforce that required fields are set.
+    """
 
     engine: str = ""
     home_dir: str = ""
     settings: ProviderSettings = ProviderSettings()
     permissions: dict[str, object] | None = None
+
+    @model_validator(mode="after")
+    def validate_when_active(self, info: ValidationInfo) -> Self:
+        """Enforce completeness only when the provider is being activated."""
+        if not (info.context and info.context.get("strict")):
+            return self
+        errors: list[str] = []
+        if not self.engine:
+            errors.append("engine must be set")
+        if not self.home_dir:
+            errors.append("home_dir must be set")
+        if not self.settings.model:
+            errors.append("settings.model must be set")
+        if errors:
+            msg = f"Incomplete provider config: {'; '.join(errors)}. Check hivemind.json."
+            raise ValueError(msg)
+        return self
 
 
 class HivemindConfig(BaseModel):
@@ -113,10 +136,24 @@ class AppConfig(BaseModel):
 
 
 class OperationResult(BaseModel):
-    """Base result for all operations."""
+    """Base result for all operations.
+
+    Invariant: ``error`` must be set when ``success=False`` and must be
+    ``None`` when ``success=True``.  All subclasses inherit this validator.
+    """
 
     success: bool
     error: str | None = None
+
+    @model_validator(mode="after")
+    def check_error_consistency(self) -> Self:
+        if not self.success and self.error is None:
+            msg = "error must be set when success=False"
+            raise ValueError(msg)
+        if self.success and self.error is not None:
+            msg = "error must not be set when success=True"
+            raise ValueError(msg)
+        return self
 
 
 class UpdateResult(OperationResult):
@@ -135,9 +172,25 @@ class DisableResult(OperationResult):
 
 
 class RedeployResult(OperationResult):
+    success: bool = True  # overridden by validator
     failed: list[str] = []
+    teams_failed: list[str] = []
     experts_deployed: list[str] = []
     teams_deployed: list[str] = []
+
+    @model_validator(mode="after")
+    def derive_success(self) -> Self:
+        has_failures = bool(self.failed or self.teams_failed)
+        if has_failures and self.error is None:
+            parts: list[str] = []
+            if self.failed:
+                parts.append(f"experts: {', '.join(self.failed)}")
+            if self.teams_failed:
+                parts.append(f"teams: {', '.join(self.teams_failed)}")
+            self.error = f"Deploy failures -- {'; '.join(parts)}"
+        # Derive success from error state: if error is set, we failed
+        self.success = self.error is None
+        return self
 
 
 class SwitchProviderResult(OperationResult):
@@ -167,16 +220,6 @@ class InitResult(BaseModel):
 
     label: str
     status: str
-
-
-class SymlinkCheck(BaseModel):
-    """Symlink verification entry for status dashboard."""
-
-    model_config = {"arbitrary_types_allowed": True}
-
-    display_name: str
-    expected_target: Path
-    link_path: Path
 
 
 class StagingResult(BaseModel):

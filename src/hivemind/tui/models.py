@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from enum import Enum
+from enum import StrEnum
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -18,7 +18,7 @@ class WorkerInfo:
         self.pid = pid
 
 
-class ExpertStatus(str, Enum):
+class ExpertStatus(StrEnum):
     """Expert status enumeration."""
 
     ENABLED = "enabled"
@@ -26,7 +26,7 @@ class ExpertStatus(str, Enum):
     UNLISTED = "unlisted"
 
 
-class OperationStatus(str, Enum):
+class OperationStatus(StrEnum):
     """Operation status enumeration."""
 
     QUEUED = "queued"

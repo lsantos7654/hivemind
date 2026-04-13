@@ -16,6 +16,7 @@ from hivemind.config import (
     get_expert_dir,
     load_teams,
 )
+from hivemind.constants import AGENT_FILENAME
 from hivemind.providers import extract_description, strip_frontmatter
 
 if TYPE_CHECKING:
@@ -50,7 +51,7 @@ def deploy_agent(name: str) -> bool:
     """
     AGENTS_DIR.mkdir(parents=True, exist_ok=True)
     expert_dir = get_expert_dir(name)
-    head_agent = expert_dir / "HEAD" / "agent.md"
+    head_agent = expert_dir / "HEAD" / AGENT_FILENAME
 
     if not head_agent.exists():
         return False
@@ -145,7 +146,7 @@ def update_librarian(config: AppConfig) -> None:
             if name not in enabled_experts:
                 continue
 
-            agent_md = expert_dir / "HEAD" / "agent.md"
+            agent_md = expert_dir / "HEAD" / AGENT_FILENAME
             if not agent_md.exists():
                 continue
 

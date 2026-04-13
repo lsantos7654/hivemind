@@ -1,6 +1,7 @@
 """Jinja2 template loader for hivemind agent generation.
 
 Templates live in the `templates/` directory inside the package.
+Domain content constants (descriptions, prompts) also live here.
 """
 
 from __future__ import annotations
@@ -8,6 +9,12 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from jinja2 import Environment, PackageLoader, StrictUndefined
+
+LIBRARIAN_DESCRIPTION: str = (
+    "Hivemind librarian -- knows every expert agent and their "
+    "capabilities. Ask the librarian to find the right expert for a question "
+    "before delegating to specialists."
+)
 
 if TYPE_CHECKING:
     from pathlib import Path
