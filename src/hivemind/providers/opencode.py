@@ -6,7 +6,7 @@ import contextlib
 import json
 import shlex
 import subprocess
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from hivemind.constants import DEFAULT_TEMPERATURE, ENGINE_VALIDATION_TIMEOUT
 from hivemind.models import InitResult, OperationResult
@@ -42,6 +42,7 @@ class OpenCodeProvider(Provider):
                 capture_output=True,
                 text=True,
                 timeout=ENGINE_VALIDATION_TIMEOUT,
+                check=False,
             )
         except FileNotFoundError:
             return OperationResult(
@@ -224,7 +225,7 @@ class OpenCodeProvider(Provider):
         }
 
         config_path = self._home_dir / "opencode.json"
-        existing: dict = {}
+        existing: dict[str, Any] = {}
         if config_path.exists() and not config_path.is_symlink():
             with contextlib.suppress(FileNotFoundError):
                 existing = json.loads(config_path.read_text(encoding="utf-8"))

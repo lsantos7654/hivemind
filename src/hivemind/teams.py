@@ -45,8 +45,7 @@ __all__ = [
 ]
 
 
-_SECTION_BATCH_SIZE = 15
-"""Max experts per AI call when generating team lead sections."""
+_SECTION_BATCH_SIZE = 15  # Max experts per AI call when generating team lead sections
 
 
 def _read_expert_summary(expert_name: str) -> str:

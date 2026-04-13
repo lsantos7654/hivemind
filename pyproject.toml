@@ -39,16 +39,52 @@ select = [
     "C4", "RSE", "ICN", "ERA", "LOG", "G",
     # Tier 2: medium-effort rules
     "TC", "TRY", "EM", "C90", "T20",
+    # Tier 3: stricter rules
+    "N",    # pep8-naming
+    "PT",   # pytest-style
+    "PLW",  # pylint warnings
+    "PLC",  # pylint conventions
+    "FLY",  # flynt (f-string opportunities)
 ]
-ignore = []
+ignore = [
+    # TRY: exception message strictness — too noisy for CLI
+    "TRY003",  # long messages outside exception class
+    "TRY300",  # move to else block — style opinion
+    "TRY301",  # abstract raise to inner function
+    # EM: string literals in exceptions — noisy for CLI one-off messages
+    "EM101",   # string literal in exception (keep EM102 for f-strings)
+    # RET: controversial superfluous-else rules
+    "RET504",  # unnecessary assign before return — hurts debuggability
+    "RET505",  # superfluous else after return
+    "RET506",  # superfluous else after raise
+    "RET507",  # superfluous else after continue
+    "RET508",  # superfluous else after break
+    # N: short/CamelCase variable names are idiomatic
+    "N803",    # argument name should be lowercase
+    "N806",    # variable in function should be lowercase
+    # PT: opinion-only pytest rules
+    "PT006",   # parametrize argument names style
+    "PT007",   # parametrize values style
+    "PT011",   # pytest.raises requires match=
+    "PT013",   # import pytest as X
+    # PL: complexity overlap with C90, intentional patterns
+    "PLR0912", # too many branches (handled by C90)
+    "PLR0913", # too many arguments (CLI commands legitimately have many)
+    "PLR0915", # too many statements (handled by C90)
+    "PLR2004", # magic value comparison — too noisy in CLI/TUI
+    "PLC0415", # import not at top level (intentional lazy imports)
+    "PLW0603", # global statement — intentional for module-level caches
+]
 
 [tool.ruff.lint.mccabe]
 max-complexity = 15
 
 [tool.ruff.lint.per-file-ignores]
 "src/hivemind/experts.py" = ["C901"]
-"src/hivemind/cli.py" = ["C901"]
+"src/hivemind/cli.py" = ["C901", "TRY003", "EM101", "PLR0912"]
 "src/hivemind/providers/*.py" = ["ARG002"]
+"src/hivemind/tui/**/*.py" = ["TRY003", "EM101"]
+"tests/**/*.py" = ["S101", "PLR2004", "PT011", "SIM117"]
 
 [tool.ruff.format]
 quote-style = "double"
@@ -68,10 +104,16 @@ warn_return_any = true
 warn_redundant_casts = true
 warn_unused_ignores = true
 warn_unused_configs = true
+# Additional strict flags
+disallow_any_generics = true
+disallow_subclassing_any = true
+no_implicit_reexport = true
+warn_no_return = true
+warn_unreachable = true
 
 # Third-party packages lacking type stubs
 [[tool.mypy.overrides]]
-module = ["crawl4ai.*", "trafilatura.*", "typer.*"]
+module = ["crawl4ai.*", "trafilatura.*"]
 ignore_missing_imports = true
 
 # crawl: crawl4ai + trafilatura lack type stubs, heavy use of Any
@@ -85,7 +127,7 @@ disallow_incomplete_defs = false
 module = "hivemind.tui.*"
 disallow_untyped_defs = false
 disallow_incomplete_defs = false
-disable_error_code = ["attr-defined", "arg-type", "no-any-return", "assignment"]
+disable_error_code = ["attr-defined", "arg-type", "no-any-return", "assignment", "type-arg", "unreachable"]
 
 [build-system]
 requires = ["hatchling"]
