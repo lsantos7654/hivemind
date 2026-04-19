@@ -26,7 +26,6 @@ from hivemind.config import (
     get_expert_dir,
     get_head_commit,
     get_repos_for_expert,
-    invalidate_provider_cache,
     is_private_expert,
     load_config,
     load_private_repos,
@@ -44,7 +43,6 @@ from hivemind.deployment import (
     deploy_expert,
     flush_librarian,
     mark_librarian_dirty,
-    regenerate_hivemind_md,
     undeploy_agent,
     undeploy_expert,
 )
@@ -64,7 +62,6 @@ from hivemind.models import (
     OperationResult,
     ProgressCallback,
     RepoEntry,
-    SwitchProviderResult,
     UpdatePhase,
     UpdateResult,
 )
@@ -84,7 +81,6 @@ __all__ = [
     "disable_expert",
     "enable_expert",
     "get_git_versions",
-    "switch_provider",
     "switch_version_async",
     "update_expert",
 ]
@@ -838,38 +834,3 @@ def delete_expert(name: str, config: AppConfig) -> OperationResult:
     mark_librarian_dirty()
     flush_librarian(config=config)
     return OperationResult(success=True)
-
-
-def switch_provider(provider_name: str, config: AppConfig) -> SwitchProviderResult:
-    """Switch active provider."""
-    from hivemind.providers import PROVIDER_CLASSES
-
-    if provider_name not in PROVIDER_CLASSES:
-        available = ", ".join(PROVIDER_CLASSES)
-        return SwitchProviderResult(
-            success=False,
-            error=f"Unknown provider '{provider_name}'. Available: {available}",
-        )
-
-    old_provider = config.active_provider
-
-    if old_provider == provider_name:
-        return SwitchProviderResult(
-            success=True,
-            old_provider=old_provider,
-            new_provider=provider_name,
-            already_active=True,
-        )
-
-    config.active_provider = provider_name
-    save_config(config)
-    invalidate_provider_cache()
-
-    # Regenerate HIVEMIND.md with new provider's instructions
-    regenerate_hivemind_md(config=config)
-
-    return SwitchProviderResult(
-        success=True,
-        old_provider=old_provider,
-        new_provider=provider_name,
-    )

@@ -23,7 +23,7 @@ from hivemind.constants import CACHE_DIR, PROCESS_TERMINATE_TIMEOUT
 from hivemind.models import ServerState
 
 if TYPE_CHECKING:
-    from hivemind.providers.base import Provider
+    from hivemind.provider import Provider
 
 __all__ = [
     "clear_server_state",
@@ -131,10 +131,6 @@ def start_server(
         RuntimeError: If the provider doesn't support servers, a server is
             already running, or the health check times out.
     """
-    if not provider.supports_server:
-        msg = f"Provider '{provider.name}' does not support a backend server."
-        raise RuntimeError(msg)
-
     if is_server_running():
         state = load_server_state()
         assert state is not None

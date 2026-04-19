@@ -10,14 +10,13 @@ from hivemind.config import (
     EXPERTS_DIR,
     HIVEMIND_MD,
     PRIVATE_EXPERTS_DIR,
-    PROVIDERS_DIR,
     TEAMS_DIR,
     get_active_provider,
     get_expert_dir,
     load_teams,
 )
 from hivemind.constants import AGENT_FILENAME
-from hivemind.providers import extract_description, strip_frontmatter
+from hivemind.provider import extract_description, strip_frontmatter
 
 if TYPE_CHECKING:
     from collections.abc import Generator
@@ -61,7 +60,6 @@ def deploy_agent(name: str) -> bool:
     # Read canonical body and strip any frontmatter
     raw_content = head_agent.read_text(encoding="utf-8")
     body = strip_frontmatter(raw_content)
-    body += provider.get_context_append("expert")
     description = extract_description(body)
 
     # Generate provider-specific content
@@ -216,21 +214,11 @@ def update_librarian(config: AppConfig) -> None:
 
 
 def regenerate_hivemind_md(config: AppConfig) -> None:
-    """Regenerate HIVEMIND.md from base template + provider instructions."""
+    """Regenerate HIVEMIND.md from base template."""
     from hivemind.templates import hivemind_md_base
 
     provider = get_active_provider()
     content = hivemind_md_base(provider.teams_base_path)
-
-    # Append provider-specific orchestration instructions
-    active_provider = config.active_provider
-    if active_provider:
-        provider_instructions = PROVIDERS_DIR / active_provider / "instructions.md"
-        if provider_instructions.exists():
-            instructions_content = provider_instructions.read_text(encoding="utf-8").strip()
-            if instructions_content:
-                content += "\n" + instructions_content + "\n"
-
     HIVEMIND_MD.write_text(content, encoding="utf-8")
 
 
@@ -258,7 +246,6 @@ def deploy_team_lead(team_name: str) -> bool:
         roster_section = f"## Team Roster\n\n{roster_lines}"
         body = body.replace("<!-- ROSTER -->", roster_section)
 
-    body += provider.get_context_append("team_lead")
     description = extract_description(body)
 
     content = provider.format_lead_md(f"team-lead-{team_name}", description, body)

@@ -1,8 +1,8 @@
-"""Tests for hivemind.providers — pure string function tests."""
+"""Tests for hivemind.provider — pure string function tests."""
 
 from __future__ import annotations
 
-from hivemind.providers import extract_description, strip_frontmatter, yaml_escape_double_quoted
+from hivemind.provider import extract_description, strip_frontmatter, yaml_escape_double_quoted
 
 
 class TestExtractDescription:

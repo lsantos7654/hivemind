@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from mcp.server.lowlevel.server import Server
 
-    from hivemind.providers.base import Provider
+    from hivemind.provider import Provider
 
 log = logging.getLogger(__name__)
 

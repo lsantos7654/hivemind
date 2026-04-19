@@ -577,7 +577,8 @@ async def _handle_status() -> list[TextContent]:
             }
 
     result = {
-        "provider": provider.name,
+        "engine": provider.engine,
+        "model": provider.model,
         "server": server_info or {"running": False},
         "experts": {
             "enabled": len(config.enabled),

@@ -15,16 +15,12 @@ from hivemind.models import (
     HivemindConfig,
     ProgressCallback,
     ProgressInfo,
-    ProviderConfig,
     RepoEntry,
     RepoLookup,
     TeamData,
     UpdatePhase,
 )
-from hivemind.providers import (
-    Provider,
-    get_provider,
-)
+from hivemind.provider import Provider
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -47,11 +43,9 @@ __all__ = [
     "HIVEMIND_ROOT",
     "PRIVATE_EXPERTS_DIR",
     "PRIVATE_REPOS_JSON",
-    "PROVIDERS_DIR",
     "REPOS_DIR",
     "REPOS_LINK",
     "TEAMS_DIR",
-    "_provider_cache",
     "count_versions",
     "ensure_external_docs_link",
     "ensure_repos_link",
@@ -95,7 +89,6 @@ EXPERTS_DIR = HIVEMIND_ROOT / "experts"
 COMMANDS_DIR = HIVEMIND_ROOT / "commands"
 PRIVATE_EXPERTS_DIR = HIVEMIND_ROOT / "private-experts"
 TEAMS_DIR = HIVEMIND_ROOT / "teams"
-PROVIDERS_DIR = HIVEMIND_ROOT / "providers"
 HIVEMIND_MD = HIVEMIND_ROOT / "HIVEMIND.md"
 
 # --- Subprocess Timeout Constants (seconds) ---
@@ -165,7 +158,7 @@ def save_json(path: Path, data: dict[str, object]) -> None:
 
 
 def load_config() -> AppConfig:
-    """Load config.json (local user state: enabled/disabled, active_provider)."""
+    """Load config.json (local user state: enabled/disabled experts, teams)."""
     if not CONFIG_JSON.exists():
         return AppConfig()
     return AppConfig.model_validate(load_json(CONFIG_JSON))
@@ -176,7 +169,7 @@ def save_config(config: AppConfig) -> None:
 
 
 def load_hivemind() -> HivemindConfig:
-    """Load hivemind.json (shared project config: providers, repos)."""
+    """Load hivemind.json (shared project config: engine settings, repos)."""
     return HivemindConfig.model_validate(load_json(HIVEMIND_JSON))
 
 
@@ -199,28 +192,34 @@ _provider_cache: Provider | None = None
 
 
 def get_active_provider() -> Provider:
-    """Get the active provider instance, cached for the session."""
+    """Get the provider instance, cached for the session.
+
+    Loads hivemind.json and validates that the required fields (engine,
+    home_dir, model) are set before constructing the Provider.
+    """
     global _provider_cache
     if _provider_cache is not None:
         return _provider_cache
-    config = load_config()
-    active = config.active_provider
-    if not active:
-        msg = "No active_provider set in config.json. Run 'hivemind init' first."
-        raise RuntimeError(msg)
     hivemind = load_hivemind()
-    raw = hivemind.providers.get(active)
-    if raw is None:
-        msg = f"Provider '{active}' not found in hivemind.json. Add it under providers.{active}."
+
+    # Validate required fields
+    errors: list[str] = []
+    if not hivemind.engine:
+        errors.append("engine must be set")
+    if not hivemind.home_dir:
+        errors.append("home_dir must be set")
+    if not hivemind.model:
+        errors.append("model must be set")
+    if errors:
+        msg = f"Incomplete config: {'; '.join(errors)}. Check hivemind.json."
         raise RuntimeError(msg)
-    # Re-validate with strict context to enforce required fields for active providers
-    prov = ProviderConfig.model_validate(raw.model_dump(), context={"strict": True})
-    _provider_cache = get_provider(active, prov, providers_dir=PROVIDERS_DIR)
+
+    _provider_cache = Provider(hivemind)
     return _provider_cache
 
 
 def invalidate_provider_cache() -> None:
-    """Reset provider cache (call after switching providers)."""
+    """Reset provider cache (call after config changes)."""
     global _provider_cache
     _provider_cache = None
 

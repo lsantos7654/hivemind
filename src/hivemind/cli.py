@@ -1,4 +1,4 @@
-"""Hivemind CLI - Manage expert agents for AI coding platforms."""
+"""Hivemind CLI - Manage expert agents for OpenCode."""
 
 from __future__ import annotations
 
@@ -38,11 +38,9 @@ from hivemind.config import (
     get_head_commit,
     is_private_expert,
     load_config,
-    load_hivemind,
     load_private_repos,
     load_repos,
     load_teams,
-    save_config,
 )
 from hivemind.deployment import (
     deploy_agent,
@@ -59,9 +57,6 @@ from hivemind.experts import (
 )
 from hivemind.experts import (
     enable_expert as core_enable_expert,
-)
-from hivemind.experts import (
-    switch_provider,
 )
 from hivemind.git import clone_repo
 from hivemind.models import ProgressInfo, RepoEntry, UpdatePhase
@@ -95,7 +90,7 @@ THEME = Theme(
 
 app = typer.Typer(
     name="hivemind",
-    help="Manage expert agents for AI coding platforms.",
+    help="Manage expert agents for OpenCode.",
     invoke_without_command=True,
 )
 console = Console(theme=THEME)
@@ -156,17 +151,17 @@ class AnalysisProgress:
 
 @app.callback(invoke_without_command=True)
 def main(ctx: typer.Context) -> None:
-    """Manage expert agents for AI coding platforms.
+    """Manage expert agents for OpenCode.
 
-    When invoked without a subcommand, launches the active provider
-    (e.g. opencode). Connects to the backend server if one is running.
+    When invoked without a subcommand, launches opencode.
+    Connects to the backend server if one is running.
     """
     if ctx.invoked_subcommand is None:
         _launch_provider([])
 
 
 def _launch_provider(extra_args: list[str]) -> None:
-    """Launch the active provider, attaching to server if running."""
+    """Launch opencode, attaching to server if running."""
     from hivemind.server import is_server_running, load_server_state
 
     provider = get_active_provider()
@@ -232,10 +227,6 @@ def server_start(
             raise typer.Exit(0)
 
     provider = get_active_provider()
-    if not provider.supports_server:
-        console.print(f"[error]Provider '{provider.name}' does not support a backend server.[/error]")
-        raise typer.Exit(1)
-
     server_cfg = provider.server_config
     effective_port = port or server_cfg.port
     effective_hostname = hostname or server_cfg.hostname
@@ -374,13 +365,6 @@ expert_app = typer.Typer(
 app.add_typer(expert_app, name="expert")
 
 
-def _complete_provider(incomplete: str) -> list[str]:
-    """Shell completion for provider names."""
-    from hivemind.providers import PROVIDER_CLASSES
-
-    return [n for n in PROVIDER_CLASSES if n.startswith(incomplete)]
-
-
 def _setup_symlink(target: Path, link: Path, label: str) -> None:
     """Create or update a symlink, backing up existing directories."""
     if link.is_symlink():
@@ -478,34 +462,10 @@ def _update_librarian_cli() -> None:
 
 @app.command()
 def init() -> None:
-    """Set up provider directory symlinks and enable agents."""
-    from hivemind.providers import PROVIDER_CLASSES
-
+    """Set up directory symlinks and enable agents."""
     config = load_config()
-    if not config.active_provider:
-        # Bootstrap: no provider set yet
-        hivemind = load_hivemind()
-        available = [name for name in hivemind.providers if name in PROVIDER_CLASSES]
-        if not available:
-            console.print("[error]No providers configured in hivemind.json[/error]")
-            raise typer.Exit(1)
-        if len(available) == 1:
-            chosen = available[0]
-            console.print(f"[info]Auto-selecting provider: {chosen}[/info]")
-        else:
-            console.print("[heading]Select a provider:[/heading]")
-            for i, name in enumerate(available, 1):
-                console.print(f"  {i}. {name}")
-            choice = typer.prompt("Provider number", type=int)
-            if choice < 1 or choice > len(available):
-                console.print("[error]Invalid selection[/error]")
-                raise typer.Exit(1)
-            chosen = available[choice - 1]
-        config.active_provider = chosen
-        save_config(config)
-
     provider = get_active_provider()
-    console.print(f"[heading]Initializing hivemind (provider: {provider.name})...[/heading]\n")
+    console.print("[heading]Initializing hivemind...[/heading]\n")
 
     # Generate HIVEMIND.md before symlink setup (it's the symlink target)
     regenerate_hivemind_md(config=config)
@@ -921,116 +881,6 @@ def query(
         console.print(output.rstrip())
 
 
-# --- Provider subcommands ---
-
-provider_app = typer.Typer(
-    name="provider",
-    help="Manage AI coding platform providers.",
-    no_args_is_help=True,
-)
-app.add_typer(provider_app, name="provider")
-
-
-@provider_app.command(name="list")
-def provider_list() -> None:
-    """List available providers and their status."""
-    from hivemind.providers import PROVIDER_CLASSES
-
-    config = load_config()
-    hivemind = load_hivemind()
-    active = config.active_provider
-    providers = hivemind.providers
-
-    table = Table(title="Providers", show_header=True, header_style="bold", box=box.ROUNDED)
-    table.add_column("Name", style="bold")
-    table.add_column("Status")
-    table.add_column("Engine")
-    table.add_column("Home Directory")
-    table.add_column("Model")
-
-    for name in sorted(PROVIDER_CLASSES):
-        from hivemind.models import ProviderConfig
-
-        prov_config = providers.get(name, ProviderConfig())
-        is_active = name == active
-
-        if is_active:
-            status_str = "[success]active[/success]"
-        elif prov_config.engine:
-            status_str = "[info]configured[/info]"
-        else:
-            status_str = "[dim]not configured[/dim]"
-
-        engine = prov_config.engine or "[dim]not configured[/dim]"
-        home_dir = prov_config.home_dir or "[dim]not configured[/dim]"
-        model = prov_config.settings.model or "[dim]default[/dim]"
-
-        table.add_row(name, status_str, engine, home_dir, model)
-
-    console.print(table)
-
-
-@provider_app.command(name="switch")
-def provider_switch(
-    name: str = typer.Argument(help="Provider name to switch to", autocompletion=_complete_provider),
-) -> None:
-    """Switch active provider (regenerates all agent files)."""
-    config = load_config()
-    result = switch_provider(name, config=config)
-
-    if not result.success:
-        console.print(f"[error]Error: {escape(str(result.error))}[/error]")
-        raise typer.Exit(1)
-
-    console.print(f"[success]Switched to provider: [heading]{name}[/heading][/success]")
-    console.print("[info]Run [bold]hivemind redeploy[/bold] to regenerate agent files for the new provider.[/info]")
-
-
-@provider_app.command(name="show")
-def provider_show(
-    name: str | None = typer.Argument(
-        None,
-        help="Provider name (default: active provider)",
-        autocompletion=_complete_provider,
-    ),
-) -> None:
-    """Show detailed configuration for a provider."""
-    config = load_config()
-    hivemind = load_hivemind()
-    active = config.active_provider
-    target = name or active
-    providers = hivemind.providers
-
-    if target not in providers:
-        console.print(f"[error]Error: provider '{target}' not found in config[/error]")
-        raise typer.Exit(1)
-
-    prov_config = providers[target]
-    is_active = target == active
-
-    lines: list[str] = []
-    lines.append(f"[heading]Provider: {target}[/heading]")
-    lines.append(f"Active: {'[success]yes[/success]' if is_active else '[dim]no[/dim]'}")
-    lines.append(f"Engine: {escape(prov_config.engine or 'not set')}")
-    lines.append(f"Home directory: {escape(prov_config.home_dir or 'not set')}")
-
-    settings_dict = prov_config.settings.model_dump(exclude_defaults=True)
-    if settings_dict:
-        lines.append("")
-        lines.append("[heading]Settings:[/heading]")
-        for key, value in sorted(settings_dict.items()):
-            if isinstance(value, list):
-                lines.append(f"  {escape(str(key))}: {', '.join(escape(str(v)) for v in value)}")
-            elif isinstance(value, dict):
-                lines.append(f"  {escape(str(key))}:")
-                for k, v in sorted(value.items()):
-                    lines.append(f"    {escape(str(k))}: {escape(str(v))}")
-            else:
-                lines.append(f"  {escape(str(key))}: {escape(str(value))}")
-
-    console.print(Panel("\n".join(lines), border_style="blue"))
-
-
 # --- Team subcommands ---
 
 team_app = typer.Typer(
@@ -1201,13 +1051,11 @@ def team_delete(
 
 @app.command()
 def redeploy() -> None:
-    """Regenerate all agent files for the active provider.
+    """Regenerate all agent files.
 
-    Use after changing provider settings in hivemind.json
-    (model, tools, temperature) or after switching providers.
+    Use after changing settings in hivemind.json (model, tools, temperature).
     """
-    provider = get_active_provider()
-    console.print(f"[heading]Redeploying all agents (provider: {provider.name})...[/heading]\n")
+    console.print("[heading]Redeploying all agents...[/heading]\n")
 
     config = load_config()
     result = redeploy_all_agents(config=config)
@@ -1318,7 +1166,8 @@ def status() -> None:
 
     # --- Overview panel ---
     overview_lines: list[str] = []
-    overview_lines.append(f"Provider: [heading]{provider.name}[/heading]")
+    overview_lines.append(f"Engine: [heading]{escape(provider.engine)}[/heading]")
+    overview_lines.append(f"Model: [heading]{escape(provider.model)}[/heading]")
 
     # Server status
     if is_server_running():
@@ -1453,7 +1302,6 @@ _KNOWN_SUBCOMMANDS = {
     "status",
     "server",
     "expert",
-    "provider",
     "team",
     # Hidden compat aliases
     "list",

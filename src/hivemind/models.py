@@ -8,7 +8,7 @@ from enum import StrEnum
 from pathlib import Path  # noqa: TC003 — Pydantic needs Path at runtime for field validation
 from typing import Self
 
-from pydantic import BaseModel, ValidationInfo, model_validator
+from pydantic import BaseModel, model_validator
 
 # --- Update Progress Types ---
 
@@ -98,50 +98,16 @@ class ServerState(BaseModel):
     log_file: str
 
 
-class ProviderSettings(BaseModel):
-    """Provider-specific settings."""
-
-    model: str = ""
-    tools: list[str] | dict[str, bool] = []
-    temperature: float | None = None
-
-
-class ProviderConfig(BaseModel):
-    """Provider configuration from hivemind.json.
-
-    Fields default to empty strings because inactive providers in hivemind.json
-    may have incomplete config.  Use ``context={'strict': True}`` when loading
-    the *active* provider to enforce that required fields are set.
-    """
-
-    engine: str = ""
-    home_dir: str = ""
-    settings: ProviderSettings = ProviderSettings()
-    server: ServerConfig = ServerConfig()
-    permissions: dict[str, object] | None = None
-
-    @model_validator(mode="after")
-    def validate_when_active(self, info: ValidationInfo) -> Self:
-        """Enforce completeness only when the provider is being activated."""
-        if not (info.context and info.context.get("strict")):
-            return self
-        errors: list[str] = []
-        if not self.engine:
-            errors.append("engine must be set")
-        if not self.home_dir:
-            errors.append("home_dir must be set")
-        if not self.settings.model:
-            errors.append("settings.model must be set")
-        if errors:
-            msg = f"Incomplete provider config: {'; '.join(errors)}. Check hivemind.json."
-            raise ValueError(msg)
-        return self
-
-
 class HivemindConfig(BaseModel):
     """Full hivemind.json schema."""
 
-    providers: dict[str, ProviderConfig] = {}
+    engine: str = ""
+    home_dir: str = ""
+    model: str = ""
+    tools: dict[str, bool] = {}
+    temperature: float | None = None
+    server: ServerConfig = ServerConfig()
+    permissions: dict[str, object] | None = None
     repos: dict[str, RepoEntry] = {}
 
 
@@ -150,7 +116,6 @@ class AppConfig(BaseModel):
 
     enabled: list[str] = []
     disabled: list[str] = []
-    active_provider: str = ""
     teams: dict[str, TeamData] = {}
     private: list[str] = []
 
@@ -214,12 +179,6 @@ class RedeployResult(OperationResult):
         # Derive success from error state: if error is set, we failed
         self.success = self.error is None
         return self
-
-
-class SwitchProviderResult(OperationResult):
-    old_provider: str = ""
-    new_provider: str = ""
-    already_active: bool = False
 
 
 class ExpertError(BaseModel):

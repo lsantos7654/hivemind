@@ -1,57 +1,24 @@
 {
-  "providers": {
-    "claude": {
-      "engine": "claude -p --verbose",
-      "home_dir": "~/.claude",
-      "settings": {
-        "model": "sonnet",
-        "tools": [
-          "Read",
-          "Grep",
-          "Glob"
-        ]
-      },
-      "permissions": {
-        "defaultMode": "acceptEdits",
-        "allow": [
-          "Read(~/.cache/hivemind/**)",
-          "Grep(~/.cache/hivemind/**)",
-          "Glob(~/.cache/hivemind/**)",
-          "Read(~/.claude/experts/**)",
-          "Grep(~/.claude/experts/**)",
-          "Glob(~/.claude/experts/**)",
-          "Read(~/.claude/teams/**)",
-          "Grep(~/.claude/teams/**)",
-          "Glob(~/.claude/teams/**)",
-          "Edit(~/.claude/teams/**)"
-        ]
-      }
-    },
-    "opencode": {
-      "engine": "opencode run",
-      "home_dir": "~/.config/opencode",
-      "settings": {
-        "model": "anthropic/claude-sonnet-4-6",
-        "tools": {
-          "read": true,
-          "grep": true,
-          "glob": true,
-          "bash": false
-        },
-        "temperature": 0.1
-      },
-      "server": {
-        "port": 4096,
-        "hostname": "127.0.0.1"
-      },
-      "permissions": {
-        "allow": [
-          "Read(~/.cache/hivemind/**)",
-          "Grep(~/.cache/hivemind/**)",
-          "Glob(~/.cache/hivemind/**)"
-        ]
-      }
-    }
+  "engine": "opencode run",
+  "home_dir": "~/.config/opencode",
+  "model": "anthropic/claude-sonnet-4-6",
+  "tools": {
+    "read": true,
+    "grep": true,
+    "glob": true,
+    "bash": false
+  },
+  "temperature": 0.1,
+  "server": {
+    "port": 4096,
+    "hostname": "127.0.0.1"
+  },
+  "permissions": {
+    "allow": [
+      "Read(~/.cache/hivemind/**)",
+      "Grep(~/.cache/hivemind/**)",
+      "Glob(~/.cache/hivemind/**)"
+    ]
   },
   "repos": {
     "bazel": {
