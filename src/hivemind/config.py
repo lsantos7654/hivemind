@@ -9,7 +9,12 @@ import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from hivemind.constants import CACHE_DIR
+from hivemind.constants import (
+    CACHE_DIR,
+    OPENCODE_CONFIG_DIR,
+    OPENCODE_DIR,
+    OPENCODE_PLUGINS_DIR,
+)
 from hivemind.models import (
     AppConfig,
     HivemindConfig,
@@ -41,6 +46,9 @@ __all__ = [
     "HIVEMIND_MD",
     # Path constants
     "HIVEMIND_ROOT",
+    "OPENCODE_CONFIG_DIR",
+    "OPENCODE_DIR",
+    "OPENCODE_PLUGINS_DIR",
     "PRIVATE_EXPERTS_DIR",
     "PRIVATE_REPOS_JSON",
     "REPOS_DIR",
@@ -86,10 +94,15 @@ CONFIG_JSON = HIVEMIND_ROOT / "config.json"
 PRIVATE_REPOS_JSON = HIVEMIND_ROOT / "private-repos.json"
 AGENTS_DIR = HIVEMIND_ROOT / "agents"
 EXPERTS_DIR = HIVEMIND_ROOT / "experts"
-COMMANDS_DIR = HIVEMIND_ROOT / "commands"
 PRIVATE_EXPERTS_DIR = HIVEMIND_ROOT / "private-experts"
 TEAMS_DIR = HIVEMIND_ROOT / "teams"
 HIVEMIND_MD = HIVEMIND_ROOT / "HIVEMIND.md"
+
+# OpenCode add-ons (plugins, commands, config) — decoupled from hivemind core.
+# Actual path definitions live in hivemind.constants to break the config/provider
+# import cycle; re-exported here for backward compatibility with callers that
+# already import from hivemind.config.
+COMMANDS_DIR = OPENCODE_DIR / "commands"
 
 # --- Subprocess Timeout Constants (seconds) ---
 GIT_CLONE_TIMEOUT = 300

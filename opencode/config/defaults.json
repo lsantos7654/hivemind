@@ -1,0 +1,42 @@
+{
+  "_comment": "Opinionated OpenCode defaults applied by `hivemind init`. `hardening` keys are force-set (overwrite). `permissions` are deep-merged into the existing permission map. Path tokens {CACHE_PATH}, {EXPERTS_PATH}, {TEAMS_PATH} are substituted at install time.",
+  "hardening": {
+    "share": "disabled",
+    "autoshare": false,
+    "autoupdate": false,
+    "server": {
+      "hostname": "127.0.0.1"
+    }
+  },
+  "permissions": {
+    "bash": {
+      "sudo *": "deny"
+    },
+    "external_directory": {
+      "{CACHE_PATH}/**": "allow",
+      "{EXPERTS_PATH}/**": "allow",
+      "{TEAMS_PATH}/**": "allow"
+    },
+    "read": {
+      "{CACHE_PATH}/**": "allow",
+      "{EXPERTS_PATH}/**": "allow",
+      "{TEAMS_PATH}/**": "allow"
+    },
+    "grep": {
+      "{CACHE_PATH}/**": "allow",
+      "{EXPERTS_PATH}/**": "allow"
+    },
+    "glob": {
+      "{CACHE_PATH}/**": "allow",
+      "{EXPERTS_PATH}/**": "allow"
+    },
+    "write": {
+      "{CACHE_PATH}/**": "allow",
+      "{EXPERTS_PATH}/**": "allow",
+      "{TEAMS_PATH}/**": "allow"
+    },
+    "edit": {
+      "{TEAMS_PATH}/**": "allow"
+    }
+  }
+}

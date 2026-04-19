@@ -519,6 +519,9 @@ def init() -> None:
                     shutil.rmtree(link)
                 console.print(f"  [error]✗[/error] Removed stale expert: {expert_name}")
 
+    if provider.notify_instance_reload():
+        console.print("  [success]✓[/success] notified running server to reload config")
+
     console.print("\n[bold success]Hivemind initialized![/bold success]")
 
 

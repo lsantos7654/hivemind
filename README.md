@@ -1,15 +1,13 @@
 # Hivemind
 
-A CLI for managing expert agents across AI coding platforms.
+A CLI for managing expert agents for OpenCode.
 
 Hivemind clones repositories, runs AI-powered analysis to generate structured
 knowledge docs, and deploys expert subagents that your AI coding assistant can
 delegate to automatically. A built-in librarian keeps a catalog of all experts
 so the assistant always knows who to ask.
 
-Works with [Claude Code](https://docs.anthropic.com/en/docs/claude-code),
-[OpenCode](https://opencode.ai), and is extensible to other platforms via a
-provider abstraction.
+Works with [OpenCode](https://opencode.ai).
 
 ## Install
 
@@ -66,10 +64,7 @@ hivemind team delete <name>               # Delete a team
 
 ```
 hivemind status               # Full dashboard
-hivemind redeploy             # Regenerate all agent files for active provider
-hivemind provider list        # List available providers
-hivemind provider switch <n>  # Switch active provider
-hivemind provider show [n]    # Show provider configuration
+hivemind redeploy             # Regenerate all agent files
 hivemind crawl <url> <agent>  # Crawl a website and save docs for an expert
 hivemind init                 # Set up directory structure and deploy agents
 hivemind                      # Launch interactive TUI
@@ -86,7 +81,7 @@ experts/
   bazel/
     HEAD -> a3930898ad18/          # symlink to active version
     a3930898ad18/
-      agent.md                     # expert definition (platform-neutral)
+      agent.md                     # expert definition body
       summary.md                   # repository overview
       code_structure.md            # annotated directory tree
       build_system.md              # build tooling and dependencies
@@ -94,14 +89,13 @@ experts/
 ```
 
 The `agent.md` file uses `{EXPERTS_DIR}` placeholders for paths. At deploy
-time, these are replaced with the provider's actual paths (e.g.,
-`~/.claude/experts` or `~/.config/opencode/experts`).
+time, these are replaced with the actual path (`~/.config/opencode/experts`).
 
 ### Deployed Layout
 
 When you run `hivemind init` or `hivemind redeploy`, agent files are generated
-with provider-specific frontmatter and written to the `agents/` directory,
-which is symlinked into the provider's home:
+and written to the `agents/` directory, which is symlinked into OpenCode's
+home (`~/.config/opencode`):
 
 ```
 agents/
@@ -130,31 +124,15 @@ The team lead is a self-managing agent — it can update its own `lead.md`,
 maintain `general.md` with lessons learned, and request roster changes via
 the CLI.
 
-### Providers
-
-Hivemind supports multiple AI coding platforms via a provider abstraction.
-Each provider defines:
-
-- How agent files are formatted (YAML frontmatter differs per platform)
-- How the analysis engine is invoked (e.g., `claude -p` vs `opencode run`)
-- Where files are deployed (`~/.claude/` vs `~/.config/opencode/`)
-
-The active provider is set in `config.json` and can be switched at any time:
-
-```bash
-hivemind provider switch opencode
-hivemind redeploy
-```
-
 ### Configuration
 
 Hivemind uses two config files:
 
-- **`hivemind.json`** (tracked) — shared config: providers, repos
-- **`config.json`** (gitignored) — local state: enabled/disabled experts, active provider, teams
+- **`hivemind.json`** (tracked) — shared config: repos
+- **`config.json`** (gitignored) — local state: enabled/disabled experts, teams
 
-After editing provider settings in `hivemind.json`, run `hivemind redeploy`
-to regenerate agent files.
+After editing `hivemind.json`, run `hivemind redeploy` to regenerate agent
+files.
 
 ### Workspace Workflow
 
@@ -202,9 +180,9 @@ referenced by the expert agent as a secondary knowledge source.
 hivemind --install-completion
 ```
 
-All commands support tab completion for expert names and provider names.
+All commands support tab completion for expert names.
 
 ## Requirements
 
 - Python 3.10+
-- An AI coding platform CLI: [Claude Code](https://docs.anthropic.com/en/docs/claude-code) or [OpenCode](https://opencode.ai)
+- [OpenCode](https://opencode.ai) CLI

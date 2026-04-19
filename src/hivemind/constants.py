@@ -12,6 +12,16 @@ from pathlib import Path
 
 CACHE_DIR: Path = Path.home() / ".cache" / "hivemind"
 
+# Repository root (constants.py → hivemind/ → src/ → repo root)
+_REPO_ROOT: Path = Path(__file__).resolve().parents[2]
+
+# OpenCode add-ons bundled with this repo (plugins, commands, config defaults).
+# Decoupled from hivemind core so they can be inspected/tested as plain OpenCode
+# artifacts without going through hivemind.
+OPENCODE_DIR: Path = _REPO_ROOT / "opencode"
+OPENCODE_PLUGINS_DIR: Path = OPENCODE_DIR / "plugins"
+OPENCODE_CONFIG_DIR: Path = OPENCODE_DIR / "config"
+
 # --- Provider defaults ---
 
 DEFAULT_TEMPERATURE: float = 0.1

@@ -18,6 +18,8 @@ if TYPE_CHECKING:
 
 log = logging.getLogger(__name__)
 
+_background_tasks: set[asyncio.Task[None]] = set()
+
 
 def _text(msg: str) -> list[TextContent]:
     """Wrap a string in the MCP text content response format."""
@@ -703,10 +705,25 @@ def register_tools(server: Server) -> None:
 async def _post_mutation_reload(server: Server) -> None:
     """Send ToolListChangedNotification and trigger instance reload after mutations."""
     from hivemind.config import get_active_provider
-    from hivemind.mcp.notify import notify_instance_reload, notify_tools_changed
+    from hivemind.mcp.notify import notify_tools_changed
 
     await notify_tools_changed(server)
 
-    # Run the synchronous provider notification in a thread to avoid blocking
+    # Fire the opencode dispose asynchronously. /global/dispose invalidates every
+    # cached InstanceState including the one the TUI's current MCP tool call is
+    # running in; running it synchronously here cancels the in-flight tool before
+    # the result reaches opencode. Deferring lets the tool_result propagate first.
     provider = get_active_provider()
-    await asyncio.to_thread(notify_instance_reload, provider)
+    task = asyncio.create_task(_deferred_reload(provider))
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
+
+
+async def _deferred_reload(provider: Any) -> None:
+    from hivemind.mcp.notify import notify_instance_reload
+
+    try:
+        await asyncio.sleep(0.5)
+        await asyncio.to_thread(notify_instance_reload, provider)
+    except Exception:
+        log.exception("deferred opencode reload failed")
