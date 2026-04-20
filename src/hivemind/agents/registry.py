@@ -8,11 +8,17 @@ through this module; none of them poke the JSON files directly.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import assert_never
 
 from hivemind.agents.base import Agent, AgentBody
 from hivemind.config import load_config, load_hivemind, save_config, save_hivemind
-from hivemind.models import AppConfig, CatalogEntry, HivemindConfig
+from hivemind.models import (
+    AppConfig,
+    CatalogEntry,
+    GitAnalyzedParams,
+    HivemindConfig,
+    RosterTemplatedParams,
+)
 
 __all__ = [
     "add",
@@ -31,31 +37,26 @@ __all__ = [
 
 
 # ---------------------------------------------------------------------------
-# Kind dispatch (lazy to avoid circular imports)
+# Kind dispatch (typed via the discriminated-union CatalogEntry.body)
 # ---------------------------------------------------------------------------
 
 
-def _body_class_for(kind: str) -> type[AgentBody]:
-    if kind == "git_analyzed":
+def _body_from_catalog(name: str, entry: CatalogEntry) -> AgentBody:
+    """Materialise a concrete body from a typed catalog entry.
+
+    ``entry.body`` is already a validated Pydantic params model (via the
+    discriminated union on :class:`CatalogEntry`); we only need to pair it
+    with a body class by ``isinstance``.
+    """
+    if isinstance(entry.body, GitAnalyzedParams):
         from hivemind.agents.git_analyzed import GitAnalyzedBody
 
-        return GitAnalyzedBody
-    if kind == "roster_templated":
+        return GitAnalyzedBody(name=name, params=entry.body)
+    if isinstance(entry.body, RosterTemplatedParams):
         from hivemind.agents.roster_templated import RosterTemplatedBody
 
-        return RosterTemplatedBody
-    msg = f"unknown agent kind: {kind!r}"
-    raise ValueError(msg)
-
-
-def _body_from_catalog(name: str, entry: CatalogEntry) -> AgentBody:
-    cls = _body_class_for(entry.kind)
-    from_catalog = getattr(cls, "from_catalog", None)
-    if from_catalog is None:
-        msg = f"body class for kind={entry.kind!r} missing from_catalog classmethod"
-        raise TypeError(msg)
-    body: AgentBody = from_catalog(name, dict(entry.body))
-    return body
+        return RosterTemplatedBody(name=name, params=entry.body)
+    assert_never(entry.body)
 
 
 # ---------------------------------------------------------------------------
@@ -159,11 +160,8 @@ def add(agent: Agent) -> None:
         msg = f"agent {agent.name!r} already in catalog"
         raise ValueError(msg)
 
-    params = _serialize_body(agent.body)
-    entry = CatalogEntry(kind=agent.kind, body=params)
-
     assert _hivemind_cfg is not None
-    _hivemind_cfg.agents[agent.name] = entry
+    _hivemind_cfg.agents[agent.name] = _serialize_entry(agent.body)
     save_hivemind(_hivemind_cfg)
 
     agent.enabled = False
@@ -226,11 +224,10 @@ def save_body(agent: Agent) -> None:
     Call this after a body-level mutation (commit bump, roster change, …).
     """
     assert _hivemind_cfg is not None
-    entry = _hivemind_cfg.agents.get(agent.name)
-    if entry is None:
+    if agent.name not in _hivemind_cfg.agents:
         msg = f"agent {agent.name!r} not in catalog"
         raise KeyError(msg)
-    entry.body = _serialize_body(agent.body)
+    _hivemind_cfg.agents[agent.name] = _serialize_entry(agent.body)
     save_hivemind(_hivemind_cfg)
 
 
@@ -239,10 +236,6 @@ def save_body(agent: Agent) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _serialize_body(body: AgentBody) -> dict[str, Any]:
-    to_catalog = getattr(body, "to_catalog", None)
-    if to_catalog is None:
-        msg = f"body class for kind={body.kind!r} missing to_catalog method"
-        raise TypeError(msg)
-    result: dict[str, Any] = to_catalog()
-    return result
+def _serialize_entry(body: AgentBody) -> CatalogEntry:
+    """Build a validated :class:`CatalogEntry` from a live body."""
+    return CatalogEntry.model_validate({"kind": body.kind, "body": body.to_catalog()})

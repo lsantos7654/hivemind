@@ -31,6 +31,7 @@ from hivemind.models import (
     AddExpertsResult,
     ExpertError,
     OperationResult,
+    RosterTemplatedParams,
 )
 from hivemind.templates import (
     expert_notes_template,
@@ -69,39 +70,31 @@ _SECTION_BATCH_SIZE = 15
 
 
 class RosterTemplatedBody:
-    """Body strategy for team lead agents."""
+    """Body strategy for team lead agents.
+
+    Holds its catalog data as a typed :class:`RosterTemplatedParams`. Access
+    params via ``self.params`` (e.g. ``self.params.experts``); mutations
+    re-validate because the params model has ``validate_assignment=True``.
+    """
 
     kind: str = "roster_templated"
 
-    def __init__(
-        self,
-        name: str,
-        *,
-        description: str,
-        experts: list[str] | None = None,
-    ) -> None:
+    def __init__(self, name: str, params: RosterTemplatedParams) -> None:
         self.name = name
-        self.description = description
-        self.experts: list[str] = list(experts) if experts else []
+        self.params = params
 
     # --- catalog (de)serialisation -----------------------------------------
 
     @classmethod
     def from_catalog(cls, name: str, params: dict[str, Any]) -> RosterTemplatedBody:
-        raw_experts = params.get("experts") or []
-        if not isinstance(raw_experts, list):
-            raw_experts = []
-        return cls(
-            name=name,
-            description=str(params.get("description", "")),
-            experts=[str(e) for e in raw_experts],
-        )
+        return cls(name=name, params=RosterTemplatedParams.model_validate(params))
+
+    @classmethod
+    def from_params(cls, name: str, params: RosterTemplatedParams) -> RosterTemplatedBody:
+        return cls(name=name, params=params)
 
     def to_catalog(self) -> dict[str, Any]:
-        return {
-            "description": self.description,
-            "experts": list(self.experts),
-        }
+        return self.params.model_dump()
 
     # --- body protocol -----------------------------------------------------
 
@@ -111,15 +104,15 @@ class RosterTemplatedBody:
         if not lead_md.exists():
             return ""
         body = opencode.strip_frontmatter(lead_md.read_text(encoding="utf-8"))
-        roster_lines = "\n".join(f"- expert-{e}" for e in self.experts)
+        roster_lines = "\n".join(f"- expert-{e}" for e in self.params.experts)
         roster_section = f"## Team Roster\n\n{roster_lines}"
         return body.replace("<!-- ROSTER -->", roster_section)
 
     def librarian_entry(self) -> str:
-        roster = ", ".join(self.experts)
+        roster = ", ".join(self.params.experts)
         return (
             f"### team-lead-{self.name}\n"
-            f"Team lead for {self.description}. Roster: {roster}.\n"
+            f"Team lead for {self.params.description}. Roster: {roster}.\n"
             f"Consult this team lead for routing and coordination within this domain."
         )
 
@@ -129,7 +122,7 @@ class RosterTemplatedBody:
         from hivemind.agents.base import run_coro_sync
         from hivemind.agents.git_analyzed import GitAnalyzedBody
 
-        for expert_name in self.experts:
+        for expert_name in self.params.experts:
             member = registry.get(expert_name)
             if member is None or not isinstance(member.body, GitAnalyzedBody):
                 continue
@@ -137,9 +130,9 @@ class RosterTemplatedBody:
                 run_coro_sync(
                     clone_from_remote(
                         expert_name,
-                        member.body.remote,
-                        commit=member.body.commit,
-                        ref_name=member.body.ref_name,
+                        member.body.params.remote,
+                        commit=member.body.params.commit,
+                        ref_name=member.body.params.ref_name,
                         silent=True,
                     )
                 )
@@ -331,7 +324,7 @@ def refresh_team_lead_body(team_name: str) -> None:
     if agent is None or not isinstance(agent.body, RosterTemplatedBody):
         return
 
-    description = agent.body.description
+    description = agent.body.params.description
     content = lead_md.read_text(encoding="utf-8")
     lines = content.split("\n")
     expert_sections: list[str] = []
@@ -418,7 +411,10 @@ async def create_team(
     lead_body = team_lead_template(name, description, "\n\n".join(expert_sections))
     (team_dir / "lead.md").write_text(lead_body, encoding="utf-8")
 
-    body = RosterTemplatedBody(name=name, description=description, experts=list(experts))
+    body = RosterTemplatedBody(
+        name=name,
+        params=RosterTemplatedParams(description=description, experts=list(experts)),
+    )
     agent = Agent(name=name, body=body, enabled=False)
     registry.add(agent)
 
@@ -446,7 +442,7 @@ def update_team(
     body: RosterTemplatedBody = agent.body
 
     if description is not None:
-        body.description = description
+        body.params.description = description
 
     if new_name and new_name != name:
         if registry.get(new_name) is not None:
@@ -462,7 +458,13 @@ def update_team(
         registry.remove(name)
         from hivemind.agents.base import Agent
 
-        new_body = RosterTemplatedBody(name=new_name, description=body.description, experts=list(body.experts))
+        new_body = RosterTemplatedBody(
+            name=new_name,
+            params=RosterTemplatedParams(
+                description=body.params.description,
+                experts=list(body.params.experts),
+            ),
+        )
         new_agent = Agent(name=new_name, body=new_body, enabled=False)
         registry.add(new_agent)
         if was_enabled:
@@ -493,7 +495,7 @@ async def add_experts_to_team(
     agent = registry.get_or_raise(team_name)
     assert isinstance(agent.body, RosterTemplatedBody)
     body = agent.body
-    existing = body.experts
+    existing = body.params.experts
 
     all_experts = set(get_all_expert_names()) | {a.name for a in registry.by_kind("git_analyzed")}
 
@@ -558,7 +560,7 @@ async def add_expert_to_team(team_name: str, expert_name: str) -> OperationResul
     assert isinstance(agent.body, RosterTemplatedBody)
     body = agent.body
 
-    if expert_name in body.experts:
+    if expert_name in body.params.experts:
         return OperationResult(success=False, error=f"Expert '{expert_name}' already on team")
 
     all_experts = set(get_all_expert_names()) | {a.name for a in registry.by_kind("git_analyzed")}
@@ -585,7 +587,7 @@ async def add_expert_to_team(team_name: str, expert_name: str) -> OperationResul
         lead_md.write_text(content, encoding="utf-8")
 
     create_expert_notes_stub(team_name, expert_name)
-    body.experts.append(expert_name)
+    body.params.experts.append(expert_name)
     registry.save_body(agent)
 
     await afire_post_mutation()
@@ -604,7 +606,7 @@ def remove_expert_from_team(team_name: str, expert_name: str) -> OperationResult
     assert isinstance(agent.body, RosterTemplatedBody)
     body = agent.body
 
-    if expert_name not in body.experts:
+    if expert_name not in body.params.experts:
         return OperationResult(success=False, error=f"Expert '{expert_name}' not on team")
 
     remove_expert_section(team_name, expert_name)
@@ -613,7 +615,7 @@ def remove_expert_from_team(team_name: str, expert_name: str) -> OperationResult
     if notes_dir.exists():
         shutil.rmtree(notes_dir)
 
-    body.experts.remove(expert_name)
+    body.params.experts.remove(expert_name)
     registry.save_body(agent)
 
     fire_post_mutation()

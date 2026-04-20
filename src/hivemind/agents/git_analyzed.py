@@ -54,6 +54,7 @@ from hivemind.git import (
 from hivemind.hooks import afire_post_mutation
 from hivemind.models import (
     CancellationToken,
+    GitAnalyzedParams,
     OperationResult,
     ProgressCallback,
     UpdatePhase,
@@ -85,40 +86,31 @@ __all__ = [
 
 
 class GitAnalyzedBody:
-    """Body strategy for git-cloned, AI-analyzed agents."""
+    """Body strategy for git-cloned, AI-analyzed agents.
+
+    Holds its catalog data as a typed :class:`GitAnalyzedParams`. Access
+    params via ``self.params`` (e.g. ``self.params.commit``); mutations
+    re-validate because the params model has ``validate_assignment=True``.
+    """
 
     kind: str = "git_analyzed"
 
-    def __init__(
-        self,
-        name: str,
-        *,
-        remote: str,
-        commit: str = "",
-        ref_name: str = "",
-    ) -> None:
+    def __init__(self, name: str, params: GitAnalyzedParams) -> None:
         self.name = name
-        self.remote = remote
-        self.commit = commit
-        self.ref_name = ref_name
+        self.params = params
 
     # --- catalog (de)serialisation -----------------------------------------
 
     @classmethod
     def from_catalog(cls, name: str, params: dict[str, Any]) -> GitAnalyzedBody:
-        return cls(
-            name=name,
-            remote=str(params.get("remote", "")),
-            commit=str(params.get("commit", "")),
-            ref_name=str(params.get("ref_name", "")),
-        )
+        return cls(name=name, params=GitAnalyzedParams.model_validate(params))
+
+    @classmethod
+    def from_params(cls, name: str, params: GitAnalyzedParams) -> GitAnalyzedBody:
+        return cls(name=name, params=params)
 
     def to_catalog(self) -> dict[str, Any]:
-        return {
-            "remote": self.remote,
-            "commit": self.commit,
-            "ref_name": self.ref_name,
-        }
+        return self.params.model_dump()
 
     # --- body protocol -----------------------------------------------------
 
@@ -179,9 +171,9 @@ class GitAnalyzedBody:
             return True
         return await clone_from_remote(
             self.name,
-            self.remote,
-            commit=self.commit,
-            ref_name=self.ref_name,
+            self.params.remote,
+            commit=self.params.commit,
+            ref_name=self.params.ref_name,
             silent=True,
         )
 
@@ -334,7 +326,10 @@ async def create_git_expert(
         head_link = final_expert / "HEAD"
         head_link.symlink_to(commit)
 
-        body = GitAnalyzedBody(name=name, remote=url, commit=commit, ref_name=ref_name)
+        body = GitAnalyzedBody(
+            name=name,
+            params=GitAnalyzedParams(remote=url, commit=commit, ref_name=ref_name),
+        )
         agent = Agent(name=name, body=body, enabled=False)
         registry.add(agent)
 
@@ -380,9 +375,9 @@ async def update_git_expert(
         emit(UpdatePhase.CLONING, "Cloning repository...")
         if not await clone_from_remote(
             name,
-            body.remote,
-            commit=body.commit,
-            ref_name=body.ref_name,
+            body.params.remote,
+            commit=body.params.commit,
+            ref_name=body.params.ref_name,
             silent=True,
         ):
             return UpdateResult(success=False, error="Failed to clone repository")
@@ -471,9 +466,8 @@ async def update_git_expert(
         emit(UpdatePhase.COMMITTING, "Committing changes...")
         commit_analysis_results(tmp_commit_dir, expert_dir, new_commit)
 
-        # Update body + catalog
         emit(UpdatePhase.UPDATING_HEAD, "Updating HEAD symlink...")
-        body.commit = new_commit
+        body.params.commit = new_commit
         registry.save_body(agent)
 
         await afire_post_mutation()
@@ -639,7 +633,7 @@ async def switch_version(
             head_link.unlink()
         head_link.symlink_to(target_commit)
 
-        body.commit = target_commit
+        body.params.commit = target_commit
         registry.save_body(agent)
 
         await afire_post_mutation()

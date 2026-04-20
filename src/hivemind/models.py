@@ -6,9 +6,9 @@ from collections.abc import Callable
 from datetime import datetime  # noqa: TC003 — Pydantic needs datetime at runtime for field validation
 from enum import StrEnum
 from pathlib import Path  # noqa: TC003 — Pydantic needs Path at runtime for field validation
-from typing import Self
+from typing import Any, Self
 
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, ConfigDict, model_validator
 
 # --- Update Progress Types ---
 
@@ -103,16 +103,56 @@ class ServerState(BaseModel):
     log_file: str
 
 
-class CatalogEntry(BaseModel):
-    """A single agent catalog entry in hivemind.json.
+class GitAnalyzedParams(BaseModel):
+    """Catalog params for the ``git_analyzed`` body kind."""
 
-    ``kind`` names the body strategy (``git_analyzed`` / ``roster_templated`` /
-    …). ``body`` is a kind-specific dict the concrete body class
-    parses/serialises.
+    model_config = ConfigDict(extra="forbid", validate_assignment=True)
+
+    remote: str
+    commit: str = ""
+    ref_name: str = ""
+
+
+class RosterTemplatedParams(BaseModel):
+    """Catalog params for the ``roster_templated`` body kind."""
+
+    model_config = ConfigDict(extra="forbid", validate_assignment=True)
+
+    description: str = ""
+    experts: list[str] = []
+
+
+BodyParams = GitAnalyzedParams | RosterTemplatedParams
+
+
+class CatalogEntry(BaseModel):
+    """A single agent catalog entry in ``hivemind.json``.
+
+    JSON shape is ``{"kind": "<kind>", "body": {...kind-specific params...}}``.
+    The ``_dispatch_body`` validator picks the concrete ``BodyParams`` subclass
+    based on ``kind`` before Pydantic runs the union validation, so a
+    malformed body surfaces as a clear ``ValidationError`` at load time.
     """
 
     kind: str
-    body: dict[str, object] = {}
+    body: BodyParams
+
+    @model_validator(mode="before")
+    @classmethod
+    def _dispatch_body(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+        kind = data.get("kind")
+        body = data.get("body")
+        if not isinstance(body, dict):
+            return data
+        if kind == "git_analyzed":
+            data = dict(data)
+            data["body"] = GitAnalyzedParams.model_validate(body)
+        elif kind == "roster_templated":
+            data = dict(data)
+            data["body"] = RosterTemplatedParams.model_validate(body)
+        return data
 
 
 class HivemindConfig(BaseModel):
