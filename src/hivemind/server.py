@@ -15,15 +15,11 @@ import signal
 import subprocess
 import time
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING
 
 import httpx
 
 from hivemind.constants import CACHE_DIR, PROCESS_TERMINATE_TIMEOUT
 from hivemind.models import ServerState
-
-if TYPE_CHECKING:
-    from hivemind.provider import Provider
 
 __all__ = [
     "clear_server_state",
@@ -110,38 +106,25 @@ def get_server_url() -> str | None:
 
 
 def start_server(
-    provider: Provider,
     *,
     port: int | None = None,
     hostname: str | None = None,
     timeout: float = 30.0,
 ) -> ServerState:
-    """Start the provider's backend server as a background process.
+    """Start the opencode backend server as a background process."""
+    from hivemind import opencode
 
-    Args:
-        provider: Active provider instance
-        port: Override port (defaults to provider config)
-        hostname: Override hostname (defaults to provider config)
-        timeout: Seconds to wait for the health endpoint
-
-    Returns:
-        ServerState with process details
-
-    Raises:
-        RuntimeError: If the provider doesn't support servers, a server is
-            already running, or the health check times out.
-    """
     if is_server_running():
         state = load_server_state()
         assert state is not None
         msg = f"Server already running on {state.hostname}:{state.port} (PID {state.pid})"
         raise RuntimeError(msg)
 
-    server_cfg = provider.server_config
+    server_cfg = opencode.server_config()
     effective_port = port or server_cfg.port
     effective_hostname = hostname or server_cfg.hostname
 
-    cmd = provider.start_server_command(effective_port, effective_hostname)
+    cmd = opencode.start_server_command(effective_port, effective_hostname)
     log_file = SERVER_LOG_FILE
 
     # Ensure cache dir exists for log file
@@ -165,14 +148,14 @@ def start_server(
         pid=proc.pid,
         port=effective_port,
         hostname=effective_hostname,
-        provider=provider.name,
+        provider=opencode.PROVIDER_NAME,
         started_at=datetime.now(UTC),
         log_file=str(log_file),
     )
     save_server_state(state)
 
     # Poll health endpoint until ready
-    health_url = provider.health_check_url(effective_port, effective_hostname)
+    health_url = opencode.health_check_url(effective_port, effective_hostname)
     deadline = time.monotonic() + timeout
 
     while time.monotonic() < deadline:

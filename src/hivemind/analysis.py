@@ -9,7 +9,7 @@ import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from hivemind.config import get_active_provider
+from hivemind import opencode
 from hivemind.constants import AGENT_FILENAME, ANALYSIS_DOCS, PROCESS_TERMINATE_TIMEOUT
 from hivemind.git import cleanup_log_files, read_analysis_error, revert_checkout
 from hivemind.models import (
@@ -73,8 +73,7 @@ async def run_async_analysis(
     stderr_path = Path(stderr_file.name)
     stdout_path = Path(stdout_file.name)
 
-    provider = get_active_provider()
-    cmd = provider.build_analysis_command(
+    cmd = opencode.build_analysis_command(
         extra_dirs=[repo_dir, staged_path],
         write=True,
     )

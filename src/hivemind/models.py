@@ -63,7 +63,7 @@ class CancellationToken:
 
 
 class RepoEntry(BaseModel):
-    """A repository registration in hivemind.json."""
+    """A git repository registration used by ``GitAnalyzedBody``."""
 
     remote: str
     commit: str = ""
@@ -71,21 +71,26 @@ class RepoEntry(BaseModel):
 
 
 class TeamData(BaseModel):
-    """A team definition in config.json."""
+    """A view of a ``RosterTemplatedBody`` agent for display callers.
 
-    description: str
+    This is not the canonical storage format — the roster lives in the
+    agent's ``hivemind.json`` body. It exists for TUI screens that expect
+    a typed object instead of a dict.
+    """
+
+    description: str = ""
     experts: list[str] = []
 
 
 class ServerConfig(BaseModel):
-    """Provider backend server configuration in hivemind.json."""
+    """OpenCode backend server configuration in hivemind.json."""
 
     port: int = 4096
     hostname: str = "127.0.0.1"
 
 
 class ServerState(BaseModel):
-    """Runtime state of a running provider backend server.
+    """Runtime state of a running OpenCode backend server.
 
     Persisted to ~/.cache/hivemind/server.json while the server is running.
     """
@@ -98,8 +103,20 @@ class ServerState(BaseModel):
     log_file: str
 
 
+class CatalogEntry(BaseModel):
+    """A single agent catalog entry in hivemind.json.
+
+    ``kind`` names the body strategy (``git_analyzed`` / ``roster_templated`` /
+    …). ``body`` is a kind-specific dict the concrete body class
+    parses/serialises.
+    """
+
+    kind: str
+    body: dict[str, object] = {}
+
+
 class HivemindConfig(BaseModel):
-    """Full hivemind.json schema."""
+    """Full hivemind.json schema (committed to git; shared across teammates)."""
 
     engine: str = ""
     home_dir: str = ""
@@ -108,16 +125,14 @@ class HivemindConfig(BaseModel):
     temperature: float | None = None
     server: ServerConfig = ServerConfig()
     permissions: dict[str, object] | None = None
-    repos: dict[str, RepoEntry] = {}
+    agents: dict[str, CatalogEntry] = {}
 
 
 class AppConfig(BaseModel):
-    """Full config.json schema."""
+    """Full config.json schema (per-machine local overlay, not committed)."""
 
     enabled: list[str] = []
     disabled: list[str] = []
-    teams: dict[str, TeamData] = {}
-    private: list[str] = []
 
 
 # --- Operation Result Models ---
@@ -223,10 +238,3 @@ class AnalysisResult(BaseModel):
     error: str | None = None
     stderr_path: Path | None = None
     stdout_path: Path | None = None
-
-
-class RepoLookup(BaseModel):
-    """Result of looking up repos for an expert."""
-
-    repos: dict[str, RepoEntry]
-    is_private: bool

@@ -150,7 +150,7 @@ class TeamDetailScreen(SearchMixin, BaseScreen):
         self.query_one("#team-header", Static).update(self._format_header())
 
     def action_edit_team(self) -> None:
-        from hivemind.teams import update_team
+        from hivemind.agents.roster_templated import update_team
         from hivemind.tui.widgets.edit_team_modal import EditTeamModal
 
         current_desc = self.team_data.description
@@ -164,10 +164,7 @@ class TeamDetailScreen(SearchMixin, BaseScreen):
             if new_name is None and new_desc is None:
                 return
 
-            from hivemind.config import load_config
-
-            config = load_config()
-            result = update_team(self.team_name, new_name=new_name, description=new_desc, config=config)
+            result = update_team(self.team_name, new_name=new_name, description=new_desc)
             if result.success:
                 if new_name:
                     self.team_name = new_name
@@ -203,10 +200,7 @@ class TeamDetailScreen(SearchMixin, BaseScreen):
         self.app.push_screen(SelectionListModal(available, title="Add Experts"), _handle_add)
 
     async def _add_experts_async(self, selected: list[str]) -> None:
-        from hivemind.config import load_config
-        from hivemind.teams import add_experts_to_team
-
-        config = load_config()
+        from hivemind.agents.roster_templated import add_experts_to_team
 
         def on_progress(expert_name: str) -> None:
             """Called when an expert starts being AI-analyzed."""
@@ -218,7 +212,6 @@ class TeamDetailScreen(SearchMixin, BaseScreen):
                 self.team_name,
                 selected,
                 on_progress=on_progress,
-                config=config,
             )
 
             for name in result.added:
@@ -247,11 +240,9 @@ class TeamDetailScreen(SearchMixin, BaseScreen):
 
         def _do_remove(confirmed: bool) -> None:
             if confirmed:
-                from hivemind.config import load_config
-                from hivemind.teams import remove_expert_from_team
+                from hivemind.agents.roster_templated import remove_expert_from_team
 
-                config = load_config()
-                result = remove_expert_from_team(self.team_name, expert_name, config=config)
+                result = remove_expert_from_team(self.team_name, expert_name)
                 if result.success:
                     self.notify(f"Removed {expert_name}", severity="information")
                     self._reload()

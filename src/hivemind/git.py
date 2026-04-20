@@ -7,7 +7,6 @@ import contextlib
 import shutil
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING
 from uuid import uuid4
 
 from hivemind.config import (
@@ -16,56 +15,43 @@ from hivemind.config import (
     REPOS_DIR,
     STAGING_DIR,
     ensure_repos_link,
-    save_private_repos,
-    save_repos,
 )
 from hivemind.constants import AGENT_FILENAME
 from hivemind.models import StagingResult
 
-if TYPE_CHECKING:
-    from hivemind.models import RepoEntry
-
 __all__ = [
     "cleanup_log_files",
-    "clone_repo",
+    "clone_from_remote",
     "commit_analysis_results",
+    "create_staging_dir",
     "read_analysis_error",
     "resolve_latest_commit",
     "revert_checkout",
-    "save_commit_to_repos",
     "stage_for_analysis",
 ]
 
 
-async def clone_repo(name: str, repos: dict[str, RepoEntry], *, silent: bool = False) -> bool:
-    """Clone a repo to cache repos dir if not already present.
+async def clone_from_remote(
+    name: str,
+    remote: str,
+    *,
+    commit: str = "",
+    ref_name: str = "",
+    silent: bool = False,
+) -> bool:
+    """Clone ``remote`` into ``REPOS_DIR/<name>`` if not already present.
 
-    Args:
-        name: Expert name
-        repos: repos data
-        silent: If True, suppress output (for TUI usage)
-
-    Returns:
-        True if repo is available (already cloned or newly cloned)
+    Returns True when the repo is available on disk afterwards.
     """
-    if name not in repos:
-        return False
-
     ensure_repos_link()
 
     repo_dir = REPOS_DIR / name
     if repo_dir.is_dir():
-        return True  # Already cloned
-
-    repo = repos[name]
-    remote = repo.remote
-    commit = repo.commit
-    ref_name = repo.ref_name
+        return True  # already cloned
 
     stdout = asyncio.subprocess.DEVNULL if silent else None
     stderr = asyncio.subprocess.DEVNULL if silent else None
 
-    # Determine clone command
     if commit:
         proc = await asyncio.create_subprocess_exec(
             "git",
@@ -159,11 +145,7 @@ def _cleanup_stale_staging() -> None:
 
 
 def create_staging_dir(name: str) -> Path:
-    """Create a unique subdirectory under STAGING_DIR for an operation.
-
-    Returns the path to the new staging directory.  Callers are responsible
-    for cleaning it up via ``shutil.rmtree()`` when done.
-    """
+    """Create a unique subdirectory under STAGING_DIR for an operation."""
     _cleanup_stale_staging()
     STAGING_DIR.mkdir(parents=True, exist_ok=True)
     staging = STAGING_DIR / f"{name}-{uuid4().hex[:12]}"
@@ -178,32 +160,18 @@ async def stage_for_analysis(
     old_commit: str | None,
     repo_dir: Path,
 ) -> StagingResult:
-    """Create staging directory, preserve agent.md, and checkout new commit.
-
-    Stages under ``~/.cache/hivemind/staging/`` so both Claude Code and
-    OpenCode have consistent read/write access via pre-configured permissions.
-
-    Only agent.md is copied from the previous version (it is not regenerated
-    during updates).  Analysis docs (summary.md, code_structure.md, etc.) are
-    NOT copied — the output directory starts empty so that a failed analysis
-    is detected by the missing-file check instead of silently reusing stale
-    content.
-
-    Returns (tmpdir, staged_path, tmp_commit_dir).
-    """
+    """Create staging directory, preserve agent.md, and checkout new commit."""
     tmpdir = str(create_staging_dir(name))
     staged_path = Path(tmpdir) / "expert"
     staged_path.mkdir()
     tmp_commit_dir = staged_path / new_commit
     tmp_commit_dir.mkdir()
 
-    # Preserve agent.md from previous version (not regenerated during updates)
     if old_commit:
         old_agent = expert_dir / old_commit / AGENT_FILENAME
         if old_agent.is_file():
             shutil.copy2(old_agent, tmp_commit_dir / AGENT_FILENAME)
 
-    # Checkout the target commit
     proc = await asyncio.create_subprocess_exec(
         "git",
         "checkout",
@@ -221,11 +189,7 @@ async def stage_for_analysis(
     return StagingResult(tmpdir=tmpdir, staged_path=staged_path, commit_dir=tmp_commit_dir)
 
 
-def read_analysis_error(
-    returncode: int,
-    stderr_path: Path,
-    stdout_path: Path,
-) -> str:
+def read_analysis_error(returncode: int, stderr_path: Path, stdout_path: Path) -> str:
     """Read error details from analysis subprocess output files."""
     error_msg = f"AI analysis failed (exit code {returncode})"
     try:
@@ -252,11 +216,7 @@ def cleanup_log_files(*paths: Path) -> None:
                 p.unlink()
 
 
-def commit_analysis_results(
-    tmp_commit_dir: Path,
-    expert_dir: Path,
-    commit: str,
-) -> None:
+def commit_analysis_results(tmp_commit_dir: Path, expert_dir: Path, commit: str) -> None:
     """Move staged analysis files to final location and update HEAD symlink."""
     final_commit_dir = expert_dir / commit
     final_commit_dir.mkdir(parents=True, exist_ok=True)
@@ -265,25 +225,10 @@ def commit_analysis_results(
         if f.is_file():
             shutil.move(str(f), str(final_commit_dir / f.name))
 
-    # Update HEAD symlink
     head_link = expert_dir / "HEAD"
     if head_link.is_symlink():
         head_link.unlink()
     head_link.symlink_to(commit)
-
-
-def save_commit_to_repos(
-    name: str,
-    commit: str,
-    repos: dict[str, RepoEntry],
-    is_private: bool,
-) -> None:
-    """Update the commit hash in repos config."""
-    repos[name].commit = commit
-    if is_private:
-        save_private_repos(repos)
-    else:
-        save_repos(repos)
 
 
 async def revert_checkout(repo_dir: Path, old_commit: str | None) -> None:

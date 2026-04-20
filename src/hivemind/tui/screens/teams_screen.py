@@ -85,11 +85,9 @@ class TeamsPane(BasePane):
         self.app.push_screen(CreateTeamModal(), _handle_result)
 
     async def _create_team_async(self, data: dict) -> None:
-        from hivemind.config import load_config
-        from hivemind.teams import create_team
+        from hivemind.agents.roster_templated import create_team
 
-        config = load_config()
-        result = await create_team(data["name"], data["description"], data["experts"], config=config)
+        result = await create_team(data["name"], data["description"], data["experts"])
         if result.success:
             self.notify(f"Created team: {data['name']}", severity="information")
             self.load_teams()
@@ -116,11 +114,9 @@ class TeamsPane(BasePane):
 
         def _do_delete(confirmed: bool) -> None:
             if confirmed:
-                from hivemind.config import load_config
-                from hivemind.teams import delete_team
+                from hivemind.lifecycle import delete_agent
 
-                config = load_config()
-                result = delete_team(name, config=config)
+                result = delete_agent(name)
                 if result.success:
                     self.notify(f"Deleted team: {name}", severity="information")
                     self.load_teams()

@@ -10,17 +10,15 @@ from textual.binding import Binding, BindingType
 from textual.css.query import NoMatches
 from textual.widgets import ContentSwitcher, Footer, Static
 
+from hivemind import opencode
+from hivemind.agents import registry
 from hivemind.config import (
     AGENTS_DIR,
     count_versions,
-    expert_names,
     get_expert_dir,
     get_head_commit,
-    is_private_expert,
-    load_config,
-    load_private_repos,
-    load_repos,
 )
+from hivemind.hooks import register_post_mutation
 from hivemind.tui.models import ExpertRow, ExpertStatus
 from hivemind.tui.screens.experts_pane import ExpertsPane
 from hivemind.tui.screens.teams_screen import TeamsPane
@@ -64,6 +62,7 @@ class HivemindApp(App):
         yield Footer()
 
     def on_mount(self) -> None:
+        self._register_post_mutation_listeners()
         self.load_experts()
         try:
             pane = self.query_one(ExpertsPane)
@@ -74,6 +73,24 @@ class HivemindApp(App):
             pass
         self._update_tab_indicator()
         self._focus_active_table()
+
+    def _register_post_mutation_listeners(self) -> None:
+        """Register the TUI's post-mutation listeners: reload + pane refresh."""
+
+        def reload_listener() -> None:
+            opencode.notify_instance_reload()
+
+        def refresh_listener() -> None:
+            # Called synchronously from any thread; Textual refresh is safe to
+            # call via call_from_thread if we're off-thread.
+            try:
+                self.call_from_thread(self.refresh_experts)
+            except Exception:
+                # If we're already on the app thread (rare), fall back.
+                self.refresh_experts()
+
+        register_post_mutation(reload_listener)
+        register_post_mutation(refresh_listener)
 
     # --- Tab navigation ---
 
@@ -146,44 +163,33 @@ class HivemindApp(App):
     # --- Data loading ---
 
     def load_experts(self) -> None:
-        config = load_config()
-        repos = load_repos()
-        private_repos = load_private_repos()
-        all_expert_names = expert_names()
+        from hivemind.agents.git_analyzed import GitAnalyzedBody
+
+        registry.load(refresh=True)
+        git_experts = registry.by_kind("git_analyzed")
 
         self.experts = []
+        for agent in git_experts:
+            if not isinstance(agent.body, GitAnalyzedBody):
+                continue
 
-        for name in all_expert_names:
-            is_private = is_private_expert(name)
-            if name in config.enabled:
-                status = ExpertStatus.ENABLED
-            elif name in config.disabled:
-                status = ExpertStatus.DISABLED
-            else:
-                status = ExpertStatus.UNLISTED
+            status = ExpertStatus.ENABLED if agent.enabled else ExpertStatus.DISABLED
 
-            expert_dir = get_expert_dir(name)
+            expert_dir = get_expert_dir(agent.name)
             commit = get_head_commit(expert_dir)
             version_count = count_versions(expert_dir)
-            has_agent = (AGENTS_DIR / f"expert-{name}.md").is_file()
-
-            remote = ""
-            ref_name = ""
-            repos_dict = private_repos if is_private else repos
-            if name in repos_dict:
-                remote = repos_dict[name].remote
-                ref_name = repos_dict[name].ref_name
+            has_agent = (AGENTS_DIR / f"expert-{agent.name}.md").is_file()
 
             self.experts.append(
                 ExpertRow(
-                    name=name,
+                    name=agent.name,
                     status=status,
                     commit=commit,
                     version_count=version_count,
                     has_agent=has_agent,
-                    remote=remote,
-                    ref_name=ref_name,
-                    is_private=is_private,
+                    remote=agent.body.remote,
+                    ref_name=agent.body.ref_name,
+                    is_private=False,
                     operation_status=None,
                 ),
             )
@@ -201,5 +207,16 @@ class HivemindApp(App):
             pass
 
     def load_teams(self) -> dict[str, TeamData]:
-        config = load_config()
-        return config.teams
+        """Return all teams as ``{name: TeamData}`` for display callers."""
+        from hivemind.models import TeamData
+
+        registry.load(refresh=True)
+        teams = registry.by_kind("roster_templated")
+        result: dict[str, TeamData] = {}
+        for agent in teams:
+            body_params = agent.body.to_catalog()
+            result[agent.name] = TeamData(
+                description=str(body_params.get("description", "")),
+                experts=[str(e) for e in body_params.get("experts", [])],
+            )
+        return result

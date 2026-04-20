@@ -1,4 +1,16 @@
-"""Configuration, path constants, and filesystem helpers for hivemind."""
+"""Configuration paths + JSON I/O primitives.
+
+Hivemind splits state across two JSON files:
+
+- ``hivemind.json`` — committed to git; holds the shared agent catalog
+  (the set of experts + teams the project defines) plus engine / server
+  configuration.
+- ``config.json`` — per-machine, not committed; holds the local overlay
+  (which agents are currently enabled or disabled on this machine).
+
+``private`` state is gone: all experts live in one ``experts/`` directory
+and the single repo cache under ``~/.cache/hivemind/repos/``.
+"""
 
 from __future__ import annotations
 
@@ -20,12 +32,8 @@ from hivemind.models import (
     HivemindConfig,
     ProgressCallback,
     ProgressInfo,
-    RepoEntry,
-    RepoLookup,
-    TeamData,
     UpdatePhase,
 )
-from hivemind.provider import Provider
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -38,51 +46,36 @@ __all__ = [
     "EXPERTS_DIR",
     "EXTERNAL_DOCS_DIR",
     "EXTERNAL_DOCS_LINK",
-    # Timeout constants
     "GIT_CLONE_TIMEOUT",
     "GIT_FETCH_TIMEOUT",
     "GIT_LOCAL_TIMEOUT",
     "HIVEMIND_JSON",
     "HIVEMIND_MD",
-    # Path constants
     "HIVEMIND_ROOT",
     "OPENCODE_CONFIG_DIR",
     "OPENCODE_DIR",
     "OPENCODE_PLUGINS_DIR",
-    "PRIVATE_EXPERTS_DIR",
-    "PRIVATE_REPOS_JSON",
     "REPOS_DIR",
     "REPOS_LINK",
+    "STAGING_DIR",
     "TEAMS_DIR",
     "count_versions",
     "ensure_external_docs_link",
     "ensure_repos_link",
     "expert_names",
-    "get_active_provider",
     "get_expert_dir",
     "get_head_commit",
-    "get_repos_for_expert",
-    "invalidate_provider_cache",
-    "is_private_expert",
     "load_config",
     "load_hivemind",
     "load_json",
-    "load_private_repos",
-    "load_repos",
-    "load_teams",
-    # Functions
     "make_emit",
     "save_config",
     "save_hivemind",
     "save_json",
-    "save_private_repos",
-    "save_repos",
-    "save_teams",
 ]
 
-# --- Paths (shared configuration) ---
+# --- Paths ---
 
-# Allow override for testing, otherwise use the same paths as cli.py
 HIVEMIND_ROOT = Path(__file__).resolve().parent.parent.parent
 REPOS_DIR = CACHE_DIR / "repos"
 STAGING_DIR = CACHE_DIR / "staging"
@@ -91,30 +84,24 @@ EXTERNAL_DOCS_DIR = CACHE_DIR / "external_docs"
 EXTERNAL_DOCS_LINK = HIVEMIND_ROOT / "external_docs"
 HIVEMIND_JSON = HIVEMIND_ROOT / "hivemind.json"
 CONFIG_JSON = HIVEMIND_ROOT / "config.json"
-PRIVATE_REPOS_JSON = HIVEMIND_ROOT / "private-repos.json"
 AGENTS_DIR = HIVEMIND_ROOT / "agents"
 EXPERTS_DIR = HIVEMIND_ROOT / "experts"
-PRIVATE_EXPERTS_DIR = HIVEMIND_ROOT / "private-experts"
 TEAMS_DIR = HIVEMIND_ROOT / "teams"
 HIVEMIND_MD = HIVEMIND_ROOT / "HIVEMIND.md"
-
-# OpenCode add-ons (plugins, commands, config) — decoupled from hivemind core.
-# Actual path definitions live in hivemind.constants to break the config/provider
-# import cycle; re-exported here for backward compatibility with callers that
-# already import from hivemind.config.
 COMMANDS_DIR = OPENCODE_DIR / "commands"
 
-# --- Subprocess Timeout Constants (seconds) ---
+# --- Subprocess timeouts (seconds) ---
+
 GIT_CLONE_TIMEOUT = 300
 GIT_FETCH_TIMEOUT = 60
 GIT_LOCAL_TIMEOUT = 15
 
 
-# --- Config I/O (future: adapters/json_config.py) ---
+# --- Progress helper ---
 
 
 def make_emit(name: str, on_progress: ProgressCallback | None) -> Callable[..., None]:
-    """Create a progress emission closure, collapsing the repeated guard pattern."""
+    """Create a progress-emission closure."""
 
     def _emit(
         phase: UpdatePhase,
@@ -141,6 +128,9 @@ def make_emit(name: str, on_progress: ProgressCallback | None) -> Callable[..., 
             )
 
     return _emit
+
+
+# --- JSON I/O ---
 
 
 def load_json(path: Path) -> dict[str, object]:
@@ -171,7 +161,7 @@ def save_json(path: Path, data: dict[str, object]) -> None:
 
 
 def load_config() -> AppConfig:
-    """Load config.json (local user state: enabled/disabled experts, teams)."""
+    """Load config.json (local overlay: enabled / disabled agent names)."""
     if not CONFIG_JSON.exists():
         return AppConfig()
     return AppConfig.model_validate(load_json(CONFIG_JSON))
@@ -182,118 +172,30 @@ def save_config(config: AppConfig) -> None:
 
 
 def load_hivemind() -> HivemindConfig:
-    """Load hivemind.json (shared project config: engine settings, repos)."""
+    """Load hivemind.json (shared catalog + engine/server settings)."""
     return HivemindConfig.model_validate(load_json(HIVEMIND_JSON))
 
 
 def save_hivemind(data: HivemindConfig) -> None:
     save_json(HIVEMIND_JSON, data.model_dump(exclude_defaults=True))
+    from hivemind.opencode import invalidate_config_cache
+
+    invalidate_config_cache()
 
 
-def load_teams() -> dict[str, TeamData]:
-    """Load teams from config.json."""
-    return load_config().teams
-
-
-def save_teams(teams: dict[str, TeamData], config: AppConfig) -> None:
-    """Save teams to config.json."""
-    config.teams = teams
-    save_config(config)
-
-
-_provider_cache: Provider | None = None
-
-
-def get_active_provider() -> Provider:
-    """Get the provider instance, cached for the session.
-
-    Loads hivemind.json and validates that the required fields (engine,
-    home_dir, model) are set before constructing the Provider.
-    """
-    global _provider_cache
-    if _provider_cache is not None:
-        return _provider_cache
-    hivemind = load_hivemind()
-
-    # Validate required fields
-    errors: list[str] = []
-    if not hivemind.engine:
-        errors.append("engine must be set")
-    if not hivemind.home_dir:
-        errors.append("home_dir must be set")
-    if not hivemind.model:
-        errors.append("model must be set")
-    if errors:
-        msg = f"Incomplete config: {'; '.join(errors)}. Check hivemind.json."
-        raise RuntimeError(msg)
-
-    _provider_cache = Provider(hivemind)
-    return _provider_cache
-
-
-def invalidate_provider_cache() -> None:
-    """Reset provider cache (call after config changes)."""
-    global _provider_cache
-    _provider_cache = None
-
-
-def load_repos() -> dict[str, RepoEntry]:
-    return load_hivemind().repos
-
-
-def save_repos(repos: dict[str, RepoEntry]) -> None:
-    hm = load_hivemind()
-    hm.repos = repos
-    save_hivemind(hm)
-
-
-def load_private_repos() -> dict[str, RepoEntry]:
-    """Load private-repos.json (gitignored, never committed).
-
-    Raises json.JSONDecodeError if the file exists but contains corrupt JSON.
-    """
-    if not PRIVATE_REPOS_JSON.exists():
-        return {}
-    data = json.loads(PRIVATE_REPOS_JSON.read_text(encoding="utf-8"))
-    return {k: RepoEntry.model_validate(v) for k, v in data.items()}
-
-
-def save_private_repos(repos: dict[str, RepoEntry]) -> None:
-    """Save private-repos.json."""
-    data = {k: v.model_dump(exclude_defaults=True) for k, v in repos.items()}
-    PRIVATE_REPOS_JSON.write_text(json.dumps(data, indent=2) + "\n")
-
-
-# --- Expert File Store (future: adapters/filesystem_store.py) ---
-
-
-def is_private_expert(name: str) -> bool:
-    """Check if expert is private (lives in private-experts/)."""
-    return (PRIVATE_EXPERTS_DIR / name).is_dir()
+# --- Expert filesystem helpers ---
 
 
 def get_expert_dir(name: str) -> Path:
-    """Get expert directory (public or private)."""
-    if is_private_expert(name):
-        return PRIVATE_EXPERTS_DIR / name
+    """Return ``experts/<name>``. All experts live in one directory now."""
     return EXPERTS_DIR / name
 
 
-def get_repos_for_expert(name: str) -> RepoLookup:
-    """Get (repos_dict, is_private) for expert."""
-    if is_private_expert(name):
-        return RepoLookup(repos=load_private_repos(), is_private=True)
-    return RepoLookup(repos=load_repos(), is_private=False)
-
-
 def expert_names() -> list[str]:
-    """List all expert names from experts/ and private-experts/ directories."""
-    experts: list[str] = []
-    if EXPERTS_DIR.exists():
-        experts.extend(d.name for d in EXPERTS_DIR.iterdir() if d.is_dir())
-    if PRIVATE_EXPERTS_DIR.exists():
-        experts.extend(d.name for d in PRIVATE_EXPERTS_DIR.iterdir() if d.is_dir())
-    return sorted(experts)
+    """List expert names present in ``experts/``."""
+    if not EXPERTS_DIR.exists():
+        return []
+    return sorted(d.name for d in EXPERTS_DIR.iterdir() if d.is_dir())
 
 
 def get_head_commit(expert_dir: Path) -> str | None:
@@ -305,21 +207,20 @@ def get_head_commit(expert_dir: Path) -> str | None:
 
 
 def count_versions(expert_dir: Path) -> int:
-    """Count commit directories (excludes HEAD symlink)."""
+    """Count commit directories under an expert dir (excludes HEAD)."""
     if not expert_dir.exists():
         return 0
     return sum(1 for d in expert_dir.iterdir() if d.is_dir() and not d.is_symlink() and d.name != "__pycache__")
 
 
 def ensure_repos_link() -> None:
-    """Ensure HIVEMIND_ROOT/repos symlink points to the cache repos dir."""
+    """Ensure ``HIVEMIND_ROOT/repos`` symlinks to the cache repos dir."""
     REPOS_DIR.mkdir(parents=True, exist_ok=True)
     if REPOS_LINK.is_symlink():
         if REPOS_LINK.resolve() == REPOS_DIR.resolve():
             return
         REPOS_LINK.unlink()
     elif REPOS_LINK.is_dir():
-        # Move existing real directory contents to cache
         for item in REPOS_LINK.iterdir():
             dest = REPOS_DIR / item.name
             if not dest.exists():
@@ -331,14 +232,13 @@ def ensure_repos_link() -> None:
 
 
 def ensure_external_docs_link() -> None:
-    """Ensure HIVEMIND_ROOT/external_docs symlink points to the cache external_docs dir."""
+    """Ensure ``HIVEMIND_ROOT/external_docs`` symlinks to the cache external_docs dir."""
     EXTERNAL_DOCS_DIR.mkdir(parents=True, exist_ok=True)
     if EXTERNAL_DOCS_LINK.is_symlink():
         if EXTERNAL_DOCS_LINK.resolve() == EXTERNAL_DOCS_DIR.resolve():
             return
         EXTERNAL_DOCS_LINK.unlink()
     elif EXTERNAL_DOCS_LINK.is_dir():
-        # Move existing real directory contents to cache
         for item in EXTERNAL_DOCS_LINK.iterdir():
             dest = EXTERNAL_DOCS_DIR / item.name
             if not dest.exists():

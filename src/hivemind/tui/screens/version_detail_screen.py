@@ -11,8 +11,8 @@ from textual.css.query import NoMatches
 from textual.reactive import reactive
 from textual.widgets import Button, DataTable, Footer, Input, Static
 
-from hivemind.config import EXPERTS_DIR, PRIVATE_EXPERTS_DIR
-from hivemind.experts import commit_exists_in_repo, get_git_versions
+from hivemind.agents.git_analyzed import commit_exists_in_repo, get_git_versions
+from hivemind.config import EXPERTS_DIR
 from hivemind.tui.screens.base_screen import BaseScreen
 from hivemind.tui.widgets import SearchBar, VimDataTable
 
@@ -73,9 +73,7 @@ class VersionDetailScreen(BaseScreen):
         table.focus()
 
     async def _load_versions(self) -> None:
-        expert_dir = (
-            PRIVATE_EXPERTS_DIR / self.expert.name if self.expert.is_private else EXPERTS_DIR / self.expert.name
-        )
+        expert_dir = EXPERTS_DIR / self.expert.name
         self.versions = await get_git_versions(self.expert.name, expert_dir)
 
     def _populate_table(self) -> None:

@@ -1,7 +1,17 @@
 """MCP tool definitions and handlers for hivemind.
 
-Each tool wraps existing core module functions with structured arguments
-and returns text content suitable for LLM consumption.
+The MCP surface is split into **kind-agnostic lifecycle tools** (list, show,
+enable, disable, delete, refresh) and **kind-specific creators** (for
+``create_git_expert`` and ``create_team``). Adding a new agent kind only
+requires adding one new creator tool; the lifecycle tools automatically
+cover it.
+
+The post-mutation hot-reload used to be triggered from a dispatcher-level
+``_MUTATION_TOOLS`` list here. That is gone: domain mutations fire the
+shared :mod:`hivemind.hooks` event themselves, and this module just
+registers two MCP-specific listeners at server startup — one for the
+deferred ``/global/dispose`` POST (500 ms delayed to avoid cancelling the
+in-flight tool) and one for ``ToolListChangedNotification``.
 """
 
 from __future__ import annotations
@@ -14,7 +24,11 @@ from typing import TYPE_CHECKING, Any
 from mcp.types import TextContent, Tool
 
 if TYPE_CHECKING:
+    from collections.abc import Awaitable, Callable
+
     from mcp.server import Server
+
+    ToolHandler = Callable[..., Awaitable[list[TextContent]]]
 
 log = logging.getLogger(__name__)
 
@@ -22,100 +36,164 @@ _background_tasks: set[asyncio.Task[None]] = set()
 
 
 def _text(msg: str) -> list[TextContent]:
-    """Wrap a string in the MCP text content response format."""
     return [TextContent(type="text", text=msg)]
 
 
 def _json_text(data: Any) -> list[TextContent]:
-    """Serialize data as indented JSON wrapped in MCP text content."""
     return _text(json.dumps(data, indent=2, default=str))
 
 
-# --- Tool definitions ---
+# ---------------------------------------------------------------------------
+# Tool definitions
+# ---------------------------------------------------------------------------
 
 TOOLS: list[Tool] = [
-    # Expert management
+    # --- Lifecycle (kind-agnostic) ---
     Tool(
-        name="list_experts",
-        description="List all experts with their status, HEAD commit, version count, and team memberships.",
-        inputSchema={"type": "object", "properties": {}, "required": []},
+        name="list_agents",
+        description="List every agent in the catalog, with kind, enabled state, and summary metadata.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "kind": {
+                    "type": "string",
+                    "description": (
+                        "Optional filter: only return agents of this kind (e.g. 'git_analyzed', 'roster_templated')."
+                    ),
+                },
+            },
+            "required": [],
+        },
     ),
     Tool(
-        name="show_expert",
+        name="show_agent",
+        description="Show detailed information about a specific agent, including body-specific metadata.",
+        inputSchema={
+            "type": "object",
+            "properties": {"name": {"type": "string", "description": "Agent name"}},
+            "required": ["name"],
+        },
+    ),
+    Tool(
+        name="enable_agent",
+        description="Enable an agent. Deploys its files (and for git_analyzed, ensures the repo is cloned).",
+        inputSchema={
+            "type": "object",
+            "properties": {"name": {"type": "string", "description": "Agent name to enable"}},
+            "required": ["name"],
+        },
+    ),
+    Tool(
+        name="disable_agent",
+        description="Disable an agent. Removes the deployed agent file while preserving backing data.",
+        inputSchema={
+            "type": "object",
+            "properties": {"name": {"type": "string", "description": "Agent name to disable"}},
+            "required": ["name"],
+        },
+    ),
+    Tool(
+        name="delete_agent",
         description=(
-            "Show detailed information about a specific expert including status, "
-            "versions, remote URL, teams, and agent deployment status."
+            "Remove an agent entirely — deletes backing files and catalog entry. Memory is preserved by default."
         ),
         inputSchema={
             "type": "object",
-            "properties": {"name": {"type": "string", "description": "Expert name"}},
+            "properties": {
+                "name": {"type": "string", "description": "Agent name to delete"},
+                "purge_memory": {
+                    "type": "boolean",
+                    "description": "Also delete the agent's memory directory (default: false).",
+                },
+            },
             "required": ["name"],
         },
     ),
     Tool(
-        name="enable_expert",
-        description="Enable a disabled expert. Deploys its agent and makes it available as a subagent.",
-        inputSchema={
-            "type": "object",
-            "properties": {"name": {"type": "string", "description": "Expert name to enable"}},
-            "required": ["name"],
-        },
-    ),
-    Tool(
-        name="disable_expert",
-        description="Disable an enabled expert. Removes its agent file.",
-        inputSchema={
-            "type": "object",
-            "properties": {"name": {"type": "string", "description": "Expert name to disable"}},
-            "required": ["name"],
-        },
-    ),
-    Tool(
-        name="add_expert",
+        name="refresh_agent",
         description=(
-            "Register a new expert from a git repository URL. Clones the repo, runs AI analysis, "
-            "generates knowledge docs, and deploys the agent. This is a long-running operation."
+            "Refresh an agent's body. For git_analyzed agents this fetches + re-analyzes; "
+            "other kinds may not support refresh."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "description": "Agent name to refresh"},
+                "skip_analysis": {
+                    "type": "boolean",
+                    "description": "For git_analyzed: pull latest commits without re-running AI analysis.",
+                },
+            },
+            "required": ["name"],
+        },
+    ),
+    # --- Kind-specific creators ---
+    Tool(
+        name="create_git_expert",
+        description=(
+            "Register a new git-analyzed expert from a remote URL. Clones the repo, runs "
+            "AI analysis, and adds the agent to the catalog in the *unlisted* state. "
+            "Call `enable_agent` afterwards to deploy it."
         ),
         inputSchema={
             "type": "object",
             "properties": {
                 "url": {"type": "string", "description": "Git remote URL"},
                 "ref": {"type": "string", "description": "Tag, branch, or commit (optional)"},
-                "private": {"type": "boolean", "description": "Mark as private (won't be committed to git)"},
             },
             "required": ["url"],
         },
     ),
     Tool(
-        name="delete_expert",
-        description="Delete an expert entirely — removes all local data, agent files, and cached repos.",
-        inputSchema={
-            "type": "object",
-            "properties": {"name": {"type": "string", "description": "Expert name to delete"}},
-            "required": ["name"],
-        },
-    ),
-    Tool(
-        name="update_expert",
-        description="Fetch latest commits for an expert and re-analyze with AI.",
+        name="create_team",
+        description=(
+            "Create a new team-lead agent with an AI-generated lead.md. Added to the catalog in the *unlisted* state."
+        ),
         inputSchema={
             "type": "object",
             "properties": {
-                "name": {"type": "string", "description": "Expert name to update"},
-                "skip_analysis": {
-                    "type": "boolean",
-                    "description": "Pull latest repo changes without re-running AI analysis",
+                "name": {"type": "string", "description": "Team name"},
+                "description": {"type": "string", "description": "Team description"},
+                "experts": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "List of expert names to include",
                 },
             },
-            "required": ["name"],
+            "required": ["name", "description", "experts"],
         },
     ),
-    # Knowledge access
+    # --- Team roster management ---
+    Tool(
+        name="add_expert_to_team",
+        description="Add an expert to a team's roster (team must be enabled).",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "team": {"type": "string", "description": "Team name"},
+                "expert": {"type": "string", "description": "Expert name to add"},
+            },
+            "required": ["team", "expert"],
+        },
+    ),
+    Tool(
+        name="remove_expert_from_team",
+        description="Remove an expert from a team's roster (team must be enabled).",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "team": {"type": "string", "description": "Team name"},
+                "expert": {"type": "string", "description": "Expert name to remove"},
+            },
+            "required": ["team", "expert"],
+        },
+    ),
+    # --- Knowledge access ---
     Tool(
         name="get_knowledge",
         description=(
-            "Read an expert's knowledge document content. Available docs: "
-            "summary, code_structure, build_system, apis_and_interfaces, agent."
+            "Read an expert's knowledge document content. "
+            "Available docs: summary, code_structure, build_system, apis_and_interfaces, agent."
         ),
         inputSchema={
             "type": "object",
@@ -139,298 +217,209 @@ TOOLS: list[Tool] = [
             "required": ["query"],
         },
     ),
-    # Team management
-    Tool(
-        name="list_teams",
-        description="List all teams with their descriptions and expert rosters.",
-        inputSchema={"type": "object", "properties": {}, "required": []},
-    ),
-    Tool(
-        name="show_team",
-        description="Show detailed information about a team including roster, description, and file status.",
-        inputSchema={
-            "type": "object",
-            "properties": {"name": {"type": "string", "description": "Team name"}},
-            "required": ["name"],
-        },
-    ),
-    Tool(
-        name="create_team",
-        description="Create a new team with an AI-generated lead agent.",
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "name": {"type": "string", "description": "Team name"},
-                "description": {"type": "string", "description": "Team description"},
-                "experts": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "description": "List of expert names to include",
-                },
-            },
-            "required": ["name", "description", "experts"],
-        },
-    ),
-    Tool(
-        name="delete_team",
-        description="Delete a team and its deployed agents.",
-        inputSchema={
-            "type": "object",
-            "properties": {"name": {"type": "string", "description": "Team name to delete"}},
-            "required": ["name"],
-        },
-    ),
-    Tool(
-        name="add_expert_to_team",
-        description="Add an expert to a team's roster.",
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "team": {"type": "string", "description": "Team name"},
-                "expert": {"type": "string", "description": "Expert name to add"},
-            },
-            "required": ["team", "expert"],
-        },
-    ),
-    Tool(
-        name="remove_expert_from_team",
-        description="Remove an expert from a team's roster.",
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "team": {"type": "string", "description": "Team name"},
-                "expert": {"type": "string", "description": "Expert name to remove"},
-            },
-            "required": ["team", "expert"],
-        },
-    ),
-    # System
+    # --- System ---
     Tool(
         name="status",
-        description="Show hivemind dashboard: provider info, enabled/disabled experts, teams, and server status.",
+        description="Show hivemind dashboard: engine info, enabled/disabled counts, teams, and server status.",
         inputSchema={"type": "object", "properties": {}, "required": []},
     ),
     Tool(
         name="redeploy",
-        description="Regenerate all agent files for the active provider.",
+        description="Regenerate all agent files for every enabled agent from the current catalog.",
         inputSchema={"type": "object", "properties": {}, "required": []},
     ),
 ]
 
 
-# --- Tool handlers ---
+# ---------------------------------------------------------------------------
+# Handlers — lifecycle
+# ---------------------------------------------------------------------------
 
 
-async def _handle_list_experts() -> list[TextContent]:
-    from hivemind.config import (
-        expert_names,
-        get_expert_dir,
-        get_head_commit,
-        is_private_expert,
-        load_config,
-        load_repos,
-        load_teams,
-    )
+async def _handle_list_agents(kind: str | None) -> list[TextContent]:
+    from hivemind.agents import registry
 
-    config = load_config()
-    repos = load_repos()
-    teams = load_teams()
-    experts = expert_names()
+    registry.load(refresh=True)
+    agents = registry.by_kind(kind) if kind else registry.all_agents()
+    if not agents:
+        return _text("No agents found." + (f" (kind={kind})" if kind else ""))
 
-    if not experts:
-        return _text("No experts found. Use the add_expert tool to add one.")
-
-    results = []
-    for name in experts:
-        expert_dir = get_expert_dir(name)
-        head_commit = get_head_commit(expert_dir)
-
-        if name in config.enabled:
-            status = "enabled"
-        elif name in config.disabled:
-            status = "disabled"
-        else:
-            status = "unlisted"
-
-        expert_teams = [t for t, td in teams.items() if name in td.experts]
-        remote = repos.get(name, None)
-
-        results.append(
-            {
-                "name": name,
-                "status": status,
-                "head": head_commit[:12] if head_commit else None,
-                "private": is_private_expert(name),
-                "teams": expert_teams,
-                "remote": remote.remote if remote else None,
-            }
-        )
-
+    results: list[dict[str, Any]] = [
+        {
+            "name": agent.name,
+            "kind": agent.kind,
+            "enabled": agent.enabled,
+            "description": agent.description,
+        }
+        for agent in sorted(agents, key=lambda a: a.name)
+    ]
     return _json_text(results)
 
 
-async def _handle_show_expert(name: str) -> list[TextContent]:
-    from hivemind.config import (
-        AGENTS_DIR,
-        count_versions,
-        expert_names,
-        get_expert_dir,
-        get_head_commit,
-        is_private_expert,
-        load_config,
-        load_private_repos,
-        load_repos,
-        load_teams,
+async def _handle_show_agent(name: str) -> list[TextContent]:
+    from hivemind.agents import registry
+    from hivemind.config import AGENTS_DIR, count_versions, get_expert_dir, get_head_commit
+    from hivemind.opencode import agent_filename
+
+    registry.load(refresh=True)
+    agent = registry.get(name)
+    if agent is None:
+        return _text(f"Error: agent '{name}' not found")
+
+    status = "enabled" if agent.enabled else "disabled"
+    catalog_body = agent.body.to_catalog()
+
+    extra: dict[str, Any] = {}
+    if agent.kind == "git_analyzed":
+        expert_dir = get_expert_dir(name)
+        head_commit = get_head_commit(expert_dir)
+        extra = {
+            "head": head_commit,
+            "versions": count_versions(expert_dir),
+        }
+
+    deployed_file = AGENTS_DIR / agent_filename(agent.kind, name)  # type: ignore[arg-type]
+    return _json_text(
+        {
+            "name": name,
+            "kind": agent.kind,
+            "status": status,
+            "description": agent.description,
+            "body": catalog_body,
+            "agent_deployed": deployed_file.exists(),
+            **extra,
+        }
     )
 
-    if name not in expert_names():
-        return _text(f"Error: expert '{name}' not found")
 
-    config = load_config()
-    repos = load_repos()
-    private_repos = load_private_repos()
-    teams = load_teams()
-    is_private = is_private_expert(name)
+async def _handle_enable_agent(name: str) -> list[TextContent]:
+    from hivemind.lifecycle import enable_agent
 
-    expert_dir = get_expert_dir(name)
-    head_commit = get_head_commit(expert_dir)
-    version_count = count_versions(expert_dir)
-
-    repos_dict = private_repos if is_private else repos
-    remote = repos_dict.get(name)
-
-    if name in config.enabled:
-        status = "enabled"
-    elif name in config.disabled:
-        status = "disabled"
-    else:
-        status = "unlisted"
-
-    expert_teams = [t for t, td in teams.items() if name in td.experts]
-    agent_file = AGENTS_DIR / f"expert-{name}.md"
-
-    result = {
-        "name": name,
-        "status": status,
-        "private": is_private,
-        "head": head_commit or None,
-        "versions": version_count,
-        "remote": remote.remote if remote else None,
-        "ref": remote.ref_name if remote and remote.ref_name else None,
-        "teams": expert_teams,
-        "agent_deployed": agent_file.exists(),
-    }
-
-    return _json_text(result)
-
-
-async def _handle_enable_expert(name: str) -> list[TextContent]:
-    from hivemind.config import load_config
-    from hivemind.experts import enable_expert
-
-    config = load_config()
-    result = await enable_expert(name, config=config)
-
+    result = enable_agent(name)
     if not result.success:
         return _text(f"Error: {result.error}")
-
-    msg = f"Expert '{name}' enabled and deployed."
-    if result.already_enabled:
-        msg = f"Expert '{name}' was already enabled. Ensured repo and agent link."
-    return _text(msg)
+    return _text(f"Agent '{name}' enabled and deployed.")
 
 
-async def _handle_disable_expert(name: str) -> list[TextContent]:
-    from hivemind.config import load_config
-    from hivemind.experts import disable_expert
+async def _handle_disable_agent(name: str) -> list[TextContent]:
+    from hivemind.lifecycle import disable_agent
 
-    config = load_config()
-    result = disable_expert(name, config=config)
-
+    result = disable_agent(name)
     if not result.success:
         return _text(f"Error: {result.error}")
-
-    msg = f"Expert '{name}' disabled."
-    if result.already_disabled:
-        msg = f"Expert '{name}' was already disabled."
-    return _text(msg)
+    return _text(f"Agent '{name}' disabled.")
 
 
-async def _handle_add_expert(url: str, ref: str, private: bool) -> list[TextContent]:
-    from hivemind.experts import add_expert
+async def _handle_delete_agent(name: str, purge_memory: bool) -> list[TextContent]:
+    from hivemind.lifecycle import delete_agent
+
+    result = delete_agent(name, purge_memory=purge_memory)
+    if not result.success:
+        return _text(f"Error: {result.error}")
+    suffix = " (memory purged)" if purge_memory else ""
+    return _text(f"Agent '{name}' deleted{suffix}.")
+
+
+async def _handle_refresh_agent(name: str, skip_analysis: bool) -> list[TextContent]:
+    from hivemind.agents import registry
+    from hivemind.agents.git_analyzed import update_git_expert
+    from hivemind.config import AGENTS_DIR
+    from hivemind.deployment import regenerate_librarian
+
+    registry.load(refresh=True)
+    agent = registry.get(name)
+    if agent is None:
+        return _text(f"Error: agent '{name}' not found")
+
+    if agent.kind == "git_analyzed":
+        result = await update_git_expert(name, skip_analysis=skip_analysis)
+        if not result.success:
+            return _text(f"Error: {result.error}")
+        if result.already_up_to_date:
+            return _text(f"Agent '{name}' is already up to date ({result.new_commit[:12]}).")
+        if agent.enabled:
+            agent.deploy(agents_dir=AGENTS_DIR)
+            regenerate_librarian()
+        old_display = result.old_commit[:12] if result.old_commit else "none"
+        return _text(f"Agent '{name}' updated from {old_display} to {result.new_commit[:12]}.")
+
+    return _text(f"Error: refresh not supported for agent kind '{agent.kind}'")
+
+
+# ---------------------------------------------------------------------------
+# Handlers — kind-specific creators
+# ---------------------------------------------------------------------------
+
+
+async def _handle_create_git_expert(url: str, ref: str) -> list[TextContent]:
+    from hivemind.agents.git_analyzed import create_git_expert
 
     name = url.rstrip("/").split("/")[-1].removesuffix(".git")
-
-    result = await add_expert(
-        name,
-        url,
-        ref_name=ref,
-        is_private=private,
-    )
-
+    result = await create_git_expert(name, url, ref_name=ref)
     if not result.success:
         return _text(f"Error: {result.error}")
+    return _text(f"Agent '{name}' added to catalog (unlisted). Call enable_agent to deploy it.")
 
-    return _text(f"Expert '{name}' added and deployed successfully.")
 
+async def _handle_create_team(name: str, description: str, experts: list[str]) -> list[TextContent]:
+    from hivemind.agents.roster_templated import create_team
 
-async def _handle_delete_expert(name: str) -> list[TextContent]:
-    from hivemind.config import load_config
-    from hivemind.experts import delete_expert
-
-    config = load_config()
-    result = delete_expert(name, config=config)
-
+    result = await create_team(name, description, experts)
     if not result.success:
         return _text(f"Error: {result.error}")
+    return _text(f"Team '{name}' added to catalog with experts: {', '.join(experts)}. Call enable_agent to deploy it.")
 
-    return _text(f"Expert '{name}' deleted.")
 
+async def _handle_add_expert_to_team(team: str, expert: str) -> list[TextContent]:
+    from hivemind.agents.roster_templated import add_expert_to_team
 
-async def _handle_update_expert(name: str, skip_analysis: bool) -> list[TextContent]:
-    from hivemind.experts import update_expert
-
-    result = await update_expert(name, skip_analysis=skip_analysis)
-
+    result = await add_expert_to_team(team, expert)
     if not result.success:
         return _text(f"Error: {result.error}")
+    return _text(f"Added '{expert}' to team '{team}'.")
 
-    if result.already_up_to_date:
-        return _text(f"Expert '{name}' is already up to date ({result.new_commit[:12]}).")
 
-    old_display = result.old_commit[:12] if result.old_commit else "none"
-    return _text(f"Expert '{name}' updated from {old_display} to {result.new_commit[:12]}.")
+async def _handle_remove_expert_from_team(team: str, expert: str) -> list[TextContent]:
+    from hivemind.agents.roster_templated import remove_expert_from_team
+
+    result = remove_expert_from_team(team, expert)
+    if not result.success:
+        return _text(f"Error: {result.error}")
+    return _text(f"Removed '{expert}' from team '{team}'.")
+
+
+# ---------------------------------------------------------------------------
+# Handlers — knowledge
+# ---------------------------------------------------------------------------
 
 
 async def _handle_get_knowledge(expert: str, doc: str) -> list[TextContent]:
-    from hivemind.config import expert_names, get_expert_dir
-
-    if expert not in expert_names():
-        return _text(f"Error: expert '{expert}' not found")
+    from hivemind.config import get_expert_dir
 
     expert_dir = get_expert_dir(expert)
-    doc_path = expert_dir / "HEAD" / f"{doc}.md"
+    if not expert_dir.exists():
+        return _text(f"Error: expert '{expert}' not found")
 
+    doc_path = expert_dir / "HEAD" / f"{doc}.md"
     if not doc_path.exists():
         available = [f.stem for f in (expert_dir / "HEAD").glob("*.md") if f.exists()]
         return _text(f"Error: document '{doc}' not found for expert '{expert}'. Available: {', '.join(available)}")
 
-    content = doc_path.read_text(encoding="utf-8")
-    return _text(content)
+    return _text(doc_path.read_text(encoding="utf-8"))
 
 
 async def _handle_search_knowledge(query: str) -> list[TextContent]:
-    from hivemind.config import expert_names, get_expert_dir, load_config
+    from hivemind.agents import registry
+    from hivemind.config import get_expert_dir
 
-    config = load_config()
+    registry.load(refresh=True)
     query_lower = query.lower()
     results: list[dict[str, str | int]] = []
 
-    for name in expert_names():
-        if name not in config.enabled:
+    for agent in registry.enabled():
+        if agent.kind != "git_analyzed":
             continue
-
-        expert_dir = get_expert_dir(name)
+        expert_dir = get_expert_dir(agent.name)
         head_dir = expert_dir / "HEAD"
         if not head_dir.exists():
             continue
@@ -445,7 +434,7 @@ async def _handle_search_knowledge(query: str) -> list[TextContent]:
                 if query_lower in line.lower():
                     results.append(
                         {
-                            "expert": name,
+                            "expert": agent.name,
                             "file": md_file.name,
                             "line": i,
                             "text": line.strip()[:200],
@@ -454,119 +443,22 @@ async def _handle_search_knowledge(query: str) -> list[TextContent]:
 
     if not results:
         return _text(f"No matches found for '{query}' across enabled expert knowledge docs.")
-
-    return _json_text(results[:50])  # Cap at 50 results
-
-
-async def _handle_list_teams() -> list[TextContent]:
-    from hivemind.config import load_teams
-
-    teams = load_teams()
-
-    if not teams:
-        return _text("No teams configured. Use the create_team tool to create one.")
-
-    results = []
-    for name, data in sorted(teams.items()):
-        results.append(
-            {
-                "name": name,
-                "description": data.description,
-                "experts": data.experts,
-                "size": len(data.experts),
-            }
-        )
-
-    return _json_text(results)
+    return _json_text(results[:50])
 
 
-async def _handle_show_team(name: str) -> list[TextContent]:
-    from hivemind.config import TEAMS_DIR, load_teams
-
-    teams = load_teams()
-    if name not in teams:
-        return _text(f"Error: team '{name}' not found")
-
-    team = teams[name]
-    team_dir = TEAMS_DIR / name
-
-    expert_notes = {}
-    for expert in team.experts:
-        notes_path = team_dir / f"expert-{expert}" / "notes.md"
-        expert_notes[expert] = notes_path.exists()
-
-    result = {
-        "name": name,
-        "description": team.description,
-        "experts": team.experts,
-        "lead_exists": (team_dir / "lead.md").exists(),
-        "expert_notes": expert_notes,
-    }
-
-    return _json_text(result)
-
-
-async def _handle_create_team(name: str, description: str, experts: list[str]) -> list[TextContent]:
-    from hivemind.config import load_config
-    from hivemind.teams import create_team
-
-    config = load_config()
-    result = await create_team(name, description, experts, config=config)
-
-    if not result.success:
-        return _text(f"Error: {result.error}")
-
-    return _text(f"Team '{name}' created with experts: {', '.join(experts)}.")
-
-
-async def _handle_delete_team(name: str) -> list[TextContent]:
-    from hivemind.config import load_config
-    from hivemind.teams import delete_team
-
-    config = load_config()
-    result = delete_team(name, config=config)
-
-    if not result.success:
-        return _text(f"Error: {result.error}")
-
-    return _text(f"Team '{name}' deleted.")
-
-
-async def _handle_add_expert_to_team(team: str, expert: str) -> list[TextContent]:
-    from hivemind.config import load_config
-    from hivemind.teams import add_expert_to_team
-
-    config = load_config()
-    result = await add_expert_to_team(team, expert, config=config)
-
-    if not result.success:
-        return _text(f"Error: {result.error}")
-
-    return _text(f"Added '{expert}' to team '{team}'.")
-
-
-async def _handle_remove_expert_from_team(team: str, expert: str) -> list[TextContent]:
-    from hivemind.config import load_config
-    from hivemind.teams import remove_expert_from_team
-
-    config = load_config()
-    result = remove_expert_from_team(team, expert, config=config)
-
-    if not result.success:
-        return _text(f"Error: {result.error}")
-
-    return _text(f"Removed '{expert}' from team '{team}'.")
+# ---------------------------------------------------------------------------
+# Handlers — system
+# ---------------------------------------------------------------------------
 
 
 async def _handle_status() -> list[TextContent]:
-    from hivemind.config import get_active_provider, load_config, load_teams
+    from hivemind import opencode
+    from hivemind.agents import registry
     from hivemind.server import is_server_running, load_server_state
 
-    provider = get_active_provider()
-    config = load_config()
-    teams = load_teams()
+    registry.load(refresh=True)
 
-    server_info = None
+    server_info: dict[str, Any] = {"running": False}
     if is_server_running():
         state = load_server_state()
         if state:
@@ -578,102 +470,99 @@ async def _handle_status() -> list[TextContent]:
                 "started_at": state.started_at.isoformat(),
             }
 
-    result = {
-        "engine": provider.engine,
-        "model": provider.model,
-        "server": server_info or {"running": False},
-        "experts": {
-            "enabled": len(config.enabled),
-            "disabled": len(config.disabled),
-            "enabled_names": config.enabled,
-            "disabled_names": config.disabled,
-        },
-        "teams": {name: {"description": td.description, "experts": td.experts} for name, td in teams.items()},
-    }
+    experts = list(registry.by_kind("git_analyzed"))
+    teams = list(registry.by_kind("roster_templated"))
 
-    return _json_text(result)
+    cfg = opencode._cfg()
+    return _json_text(
+        {
+            "engine": cfg.engine,
+            "model": cfg.model,
+            "server": server_info,
+            "experts": {
+                "enabled": sum(1 for a in experts if a.enabled),
+                "disabled": sum(1 for a in experts if not a.enabled),
+                "names": sorted(a.name for a in experts),
+            },
+            "teams": {
+                a.name: {
+                    "enabled": a.enabled,
+                    "description": a.body.to_catalog().get("description", ""),
+                    "experts": a.body.to_catalog().get("experts", []),
+                }
+                for a in teams
+            },
+        }
+    )
 
 
 async def _handle_redeploy() -> list[TextContent]:
-    from hivemind.config import load_config
-    from hivemind.redeploy import redeploy_all_agents
+    from hivemind.lifecycle import redeploy_all_agents
 
-    config = load_config()
-    result = redeploy_all_agents(config=config)
-
+    result = redeploy_all_agents()
     if not result.success:
         return _text(f"Error: {result.error}")
-
-    deployed_count = len(config.enabled) - len(result.failed)
-    teams_count = len(result.teams_deployed)
-    msg = f"Redeployed {deployed_count} expert(s) and {teams_count} team(s)."
-    if result.failed:
-        msg += f" Failed: {', '.join(result.failed)}."
+    msg = f"Redeployed {len(result.experts_deployed)} expert(s) and {len(result.teams_deployed)} team(s)."
+    if result.failed or result.teams_failed:
+        parts = []
+        if result.failed:
+            parts.append(f"experts: {', '.join(result.failed)}")
+        if result.teams_failed:
+            parts.append(f"teams: {', '.join(result.teams_failed)}")
+        msg += f" Failed — {'; '.join(parts)}."
     return _text(msg)
 
 
-# --- Mutation tools that trigger hot-reload ---
-
-_MUTATION_TOOLS = {
-    "enable_expert",
-    "disable_expert",
-    "add_expert",
-    "delete_expert",
-    "update_expert",
-    "create_team",
-    "delete_team",
-    "add_expert_to_team",
-    "remove_expert_from_team",
-    "redeploy",
-}
+# ---------------------------------------------------------------------------
+# Dispatcher
+# ---------------------------------------------------------------------------
 
 
-# --- Dispatcher ---
-
-TOOL_HANDLERS: dict[str, Any] = {
-    "list_experts": _handle_list_experts,
-    "show_expert": _handle_show_expert,
-    "enable_expert": _handle_enable_expert,
-    "disable_expert": _handle_disable_expert,
-    "add_expert": _handle_add_expert,
-    "delete_expert": _handle_delete_expert,
-    "update_expert": _handle_update_expert,
-    "get_knowledge": _handle_get_knowledge,
-    "search_knowledge": _handle_search_knowledge,
-    "list_teams": _handle_list_teams,
-    "show_team": _handle_show_team,
+TOOL_HANDLERS: dict[str, ToolHandler] = {
+    "list_agents": _handle_list_agents,
+    "show_agent": _handle_show_agent,
+    "enable_agent": _handle_enable_agent,
+    "disable_agent": _handle_disable_agent,
+    "delete_agent": _handle_delete_agent,
+    "refresh_agent": _handle_refresh_agent,
+    "create_git_expert": _handle_create_git_expert,
     "create_team": _handle_create_team,
-    "delete_team": _handle_delete_team,
     "add_expert_to_team": _handle_add_expert_to_team,
     "remove_expert_from_team": _handle_remove_expert_from_team,
+    "get_knowledge": _handle_get_knowledge,
+    "search_knowledge": _handle_search_knowledge,
     "status": _handle_status,
     "redeploy": _handle_redeploy,
 }
 
 
 def _extract_args(name: str, args: dict[str, Any]) -> tuple[Any, ...]:
-    """Extract positional arguments for a tool handler from the raw args dict."""
-    if name in ("list_experts", "list_teams", "status", "redeploy"):
+    if name in ("status", "redeploy"):
         return ()
-    if name in ("show_expert", "enable_expert", "disable_expert", "delete_expert", "show_team", "delete_team"):
+    if name == "list_agents":
+        return (args.get("kind"),)
+    if name in ("show_agent", "enable_agent", "disable_agent"):
         return (args["name"],)
-    if name == "add_expert":
-        return (args["url"], args.get("ref", ""), args.get("private", False))
-    if name == "update_expert":
-        return (args["name"], args.get("skip_analysis", False))
-    if name == "get_knowledge":
-        return (args["expert"], args.get("doc", "summary"))
-    if name == "search_knowledge":
-        return (args["query"],)
+    if name == "delete_agent":
+        return (args["name"], bool(args.get("purge_memory", False)))
+    if name == "refresh_agent":
+        return (args["name"], bool(args.get("skip_analysis", False)))
+    if name == "create_git_expert":
+        return (args["url"], args.get("ref", ""))
     if name == "create_team":
         return (args["name"], args["description"], args["experts"])
     if name in ("add_expert_to_team", "remove_expert_from_team"):
         return (args["team"], args["expert"])
+    if name == "get_knowledge":
+        return (args["expert"], args.get("doc", "summary"))
+    if name == "search_knowledge":
+        return (args["query"],)
     return ()
 
 
 def register_tools(server: Server) -> None:
-    """Register all hivemind tools on the MCP server."""
+    """Register tool endpoints and wire up post-mutation listeners."""
+    from hivemind.hooks import register_post_mutation
 
     @server.list_tools()
     async def list_tools() -> list[Tool]:
@@ -684,46 +573,49 @@ def register_tools(server: Server) -> None:
         handler = TOOL_HANDLERS.get(name)
         if handler is None:
             return _text(f"Error: unknown tool '{name}'")
-
         args = arguments or {}
-
-        result: list[TextContent]
         try:
             extracted = _extract_args(name, args)
-            result = await handler(*extracted)
+            return await handler(*extracted)
         except Exception as e:
             log.exception("Tool '%s' failed", name)
-            result = _text(f"Error executing {name}: {e}")
+            return _text(f"Error executing {name}: {e}")
 
-        # Trigger hot-reload after mutation tools
-        if name in _MUTATION_TOOLS:
-            await _post_mutation_reload(server)
+    # Post-mutation listeners — deferred reload (detached) + tools-changed (in-proc)
+    register_post_mutation(_schedule_deferred_reload)
 
-        return result
+    def _schedule_tools_changed() -> None:
+        task = asyncio.create_task(_safe_notify_tools_changed(server))
+        _background_tasks.add(task)
+        task.add_done_callback(_background_tasks.discard)
+
+    register_post_mutation(_schedule_tools_changed)
 
 
-async def _post_mutation_reload(server: Server) -> None:
-    """Send ToolListChangedNotification and trigger instance reload after mutations."""
-    from hivemind.config import get_active_provider
+def _schedule_deferred_reload() -> None:
+    """POST ``/global/dispose`` synchronously.
+
+    This almost always aborts the in-flight MCP tool call. Opencode's
+    dispose finalizer (``mcp/index.ts:527-548``) SIGTERMs the hivemind
+    MCP subprocess and closes its stdio as part of invalidating every
+    cached ``InstanceState``. There is no finer-grained invalidation
+    primitive — that's the only way to get opencode to re-scan
+    ``agents/*.md``.
+
+    The mutation has already landed on disk by the time this runs, so
+    after the user resumes with ``continue`` the new state is visible.
+    ``HIVEMIND.md`` documents the expected behaviour so main warns the
+    user in advance and verifies with a read-only call after resumption.
+    """
+    from hivemind import opencode
+
+    opencode.notify_instance_reload()
+
+
+async def _safe_notify_tools_changed(server: Server) -> None:
     from hivemind.mcp.notify import notify_tools_changed
 
-    await notify_tools_changed(server)
-
-    # Fire the opencode dispose asynchronously. /global/dispose invalidates every
-    # cached InstanceState including the one the TUI's current MCP tool call is
-    # running in; running it synchronously here cancels the in-flight tool before
-    # the result reaches opencode. Deferring lets the tool_result propagate first.
-    provider = get_active_provider()
-    task = asyncio.create_task(_deferred_reload(provider))
-    _background_tasks.add(task)
-    task.add_done_callback(_background_tasks.discard)
-
-
-async def _deferred_reload(provider: Any) -> None:
-    from hivemind.mcp.notify import notify_instance_reload
-
     try:
-        await asyncio.sleep(0.5)
-        await asyncio.to_thread(notify_instance_reload, provider)
+        await notify_tools_changed(server)
     except Exception:
-        log.exception("deferred opencode reload failed")
+        log.exception("notify_tools_changed failed")
