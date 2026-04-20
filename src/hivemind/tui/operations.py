@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 from hivemind.config import load_config
 from hivemind.experts import delete_expert, disable_expert, enable_expert
 from hivemind.models import CancellationToken, ProgressInfo, UpdatePhase
+from hivemind.mutations import notify_opencode_reload
 from hivemind.tui.models import OperationStatus
 
 if TYPE_CHECKING:
@@ -72,6 +73,7 @@ async def update_expert_async(
                     f"{expert_name}: updated from {old_display} to {result.new_commit[:12]}",
                     severity="information",
                 )
+                notify_opencode_reload()
         else:
             screen.notify(
                 f"{expert_name}: {result.error}",
@@ -99,6 +101,7 @@ async def enable_expert_async_op(pane: ExpertsPane, expert_name: str) -> None:
         config = load_config()
         result = await enable_expert(expert_name, config)
         if result.success:
+            notify_opencode_reload()
             if result.already_enabled:
                 pane.notify(f"{expert_name}: already enabled", severity="information")
             else:
@@ -121,6 +124,7 @@ async def disable_expert_async_op(pane: ExpertsPane, expert_name: str) -> None:
         config = load_config()
         result = await asyncio.to_thread(disable_expert, expert_name, config)
         if result.success:
+            notify_opencode_reload()
             if result.already_disabled:
                 pane.notify(f"{expert_name}: already disabled", severity="information")
             else:
@@ -143,6 +147,7 @@ async def delete_expert_async_op(pane: ExpertsPane, expert_name: str) -> None:
         config = load_config()
         result = await asyncio.to_thread(delete_expert, expert_name, config)
         if result.success:
+            notify_opencode_reload()
             pane.notify(f"Deleted: {expert_name}", severity="information")
         else:
             pane.notify(f"Failed to delete {expert_name}: {result.error}", severity="error")
@@ -163,6 +168,7 @@ async def add_expert_async(pane: ExpertsPane, url: str) -> None:
     try:
         result = await add_expert(name, url)
         if result.success:
+            notify_opencode_reload()
             pane.notify(f"Expert '{name}' added successfully", severity="information")
         else:
             pane.notify(f"Failed to add expert: {result.error}", severity="error")
@@ -210,6 +216,7 @@ async def switch_version_async_tui(
                     severity="information",
                 )
             else:
+                notify_opencode_reload()
                 screen.notify(f"Switched to {target_commit[:12]}", severity="information")
                 # Refresh the version detail screen to show updated active status
                 if hasattr(screen, "_load_versions"):

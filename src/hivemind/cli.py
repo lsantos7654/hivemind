@@ -60,6 +60,7 @@ from hivemind.experts import (
 )
 from hivemind.git import clone_repo
 from hivemind.models import ProgressInfo, RepoEntry, UpdatePhase
+from hivemind.mutations import notify_opencode_reload
 from hivemind.redeploy import redeploy_all_agents
 from hivemind.teams import (
     add_expert_to_team as core_add_expert_to_team,
@@ -519,8 +520,8 @@ def init() -> None:
                     shutil.rmtree(link)
                 console.print(f"  [error]✗[/error] Removed stale expert: {expert_name}")
 
-    if provider.notify_instance_reload():
-        console.print("  [success]✓[/success] notified running server to reload config")
+    notify_opencode_reload()
+    console.print("  [success]✓[/success] notified running server to reload config")
 
     console.print("\n[bold success]Hivemind initialized![/bold success]")
 
@@ -719,6 +720,8 @@ def add(
         console.print(f"[error]Error: {escape(str(result.error))}[/error]")
         raise typer.Exit(1)
 
+    notify_opencode_reload()
+
     console.print()
     console.print(
         Panel(
@@ -742,6 +745,8 @@ def enable(
         console.print(f"[error]Error: {escape(str(result.error))}[/error]")
         raise typer.Exit(1)
 
+    notify_opencode_reload()
+
     if result.already_enabled:
         console.print(f"[success]✓[/success] {name}: already enabled, ensured repo and agent link")
     else:
@@ -761,6 +766,7 @@ def disable(
         raise typer.Exit(1)
 
     _undeploy_agent_cli(name)
+    notify_opencode_reload()
 
     if result.already_disabled:
         console.print(f"[warning]✓[/warning] {name}: already disabled, ensured agent link removed")
@@ -787,6 +793,7 @@ def delete(
         console.print(f"[error]Error: {escape(str(result.error))}[/error]")
         raise typer.Exit(1)
 
+    notify_opencode_reload()
     console.print(f"[error]✗[/error] Deleted: {name}")
 
 
@@ -851,6 +858,7 @@ def update(
         old_display = result.old_commit[:12] if result.old_commit else "none"
         console.print(f"  [success]✓[/success] Updated from {old_display} to {result.new_commit[:12]}")
         _update_librarian_cli()
+        notify_opencode_reload()
         console.print("\n[bold success]Update complete.[/bold success]")
 
 
@@ -943,6 +951,7 @@ def team_create(
         console.print(f"[error]Error: {escape(str(result.error))}[/error]")
         raise typer.Exit(1)
 
+    notify_opencode_reload()
     console.print(f"  [success]✓[/success] Team lead deployed: team-lead-{name}")
     console.print("  [success]✓[/success] Librarian updated")
     console.print(f"\n[bold success]Team '{name}' created![/bold success]")
@@ -995,6 +1004,7 @@ def team_add_expert(
         if not result.success:
             console.print(f"[error]Error: {escape(str(result.error))}[/error]")
             raise typer.Exit(1)
+        notify_opencode_reload()
         console.print(f"[success]✓[/success] Added {experts[0]} to team {team}")
         return
 
@@ -1009,6 +1019,8 @@ def team_add_expert(
     if not result.success:
         console.print(f"[error]Error: {escape(str(result.error))}[/error]")
         raise typer.Exit(1)
+
+    notify_opencode_reload()
 
     for name in result.added:
         console.print(f"[success]✓[/success] Added {name} to team {team}")
@@ -1029,6 +1041,7 @@ def team_remove_expert(
     if not result.success:
         console.print(f"[error]Error: {escape(str(result.error))}[/error]")
         raise typer.Exit(1)
+    notify_opencode_reload()
     console.print(f"[success]✓[/success] Removed {expert} from team {team}")
 
 
@@ -1046,6 +1059,7 @@ def team_delete(
     if not result.success:
         console.print(f"[error]Error: {escape(str(result.error))}[/error]")
         raise typer.Exit(1)
+    notify_opencode_reload()
     console.print(f"[success]✓[/success] Team '{name}' deleted")
 
 
@@ -1066,6 +1080,8 @@ def redeploy() -> None:
     if not result.success:
         console.print(f"[error]Error: {escape(str(result.error))}[/error]")
         raise typer.Exit(1)
+
+    notify_opencode_reload()
 
     deployed = [n for n in config.enabled if n not in result.failed]
     failed = result.failed
