@@ -72,6 +72,14 @@ hivemind                      # Launch interactive TUI
 
 ## How It Works
 
+Hivemind is a sidecar to OpenCode — a separately-owned process that deploys
+agents, plugins, and config into OpenCode's filesystem and talks to its HTTP
+API, without modifying OpenCode core. The codebase is organized into four
+layers: domain (L1), bridge (L2), in-process plugins (L3), and OpenCode
+itself (L4). See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full
+layer diagram, responsibilities, and guidance on where a new capability
+should live.
+
 ### Expert Structure
 
 Each expert is a versioned directory with AI-generated knowledge docs:

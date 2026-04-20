@@ -1,20 +1,13 @@
-// Hivemind TUI plugin for OpenCode.
-// Renders the HIVEMIND ASCII logo on the home screen and a connection-state
-// indicator (standalone / hivemind / remote) on both the home screen and the
-// persistent session sidebar footer.
-// Installed to ~/.config/opencode/plugins/ by `hivemind init`.
+// Hivemind connection-state indicator for the OpenCode TUI.
+// Detects whether the TUI was launched bare (`opencode`), attached to the
+// hivemind-managed server (`opencode attach http://127.0.0.1:4096`), or
+// attached to some other remote server, and renders a bullet + label in the
+// home-screen footer and the persistent session sidebar footer.
+// Installed to ~/.config/opencode/tui-plugins/ by `hivemind init`.
 import { createElement, insert, spread } from "@opentui/solid"
 import { existsSync, readFileSync } from "node:fs"
 import { homedir } from "node:os"
 import { join } from "node:path"
-
-const LOGO_LINES = [
-  "    __  _______    __________  ________   ______",
-  '   / / / /  _/ |  / / ____/  |/  /  _/ | / / __ \\',
-  "  / /_/ // / | | / / __/ / /|_/ // //  |/ / / / /",
-  " / __  // /  | |/ / /___/ /  / // // /|  / /_/ /",
-  "/_/ /_/___/  |___/_____/_/  /_/___/_/ |_/_____/",
-]
 
 const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "::1", "0.0.0.0"])
 
@@ -92,37 +85,20 @@ function buildIndicator(theme, state) {
 }
 
 export default {
-  id: "hivemind-branding",
+  id: "hivemind-connection",
   tui: async (api) => {
     // Connection state is fixed for the lifetime of the TUI (attach vs standalone
-    // is determined at launch), so we compute it once at plugin init. We detect
-    // by inspecting process.argv for an attach subcommand/flag — the SDK client
-    // on api.client does not expose its baseUrl publicly.
+    // is determined at launch). Detected from process.argv because the SDK
+    // client on api.client does not publicly expose its baseUrl.
     const state = detectConnection(process.argv)
 
     const unregister = api.slots.register({
       slots: {
-        home_logo() {
-          const theme = api.theme.current
-          const container = createElement("box")
-          spread(container, { gap: 1 }, true)
-
-          for (const line of LOGO_LINES) {
-            const row = createElement("box")
-            spread(row, { flexDirection: "row" }, true)
-            const text = createElement("text")
-            spread(text, { fg: theme.primary, attributes: 1, selectable: false }, true)
-            insert(text, line)
-            insert(row, text)
-            insert(container, row)
-          }
-
-          insert(container, buildIndicator(theme, state))
-          return container
+        home_footer() {
+          return buildIndicator(api.theme.current, state)
         },
         sidebar_footer() {
-          const theme = api.theme.current
-          return buildIndicator(theme, state)
+          return buildIndicator(api.theme.current, state)
         },
       },
     })
