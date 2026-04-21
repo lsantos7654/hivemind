@@ -1,0 +1,5 @@
+package(default_visibility = ["//visibility:public"])
+
+# Export the BUILD template that opencode_install symlinks into the populated
+# @opencode_src// repo as its own BUILD.bazel.
+exports_files(["BUILD.bazel.opencode"])

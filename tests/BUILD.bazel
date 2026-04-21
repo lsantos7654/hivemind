@@ -1,0 +1,25 @@
+load("@rules_python//python:defs.bzl", "py_test")
+
+package(default_visibility = ["//visibility:public"])
+
+py_test(
+    name = "test_core",
+    srcs = ["test_core.py", "conftest.py"],
+    main = "test_core.py",
+    imports = [".."],
+    deps = [
+        "//src/hivemind:lib",
+        "@pypi_dev//pytest",
+    ],
+)
+
+py_test(
+    name = "test_provider",
+    srcs = ["test_provider.py", "conftest.py"],
+    main = "test_provider.py",
+    imports = [".."],
+    deps = [
+        "//src/hivemind:lib",
+        "@pypi_dev//pytest",
+    ],
+)

@@ -1,0 +1,16 @@
+# Symlinks into the hivemind cache — contain BUILD files for many other
+# Bazel projects (test fixtures from rules_python, etc) that aren't part
+# of this build.
+repos
+external_docs
+
+# Hivemind catalog directories — full of expert markdown, not Bazel.
+experts
+agents
+docs
+.claude
+opencode
+private-experts
+
+# Python virtualenv
+.venv

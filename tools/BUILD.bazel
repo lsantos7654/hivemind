@@ -1,0 +1,28 @@
+load("@bazel_skylib//rules:build_test.bzl", "build_test")
+
+package(default_visibility = ["//visibility:public"])
+
+# Smoke test: runs `bun --version`. Confirms the per-platform select() resolves
+# and the fetched bun binary is executable.
+sh_test(
+    name = "bun_smoke",
+    srcs = ["bun_smoke.sh"],
+    data = ["//third_party:bun"],
+    args = ["$(rootpath //third_party:bun)"],
+)
+
+# Smoke test: runs `hivemind-engine --version`. Confirms the bun-compiled
+# opencode binary is executable and reports the pinned version.
+sh_test(
+    name = "engine_smoke",
+    srcs = ["engine_smoke.sh"],
+    data = ["@opencode_src//:hivemind_engine"],
+    args = ["$(rootpath @opencode_src//:hivemind_engine)"],
+)
+
+# Build-only check: makes sure the engine target compiles cleanly (catches
+# patch drift even when no test depends on the binary itself).
+build_test(
+    name = "engine_builds",
+    targets = ["@opencode_src//:hivemind_engine"],
+)

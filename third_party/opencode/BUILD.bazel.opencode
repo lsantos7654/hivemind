@@ -1,0 +1,18 @@
+"""BUILD file for the populated @opencode_src// repo.
+
+Symlinked in by `opencode_install` after the source has been fetched,
+patched, `bun install`'d, and `bun build --compile`'d. The produced
+binary is exposed via a stable `:hivemind_engine` filegroup that downstream
+targets (`//:hivemind` py_binary `data`) consume.
+"""
+
+package(default_visibility = ["//visibility:public"])
+
+# `hivemind-engine` is symlinked at the repo root by opencode_install,
+# pointing at packages/opencode/dist/<platform>/bin/opencode.
+exports_files(["hivemind-engine"])
+
+filegroup(
+    name = "hivemind_engine",
+    srcs = ["hivemind-engine"],
+)

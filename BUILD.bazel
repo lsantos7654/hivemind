@@ -1,0 +1,35 @@
+load("@rules_uv//uv:pip.bzl", "pip_compile")
+
+# ---------------------------------------------------------------------------
+# pyproject.toml → requirements_lock.txt (rules_uv)
+# ---------------------------------------------------------------------------
+
+pip_compile(
+    name = "requirements_lock",
+    requirements_in = "pyproject.toml",
+    requirements_txt = "requirements_lock.txt",
+)
+
+pip_compile(
+    name = "requirements_dev_lock",
+    requirements_in = "requirements_dev.in",
+    requirements_txt = "requirements_dev_lock.txt",
+)
+
+# ---------------------------------------------------------------------------
+# Top-level CLI binary (alias to the actual py_binary defined alongside __main__.py)
+# ---------------------------------------------------------------------------
+
+alias(
+    name = "hivemind",
+    actual = "//src/hivemind:hivemind",
+    visibility = ["//visibility:public"],
+)
+
+# Stable alias to the bun-compiled engine binary. Used by the Makefile's
+# `cquery --output=files //:engine` to locate the artifact for `make install`.
+alias(
+    name = "engine",
+    actual = "@opencode_src//:hivemind_engine",
+    visibility = ["//visibility:public"],
+)

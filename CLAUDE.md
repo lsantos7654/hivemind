@@ -37,7 +37,7 @@ files in sync with that catalog.
 - **`opencode.py`** — OpenCode integration. Module-level functions (not a
   class) for frontmatter formatting, agent-file deployment, engine
   validation, analysis-command building, server lifecycle, and
-  `notify_instance_reload()` (POSTs `/global/dispose`). Caches
+  `notify_instance_reload()` (POSTs `/global/reload-agents`). Caches
   `HivemindConfig` and the validation result per process. OpenCode is the
   only backend; the old provider abstraction is gone.
 - **`config.py`** — Path constants + JSON I/O primitives (`load_config`,
@@ -52,9 +52,9 @@ files in sync with that catalog.
 - **`hooks.py`** — post-mutation listener registry.
   `register_post_mutation(listener)` + `fire_post_mutation()` /
   `afire_post_mutation()`. Per-ingress listeners: CLI does a sync
-  `/global/dispose` POST, TUI does reload + pane refresh, MCP does a sync
-  POST (accepts the session interrupt — see "MCP mutation semantics"
-  below).
+  `/global/reload-agents` POST, TUI does reload + pane refresh, MCP
+  does a sync POST. Reloads are non-destructive — they don't tear down
+  the in-flight session; see "MCP mutation semantics" below.
 - **`runtime.py`** — `RuntimeContext` (`attached` / `detached` / `test`)
   detected once at ingress startup via `is_server_running()`. Decouples
   opencode from the server module to kill the old circular import.
@@ -156,8 +156,9 @@ opencode functions are module-level and importable directly.
    `opencode.write_agent_file()` → `body.on_deploy()` (ensures repo is
    cloned + symlinks into opencode's `experts/` dir) →
    `regenerate_librarian()` → `fire_post_mutation()` → post-mutation
-   listeners POST `/global/dispose` to invalidate opencode's agent
-   cache.
+   listeners POST `/global/reload-agents` to refresh opencode's agent
+   cache without disposing the in-flight session (custom endpoint
+   added by `//third_party/patches/0004-add-reload-agents-endpoint.patch`).
 3. Librarian aggregates every `registry.enabled()` agent into
    `agents/librarian.md` via each body's `.librarian_entry()`.
 4. `HIVEMIND.md` is generated once at `bootstrap_workspace()` from
@@ -172,15 +173,19 @@ opencode functions are module-level and importable directly.
 
 ## MCP mutation semantics
 
-Mutations via MCP almost always end with `Tool execution aborted`. This
-is expected, not a failure. Opencode's `/global/dispose` finalizer
-(`mcp/index.ts:527-548`) SIGTERMs the hivemind MCP subprocess as part
-of invalidating every `InstanceState`. The mutation lands on disk
-*before* the abort — after the user types `continue` to resume, the
-new state is visible. `HIVEMIND.md` instructs main to warn the user
-before any mutation and verify with a read-only call after resumption.
-Do not try to engineer around this; the race is inherent to opencode's
-API.
+Mutations via MCP return cleanly without interrupting the session. The
+hivemind engine is a patched fork of opencode that exposes
+`POST /global/reload-agents` (added by
+`//third_party/patches/0004-add-reload-agents-endpoint.patch`) which
+re-reads `agents/*.md` for every active instance via
+`Config.invalidateState()` + `Agent.reload()` — neither calls
+`Instance.dispose()`, so MCP subprocesses survive.
+
+History note: until this patch landed, the only invalidation primitive
+opencode upstream exposed was `POST /global/dispose`, which tore down
+every cached `InstanceState` finalizer including the SIGTERM-the-MCP
+finalizer at `mcp/index.ts:527-548`. That killed the in-flight tool
+call and required the user to type `continue` to resume.
 
 ## Code Conventions
 
@@ -201,8 +206,8 @@ API.
   update callers directly.
 - Only editable installs supported (`uv tool install -e .`).
 - When editing experts, edit `experts/<name>/HEAD/agent.md` then
-  `hivemind redeploy` (MCP mutations abort; prefer CLI for manual
-  edits).
+  `hivemind redeploy`. (MCP mutations are non-destructive now, but the
+  CLI is still convenient for manual edits.)
 - Templates in `templates.py` affect NEW agents only; existing agents
   deploy from their `lead.md` or `agent.md` files.
 

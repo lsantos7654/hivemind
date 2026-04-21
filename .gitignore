@@ -29,5 +29,12 @@ __pycache__/
 dist/
 build/
 
+# Bazel
+bazel-*
+MODULE.bazel.lock
+
+# Bundled engine binary (produced by `make install`)
+src/hivemind/_bundled/hivemind-engine
+
 # OS files
 .DS_Store

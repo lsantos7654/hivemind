@@ -1,0 +1,5 @@
+package(default_visibility = ["//visibility:public"])
+
+# Export every .patch in this directory so opencode_install can consume them
+# via Label references from the module extension.
+exports_files(glob(["*.patch"]))

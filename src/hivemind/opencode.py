@@ -12,7 +12,7 @@ from __future__ import annotations
 import contextlib
 import json
 import logging
-import shlex
+import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -27,7 +27,6 @@ from hivemind.constants import (
     ENGINE_VALIDATION_TIMEOUT,
     EXPERTS_DIR_PLACEHOLDER,
     OPENCODE_CONFIG_DIR,
-    OPENCODE_PLUGINS_DIR,
     TEAMS_DIR_PLACEHOLDER,
 )
 from hivemind.models import HivemindConfig, InitResult, OperationResult, ServerConfig
@@ -59,8 +58,6 @@ def _cfg() -> HivemindConfig:
 
     cfg = load_hivemind()
     errors: list[str] = []
-    if not cfg.engine:
-        errors.append("engine must be set")
     if not cfg.home_dir:
         errors.append("home_dir must be set")
     if not cfg.model:
@@ -71,6 +68,30 @@ def _cfg() -> HivemindConfig:
 
     _config_cache = cfg
     return _config_cache
+
+
+def _engine_path() -> str:
+    """Resolve the bun-compiled hivemind-engine binary.
+
+    Resolution order:
+      1. ``$HIVEMIND_ENGINE`` — set by ``bazel run //:hivemind`` via the
+         ``env={"HIVEMIND_ENGINE": "$(rootpath ...)"}`` on the py_binary.
+      2. The bundled binary at ``src/hivemind/_bundled/hivemind-engine``,
+         placed there by ``make install`` (which builds via Bazel and
+         copies the artifact into the package).
+
+    No fallback to a system ``opencode``. The project is Bazel-native;
+    if the bundled binary isn't present, fail fast and ask the user to
+    run ``make install``.
+    """
+    env = os.environ.get("HIVEMIND_ENGINE")
+    if env:
+        return env
+    bundled = Path(__file__).parent / "_bundled" / "hivemind-engine"
+    if bundled.exists():
+        return str(bundled)
+    msg = "hivemind-engine binary not found. Run `make install` to build it via Bazel and bundle it into the package."
+    raise RuntimeError(msg)
 
 
 def invalidate_config_cache() -> None:
@@ -338,29 +359,22 @@ def undeploy_backing_dir(name: str) -> None:
 
 
 def validate_engine() -> OperationResult:
-    """Validate that the analysis engine binary and configured model are available.
+    """Validate that the bundled engine binary and configured model are available.
 
-    Result is cached per-process — the ``opencode models`` subprocess call is
-    ~800 ms and the answer doesn't change without a config edit (which resets
-    the cache via :func:`invalidate_config_cache`).
+    Result is cached per-process — the ``hivemind-engine models`` subprocess
+    call is ~800 ms and the answer doesn't change without a config edit
+    (which resets the cache via :func:`invalidate_config_cache`).
     """
     global _engine_validated
     if _engine_validated:
         return OperationResult(success=True)
 
     cfg = _cfg()
-    if not cfg.engine:
-        return OperationResult(
-            success=False,
-            error="No engine configured. Set 'engine' in hivemind.json.",
-        )
 
-    binary = shlex.split(cfg.engine)[0]
-    if not shutil.which(binary):
-        return OperationResult(
-            success=False,
-            error=f"Analysis engine '{binary}' not found on PATH. Install it first.",
-        )
+    try:
+        binary = _engine_path()
+    except RuntimeError as e:
+        return OperationResult(success=False, error=str(e))
 
     if not cfg.model:
         return OperationResult(
@@ -396,8 +410,8 @@ def validate_engine() -> OperationResult:
             success=False,
             error=(
                 f"Model '{cfg.model}' not available. "
-                "Run 'opencode providers' to configure it.\n"
-                "Available models can be listed with 'opencode models'."
+                "Run 'hivemind-engine providers' to configure it.\n"
+                "Available models can be listed with 'hivemind-engine models'."
             ),
         )
 
@@ -410,14 +424,13 @@ def build_analysis_command(
     extra_dirs: list[Path] | None = None,
     write: bool = False,
 ) -> list[str]:
-    """Build an opencode subprocess command for AI analysis runs."""
+    """Build a hivemind-engine subprocess command for AI analysis runs."""
     cfg = _cfg()
-    cmd = shlex.split(cfg.engine)
-    cmd.extend(["--model", cfg.model])
+    # `run` is opencode's non-interactive prompt subcommand; analysis runs
+    # always feed a single prompt and exit, so this is the right driver.
+    cmd = [_engine_path(), "run", "--model", cfg.model]
 
     if extra_dirs:
-        import os
-
         resolved = [str(d.resolve()) for d in extra_dirs if d.exists()]
         if resolved:
             common = os.path.commonpath(resolved)
@@ -427,11 +440,9 @@ def build_analysis_command(
 
 
 def build_query_command() -> list[str]:
-    """Build an opencode subprocess command for librarian queries."""
+    """Build a hivemind-engine subprocess command for librarian queries."""
     cfg = _cfg()
-    cmd = shlex.split(cfg.engine)
-    cmd.extend(["--model", cfg.model])
-    return cmd
+    return [_engine_path(), "run", "--model", cfg.model]
 
 
 # ---------------------------------------------------------------------------
@@ -440,20 +451,32 @@ def build_query_command() -> list[str]:
 
 
 def start_server_command(port: int, hostname: str) -> list[str]:
-    binary = shlex.split(_cfg().engine)[0]
-    return [binary, "serve", "--port", str(port), "--hostname", hostname]
+    return [_engine_path(), "serve", "--port", str(port), "--hostname", hostname]
 
 
 def launch_command(extra_args: list[str] | None = None) -> list[str]:
-    binary = shlex.split(_cfg().engine)[0]
-    return [binary, *(extra_args or [])]
+    return [_engine_path(), *(extra_args or [])]
 
 
 def attach_command(server_url: str, extra_args: list[str] | None = None) -> list[str]:
-    binary = shlex.split(_cfg().engine)[0]
-    if extra_args:
-        return [binary, "run", "--attach", server_url, *extra_args]
-    return [binary, "attach", server_url]
+    """Build the engine command to attach to a running hivemind server.
+
+    Routing:
+      - No extra args → ``engine attach <url>`` (plain TUI attach).
+      - First extra arg is ``run`` → ``engine run --attach <url> <rest>``
+        (one-shot prompt against the attached server).
+      - Otherwise (TUI flags like ``-s``, ``-c``, ``--fork``) →
+        ``engine attach <url> <args>`` so the flags reach the TUI.
+
+    Previously the no-empty-args branch always routed through
+    ``run --attach``, which silently used non-interactive mode for
+    e.g. ``hivemind -s ses_xxx`` resume requests.
+    """
+    binary = _engine_path()
+    args = extra_args or []
+    if args and args[0] == "run":
+        return [binary, "run", "--attach", server_url, *args[1:]]
+    return [binary, "attach", server_url, *args]
 
 
 def health_check_url(port: int, hostname: str) -> str:
@@ -461,12 +484,19 @@ def health_check_url(port: int, hostname: str) -> str:
 
 
 def notify_instance_reload() -> bool:
-    """POST /global/dispose on the running opencode server.
+    """POST /global/reload-agents on the running opencode server.
 
-    Uses the global endpoint rather than /instance/dispose so that every
-    cached InstanceState (agent registry, plugins, skills, ...) for every
-    directory the server has seen gets invalidated. Fire-and-forget —
-    returns False if no server is running.
+    Re-reads agents/*.md for every active instance WITHOUT disposing
+    the InstanceState. Unlike the old `/global/dispose` path, this does
+    not SIGTERM MCP subprocesses, so an in-flight tool call (the
+    hivemind MCP server itself, when called via MCP transport) survives
+    the reload and the user does not have to type `continue` after
+    every catalog mutation.
+
+    Provided by the //third_party/patches/0004-add-reload-agents-endpoint.patch
+    patch in our opencode fork; not available against upstream opencode.
+
+    Fire-and-forget — returns False if no server is running.
     """
     from hivemind.runtime import current_context
 
@@ -475,7 +505,7 @@ def notify_instance_reload() -> bool:
         return False
 
     try:
-        resp = httpx.post(f"{ctx.server_url}/global/dispose", timeout=5.0)
+        resp = httpx.post(f"{ctx.server_url}/global/reload-agents", timeout=5.0)
         return resp.status_code == 200
     except (httpx.ConnectError, httpx.TimeoutException):
         log.debug("Failed to notify OpenCode server at %s", ctx.server_url)
@@ -497,8 +527,9 @@ def init_dirs(
     """Initialize the opencode directory structure.
 
     Sets up symlinks for agents/, commands/, rules, experts/ (real dir), and
-    teams/, then merges opencode-specific defaults (hardening + permissions +
-    MCP registration) and deploys bundled TUI plugins.
+    teams/, then injects per-user runtime config (path-token permissions +
+    MCP server registration) into opencode.json and purges stale TUI plugins
+    from earlier hivemind installs.
     """
     results: list[InitResult] = []
 
@@ -527,12 +558,20 @@ def init_dirs(
 
 
 def _post_init_dirs() -> list[InitResult]:
-    """Apply bundled opencode defaults + install TUI plugins."""
+    """Apply bundled opencode defaults: path-token permissions + MCP registration.
+
+    Hardening keys (share, autoshare, autoupdate, server.hostname) and the
+    `bash.sudo *: deny` permission used to be merged here too, but they're now
+    baked into the bun-compiled engine via patches in `//third_party/patches/`
+    so this function only handles user-specific runtime injection:
+      - path-token permission rules (need {CACHE_PATH}/{EXPERTS_PATH}/{TEAMS_PATH}
+        substitution against per-user paths)
+      - the hivemind MCP server registration (command path varies per install)
+    """
     results: list[InitResult] = []
     home = home_dir()
 
     defaults = _load_opencode_defaults()
-    hardening = defaults.get("hardening", {})
     permissions_section = _substitute_path_tokens(defaults.get("permissions", {}))
 
     config_path = home / "opencode.json"
@@ -540,15 +579,6 @@ def _post_init_dirs() -> list[InitResult]:
     if config_path.exists() and not config_path.is_symlink():
         with contextlib.suppress(FileNotFoundError):
             existing = json.loads(config_path.read_text(encoding="utf-8"))
-
-    for key, value in hardening.items():
-        if isinstance(value, dict):
-            raw = existing.get(key)
-            merged: dict[str, object] = raw if isinstance(raw, dict) else {}
-            merged.update(value)
-            existing[key] = merged
-        else:
-            existing[key] = value
 
     existing_perms = existing.get("permission", {})
     for tool_key, patterns in permissions_section.items():
@@ -572,36 +602,45 @@ def _post_init_dirs() -> list[InitResult]:
     existing["mcp"] = mcp_section
 
     config_path.write_text(json.dumps(existing, indent=2) + "\n")
-    results.append(InitResult(label="opencode.json", status="hardening + permissions merged"))
+    results.append(InitResult(label="opencode.json", status="path-token permissions merged"))
     results.append(InitResult(label="opencode.json", status="mcp server registered"))
 
-    plugins_dir = home / "tui-plugins"
-    plugins_dir.mkdir(parents=True, exist_ok=True)
-    installed_plugin_paths: list[Path] = []
-    for source in sorted(OPENCODE_PLUGINS_DIR.glob("*.js")):
-        dest = plugins_dir / source.name
-        shutil.copyfile(source, dest)
-        installed_plugin_paths.append(dest)
-        results.append(InitResult(label=source.name, status="plugin deployed"))
-
-    if installed_plugin_paths:
-        tui_config_path = home / "tui.json"
-        tui_existing: dict[str, Any] = {}
-        if tui_config_path.exists() and not tui_config_path.is_symlink():
-            with contextlib.suppress(FileNotFoundError, json.JSONDecodeError):
-                tui_existing = json.loads(tui_config_path.read_text(encoding="utf-8"))
-
-        raw_plugins = tui_existing.get("plugin", [])
-        tui_plugins: list[object] = raw_plugins if isinstance(raw_plugins, list) else []
-        bundled_stems = {p.stem for p in installed_plugin_paths}
-        tui_plugins = [p for p in tui_plugins if not (isinstance(p, str) and any(stem in p for stem in bundled_stems))]
-        for plugin_path in installed_plugin_paths:
-            tui_plugins.append(f"file://{plugin_path}")
-        tui_existing["plugin"] = tui_plugins
-        tui_config_path.write_text(json.dumps(tui_existing, indent=2) + "\n", encoding="utf-8")
-        results.append(InitResult(label="tui.json", status="plugins registered"))
+    # TUI plugins are no longer installed: their functionality (HIVEMIND
+    # branding + connection indicator) is now baked into the bundled engine
+    # via patches under //third_party/patches/. We still clean up any stale
+    # plugin files from previous hivemind installs so leftover `file://`
+    # entries in tui.json don't fail to load.
+    _purge_legacy_tui_plugins(home, results)
 
     return results
+
+
+def _purge_legacy_tui_plugins(home: Path, results: list[InitResult]) -> None:
+    """Remove any tui-plugins/ entries hivemind shipped before the bun-vendor era."""
+    legacy_stems = ("branding", "connection-indicator", "hivemind")
+    plugins_dir = home / "tui-plugins"
+    if plugins_dir.exists():
+        removed: list[str] = []
+        for child in plugins_dir.iterdir():
+            if any(stem in child.name for stem in legacy_stems):
+                child.unlink(missing_ok=True)
+                removed.append(child.name)
+        if removed:
+            results.append(InitResult(label="tui-plugins/", status=f"removed legacy: {', '.join(removed)}"))
+
+    tui_config_path = home / "tui.json"
+    if tui_config_path.exists() and not tui_config_path.is_symlink():
+        with contextlib.suppress(FileNotFoundError, json.JSONDecodeError):
+            tui_existing: dict[str, Any] = json.loads(tui_config_path.read_text(encoding="utf-8"))
+            raw_plugins = tui_existing.get("plugin", [])
+            if isinstance(raw_plugins, list):
+                filtered = [
+                    p for p in raw_plugins if not (isinstance(p, str) and any(stem in p for stem in legacy_stems))
+                ]
+                if filtered != raw_plugins:
+                    tui_existing["plugin"] = filtered
+                    tui_config_path.write_text(json.dumps(tui_existing, indent=2) + "\n", encoding="utf-8")
+                    results.append(InitResult(label="tui.json", status="legacy plugin entries purged"))
 
 
 def _load_opencode_defaults() -> dict[str, Any]:

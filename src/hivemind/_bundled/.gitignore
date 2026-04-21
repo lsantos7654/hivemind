@@ -1,0 +1,4 @@
+# Ignore the bundled binary — it's rebuilt by `make install` per host.
+*
+!__init__.py
+!.gitignore

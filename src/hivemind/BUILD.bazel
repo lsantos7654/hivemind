@@ -1,0 +1,36 @@
+load("@rules_python//python:defs.bzl", "py_binary", "py_library")
+
+package(default_visibility = ["//visibility:public"])
+
+py_library(
+    name = "lib",
+    srcs = glob(
+        ["**/*.py"],
+        exclude = ["__main__.py", "**/__pycache__/**"],
+    ),
+    data = glob([
+        "templates/**/*.j2",
+        "templates/**/*.md",
+    ]),
+    imports = [".."],
+    deps = [
+        "@pypi//typer",
+        "@pypi//rich",
+        "@pypi//textual",
+        "@pypi//crawl4ai",
+        "@pypi//trafilatura",
+        "@pypi//lxml_html_clean",
+        "@pypi//httpx",
+        "@pypi//jinja2",
+        "@pypi//pydantic",
+        "@pypi//mcp",
+    ],
+)
+
+py_binary(
+    name = "hivemind",
+    srcs = ["__main__.py"],
+    main = "__main__.py",
+    imports = [".."],
+    deps = [":lib"],
+)

@@ -1,17 +1,6 @@
 {
-  "_comment": "Opinionated OpenCode defaults applied by `hivemind init`. `hardening` keys are force-set (overwrite). `permissions` are deep-merged into the existing permission map. Path tokens {CACHE_PATH}, {EXPERTS_PATH}, {TEAMS_PATH} are substituted at install time.",
-  "hardening": {
-    "share": "disabled",
-    "autoshare": false,
-    "autoupdate": false,
-    "server": {
-      "hostname": "127.0.0.1"
-    }
-  },
+  "_comment": "Path-token permission rules merged into ~/.config/opencode/opencode.json by `hivemind init`. The hardening keys (share, autoshare, autoupdate, server.hostname) and the `bash.sudo *: deny` permission are now baked into the bun-compiled engine via //third_party/patches/{0005,0006}-*.patch — only path-token permissions remain runtime because they need {CACHE_PATH}/{EXPERTS_PATH}/{TEAMS_PATH} substitution against user-specific paths.",
   "permissions": {
-    "bash": {
-      "sudo *": "deny"
-    },
     "external_directory": {
       "{CACHE_PATH}/**": "allow",
       "{EXPERTS_PATH}/**": "allow",

@@ -11,15 +11,24 @@ Works with [OpenCode](https://opencode.ai).
 
 ## Install
 
-Requires [uv](https://docs.astral.sh/uv/getting-started/installation/).
+Requires [bazelisk](https://github.com/bazelbuild/bazelisk) and
+[uv](https://docs.astral.sh/uv/getting-started/installation/).
 
 ```bash
 git clone https://github.com/lsantos7654/hivemind.git
-uv tool install -e ./hivemind
+cd hivemind
+make install     # builds the bundled engine via Bazel + uv tool installs the CLI
 hivemind init
 ```
 
-If you already have the repo elsewhere, point `uv tool install -e` at that path instead.
+`make install` does two things behind the scenes: builds a patched, pinned
+`opencode` engine binary via Bazel into `src/hivemind/_bundled/`, then
+`uv tool install -e .`'s the Python CLI so it picks up the bundled engine.
+This is intentionally hidden behind `make install` — you don't need to
+think about Bazel or uv directly.
+
+To upgrade to a new opencode pin (or rebuild after pulling): `make update`.
+To uninstall: `make uninstall`.
 
 ## Quick Start
 

@@ -1,5 +1,6 @@
-"""Allow running as `python -m hivemind`."""
+"""Entry point for `python -m hivemind` and `bazel run //:hivemind`."""
 
-from hivemind.cli import app
+from hivemind.cli import main_entry
 
-app()
+if __name__ == "__main__":
+    main_entry()

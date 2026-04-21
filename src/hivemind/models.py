@@ -156,9 +156,16 @@ class CatalogEntry(BaseModel):
 
 
 class HivemindConfig(BaseModel):
-    """Full hivemind.json schema (committed to git; shared across teammates)."""
+    """Full hivemind.json schema (committed to git; shared across teammates).
 
-    engine: str = ""
+    The ``engine`` field is intentionally absent: hivemind is Bazel-native
+    and resolves the engine binary at runtime from ``$HIVEMIND_ENGINE`` or
+    ``src/hivemind/_bundled/hivemind-engine`` (see ``opencode._engine_path``).
+    Any legacy ``engine`` value in ``hivemind.json`` is ignored.
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
     home_dir: str = ""
     model: str = ""
     tools: dict[str, bool] = {}

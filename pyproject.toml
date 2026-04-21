@@ -22,6 +22,14 @@ hivemind = "hivemind.cli:main_entry"
 [tool.hatch.build.targets.wheel]
 packages = ["src/hivemind"]
 
+# Include the bun-compiled engine binary that `make install` writes into
+# the package. Without this, `uv tool install` would skip the binary.
+[tool.hatch.build.targets.wheel.shared-data]
+"src/hivemind/_bundled/hivemind-engine" = "share/hivemind/hivemind-engine"
+
+[tool.hatch.build.targets.wheel.force-include]
+"src/hivemind/_bundled" = "hivemind/_bundled"
+
 [dependency-groups]
 dev = ["ruff>=0.11.0", "mypy>=1.15.0", "pre-commit>=4.0.0", "pytest>=8.0.0"]
 

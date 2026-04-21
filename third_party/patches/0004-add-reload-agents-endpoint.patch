@@ -1,0 +1,232 @@
+Subject: Non-destructive agent reload endpoint
+
+Adds `POST /global/reload-agents` to opencode that re-reads agents/*.md
+for every active instance without disposing the InstanceState. Unlike
+`POST /global/dispose`, this does NOT SIGTERM MCP subprocesses, so an
+in-flight tool call (the hivemind MCP server itself, when called via
+the MCP transport) survives the reload.
+
+Hivemind switches `notify_instance_reload` from /global/dispose to
+this endpoint after `enable_agent` / `disable_agent` mutations, so the
+user no longer has to type `continue` after every catalog change.
+
+Mechanism:
+  - Adds Config.invalidateState() Effect — a non-destructive variant
+    of Config.invalidate() that just clears the per-instance Config
+    InstanceState cache (no Instance.disposeAll).
+  - Adds Agent.reload() Effect — chains Config.invalidateState() with
+    Agent's own InstanceState invalidation, then publishes a new
+    Agent.AgentsChanged Bus event so subscribers (TUI, etc.) can
+    refresh.
+  - Adds Agent.reloadAll() static — iterates Instance.directories()
+    and runs reload() in each context.
+  - Adds Instance.directories() — exposes the cached instance keys so
+    Agent.reloadAll can iterate them without breaking encapsulation.
+  - Adds POST /global/reload-agents route that calls Agent.reloadAll()
+    and emits a new AgentsReloadedEvent on GlobalBus.
+
+---
+--- a/packages/opencode/src/project/instance.ts	2026-04-20 22:15:53
++++ b/packages/opencode/src/project/instance.ts	2026-04-20 22:16:06
+@@ -172,4 +172,12 @@
+
+     return disposal.all
+   },
++  /**
++   * Hivemind: list directories of every cached instance. Used by the
++   * /global/reload-agents route to iterate and refresh agent state without
++   * disposing the InstanceState (which would SIGTERM MCP subprocesses).
++   */
++  directories(): string[] {
++    return [...cache.keys()]
++  },
+ }
+--- a/packages/opencode/src/config/config.ts	2026-04-20 22:17:02
++++ b/packages/opencode/src/config/config.ts	2026-04-20 22:17:02
+@@ -1122,6 +1122,7 @@
+     readonly update: (config: Info) => Effect.Effect<void>
+     readonly updateGlobal: (config: Info) => Effect.Effect<Info>
+     readonly invalidate: (wait?: boolean) => Effect.Effect<void>
++    readonly invalidateState: () => Effect.Effect<void>
+     readonly directories: () => Effect.Effect<string[]>
+     readonly waitForDependencies: () => Effect.Effect<void>
+   }
+@@ -1582,6 +1583,14 @@
+             )
+           if (wait) yield* Effect.promise(() => task)
+           else void task
++        })
++
++        // Hivemind: non-destructive cache invalidation. Clears the per-instance
++        // Config cache for the current directory so the next get() re-reads
++        // config files from disk (including agents/*.md). Does NOT call
++        // Instance.dispose, so MCP subprocesses survive.
++        const invalidateState = Effect.fn("Config.invalidateState")(function* () {
++          yield* InstanceState.invalidate(state)
+         })
+
+         const updateGlobal = Effect.fn("Config.updateGlobal")(function* (config: Info) {
+@@ -1612,6 +1621,7 @@
+           update,
+           updateGlobal,
+           invalidate,
++          invalidateState,
+           directories,
+           waitForDependencies,
+         })
+@@ -1650,6 +1660,10 @@
+     return runPromise((svc) => svc.invalidate(wait))
+   }
+
++  export async function invalidateState() {
++    return runPromise((svc) => svc.invalidateState())
++  }
++
+   export async function directories() {
+     return runPromise((svc) => svc.directories())
+   }
+--- a/packages/opencode/src/agent/agent.ts	2026-04-20 22:17:42
++++ b/packages/opencode/src/agent/agent.ts	2026-04-20 22:17:42
+@@ -22,6 +22,8 @@
+ import { Effect, ServiceMap, Layer } from "effect"
+ import { InstanceState } from "@/effect/instance-state"
+ import { makeRuntime } from "@/effect/run-service"
++import { Bus } from "@/bus"
++import { BusEvent } from "@/bus/bus-event"
+
+ export namespace Agent {
+   export const Info = z
+@@ -51,10 +53,18 @@
+     })
+   export type Info = z.infer<typeof Info>
+
++  // Hivemind: emitted by reload() so subscribers can refresh agent UI
++  // without going through /global/dispose (which kills MCP subprocesses).
++  export const AgentsChanged = BusEvent.define(
++    "agent.changed",
++    z.object({ count: z.number() }),
++  )
++
+   export interface Interface {
+     readonly get: (agent: string) => Effect.Effect<Agent.Info>
+     readonly list: () => Effect.Effect<Agent.Info[]>
+     readonly defaultAgent: () => Effect.Effect<string>
++    readonly reload: () => Effect.Effect<{ count: number }, never, Bus.Service>
+     readonly generate: (input: {
+       description: string
+       model?: { providerID: ProviderID; modelID: ModelID }
+@@ -326,6 +336,17 @@
+         defaultAgent: Effect.fn("Agent.defaultAgent")(function* () {
+           return yield* InstanceState.useEffect(state, (s) => s.defaultAgent())
+         }),
++        // Hivemind: re-read agents/*.md from disk and rebuild the per-instance
++        // Agent registry. Invalidates Config + Agent state caches without
++        // calling Instance.dispose, so MCP subprocesses survive.
++        reload: Effect.fn("Agent.reload")(function* () {
++          yield* config.invalidateState()
++          yield* InstanceState.invalidate(state)
++          const list = yield* InstanceState.useEffect(state, (s) => s.list())
++          const bus = yield* Bus.Service
++          yield* bus.publish(AgentsChanged, { count: list.length }).pipe(Effect.ignore)
++          return { count: list.length }
++        }),
+         generate: Effect.fn("Agent.generate")(function* (input: {
+           description: string
+           model?: { providerID: ProviderID; modelID: ModelID }
+@@ -423,5 +444,30 @@
+
+   export async function generate(input: { description: string; model?: { providerID: ProviderID; modelID: ModelID } }) {
+     return runPromise((svc) => svc.generate(input))
++  }
++
++  /**
++   * Hivemind: reload the agent registry for every active instance. Iterates
++   * `Instance.directories()`, provides each context, and runs `reload()` so
++   * agents/*.md changes are picked up without disposing the InstanceState
++   * (which would SIGTERM MCP subprocesses and kill in-flight sessions).
++   *
++   * Used by the `POST /global/reload-agents` route.
++   */
++  export async function reloadAll(): Promise<{ instances: number; agents: number }> {
++    const dirs = Instance.directories()
++    let agents = 0
++    for (const directory of dirs) {
++      try {
++        const result = await Instance.provide({
++          directory,
++          fn: () => runPromise((svc) => svc.reload()),
++        })
++        agents += result.count
++      } catch {
++        // Skip instances that failed to load; the dispose path skips them too.
++      }
++    }
++    return { instances: dirs.length, agents }
+   }
+ }
+--- a/packages/opencode/src/server/routes/global.ts	2026-04-20 22:18:02
++++ b/packages/opencode/src/server/routes/global.ts	2026-04-20 22:18:25
+@@ -11,12 +11,21 @@
+ import { Log } from "../../util/log"
+ import { lazy } from "../../util/lazy"
+ import { Config } from "../../config/config"
++import { Agent } from "@/agent/agent"
+ import { errors } from "../error"
+
+ const log = Log.create({ service: "server" })
+
+ export const GlobalDisposedEvent = BusEvent.define("global.disposed", z.object({}))
+
++export const AgentsReloadedEvent = BusEvent.define(
++  "global.agents-reloaded",
++  z.object({
++    instances: z.number(),
++    agents: z.number(),
++  }),
++)
++
+ async function streamEvents(c: Context, subscribe: (q: AsyncQueue<string | null>) => () => void) {
+   return streamSSE(c, async (stream) => {
+     const q = new AsyncQueue<string | null>()
+@@ -250,6 +259,41 @@
+           },
+         })
+         return c.json(true)
++      },
++    )
++    .post(
++      "/reload-agents",
++      describeRoute({
++        summary: "Reload agent registry",
++        description:
++          "Hivemind: re-read agents/*.md for every active instance without disposing the InstanceState. Unlike /global/dispose, this does not SIGTERM MCP subprocesses, so an in-flight tool call survives the reload.",
++        operationId: "global.reloadAgents",
++        responses: {
++          200: {
++            description: "Agents reloaded",
++            content: {
++              "application/json": {
++                schema: resolver(
++                  z.object({
++                    instances: z.number(),
++                    agents: z.number(),
++                  }),
++                ),
++              },
++            },
++          },
++        },
++      }),
++      async (c) => {
++        const result = await Agent.reloadAll()
++        GlobalBus.emit("event", {
++          directory: "global",
++          payload: {
++            type: AgentsReloadedEvent.type,
++            properties: result,
++          },
++        })
++        return c.json(result)
+       },
+     )
+     .post(

@@ -474,9 +474,13 @@ async def _handle_status() -> list[TextContent]:
     teams = list(registry.by_kind("roster_templated"))
 
     cfg = opencode._cfg()
+    try:
+        engine_path = opencode._engine_path()
+    except RuntimeError as e:
+        engine_path = f"<unavailable: {e}>"
     return _json_text(
         {
-            "engine": cfg.engine,
+            "engine": engine_path,
             "model": cfg.model,
             "server": server_info,
             "experts": {

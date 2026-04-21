@@ -1,0 +1,52 @@
+Subject: Hardened opencode config defaults
+
+Bakes hivemind's hardening defaults into the opencode config schema so
+they don't have to be merged into ~/.config/opencode/opencode.json by
+`hivemind init`. After this patch + the corresponding cleanup in
+opencode/config/defaults.json, the user-facing opencode.json no longer
+contains a `hardening` block — it's the upstream default.
+
+Changes:
+  - share:               default "disabled" (was unset; opencode upstream
+                         defaults to allowing manual share)
+  - autoshare:           default false (deprecated but still consumed
+                         by the legacy autoshare->share migration in
+                         config.ts:1515)
+  - autoupdate:          default false (was implicitly true)
+  - server.hostname:     default "127.0.0.1" (was "localhost" via
+                         cli/network.ts default)
+
+Users can still override any of these in their own opencode.json.
+
+---
+--- a/packages/opencode/src/config/config.ts	2026-04-20 22:17:02
++++ b/packages/opencode/src/config/config.ts	2026-04-20 22:20:33
+@@ -775,7 +775,7 @@
+   export const Server = z
+     .object({
+       port: z.number().int().positive().optional().describe("Port to listen on"),
+-      hostname: z.string().optional().describe("Hostname to listen on"),
++      hostname: z.string().optional().default("127.0.0.1").describe("Hostname to listen on"),
+       mdns: z.boolean().optional().describe("Enable mDNS service discovery"),
+       mdnsDomain: z.string().optional().describe("Custom domain name for mDNS service (default: opencode.local)"),
+       cors: z.array(z.string()).optional().describe("Additional domains to allow for CORS"),
+@@ -932,16 +932,19 @@
+       share: z
+         .enum(["manual", "auto", "disabled"])
+         .optional()
++        .default("disabled")
+         .describe(
+           "Control sharing behavior:'manual' allows manual sharing via commands, 'auto' enables automatic sharing, 'disabled' disables all sharing",
+         ),
+       autoshare: z
+         .boolean()
+         .optional()
++        .default(false)
+         .describe("@deprecated Use 'share' field instead. Share newly created sessions automatically"),
+       autoupdate: z
+         .union([z.boolean(), z.literal("notify")])
+         .optional()
++        .default(false)
+         .describe(
+           "Automatically update to the latest version. Set to true to auto-update, false to disable, or 'notify' to show update notifications",
+         ),

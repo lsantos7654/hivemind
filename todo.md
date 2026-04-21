@@ -23,17 +23,12 @@
     - unified lifecycle tools: `list_agents`, `show_agent`, `enable_agent`, `disable_agent`, `delete_agent`, `refresh_agent`. Kind-specific creators retained (`create_git_expert`, `create_team`). `_MUTATION_TOOLS` dispatcher hook removed — domain mutations fire `hooks.fire_post_mutation()` themselves.
 
 
-- [ ] update exit as well
-```bash
-╰─❯ hivemind
-▄
-█▀▀█ █▀▀█ █▀▀█ █▀▀▄ █▀▀▀ █▀▀█ █▀▀█ █▀▀█
-█  █ █  █ █▀▀▀ █  █ █    █  █ █  █ █▀▀▀
-▀▀▀▀ █▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀
+- [X] update exit as well — exit-screen `Continue opencode -s ...` rewritten to `Continue hivemind -s ...` via `//third_party/patches/0001-rewrite-exit-continue-to-hivemind.patch`. The OPENCODE wordmark is also rebranded to HIVEMIND via `0002-rebrand-logo-to-hivemind.patch` (covers both the home-screen `<Logo />` component and the exit-screen `cli/ui.ts:wordmark`).
 
-Session   Bazel aspects explained
-Continue  opencode -s ses_253253768ffeoC4SBtauvfRXL7
-```
+- [X] after enabling an expert the session is interrupted and I need to manually continue, ideally it would be nice if this wasn't the case.
+    - resolved by `//third_party/patches/0004-add-reload-agents-endpoint.patch`: adds `POST /global/reload-agents` to opencode that re-reads `agents/*.md` for every active instance via `Config.invalidateState()` + `Agent.reload()`, neither of which calls `Instance.dispose()`. MCP subprocesses survive. Hivemind switched `notify_instance_reload` to the new endpoint. `HIVEMIND.md` and `CLAUDE.md` updated to drop the abort-and-continue warnings.
+
+- [X] hardening defaults baked into the engine — `share="disabled"`, `autoshare=false`, `autoupdate=false`, `server.hostname="127.0.0.1"`, `bash.sudo *: deny` are now zod schema defaults in the bundled engine via `//third_party/patches/{0005,0006}-*.patch`. `opencode/config/defaults.json` shrunk to just the path-token permissions (which still need runtime substitution).
 
 
 ## Follow-ups from the refactor
@@ -41,15 +36,17 @@ Continue  opencode -s ses_253253768ffeoC4SBtauvfRXL7
 Out of scope for the layering refactor, noted in `refactor.md` / `CONTEXT.md`:
 
 - [ ] split `opencode.py` into `AgentFormatter` / `AgentDeployer` / `InstanceNotifier` if it grows further (flagged by `expert-design-patterns-for-humans`; cheap to do later, not urgent now).
-- [ ] serve experts as dynamic MCP tools instead of `agents/*.md` files. Would use `notifications/tools/list_changed` on the live stdio channel and eliminate the `/global/dispose` race entirely. Flagged by `expert-opencode` as the cleanest long-term fix. Large refactor — agent bodies would need to be expressible as tool schemas, which is a poor fit for markdown knowledge docs.
-- [ ] opencode-side file watcher on `{agents,agent}/**/*.md` — would also eliminate the race, but requires an opencode change (not a hivemind one). Flagged by `expert-system-design-primer`.
-
-
-## Wont Do
-
-- [X] after enabling an expert the session is interrupted and I need to manually continue, ideally it would be nice if this wasn't the case.
-    - confirmed structural via opencode source (`mcp/index.ts:527-548`, `ConfigAgent.load`): the only invalidation primitive opencode exposes tears down the in-flight tool-call state. Accepted. Documented in `HIVEMIND.md` so main warns the user before any mutation tool call and verifies state with a read-only call after `continue`.
+- [ ] serve experts as dynamic MCP tools instead of `agents/*.md` files. Would use `notifications/tools/list_changed` on the live stdio channel. Largely obviated by the `/global/reload-agents` patch above, but the dynamic-tools form would still be cleaner. Large refactor — agent bodies would need to be expressible as tool schemas.
+- [ ] opencode-side file watcher on `{agents,agent}/**/*.md` so hivemind doesn't need to call any endpoint at all. Now feasible as a patch on our fork (file-watcher infra exists at `packages/opencode/src/file/watcher.ts`, currently gated on `OPENCODE_EXPERIMENTAL_FILEWATCHER`). Could enable + scope to agents/. Tracked as a follow-up to the `/global/reload-agents` endpoint.
 
 
 
 can you consult the bazel expert and give me a rundown on how aspects work
+
+okay new rabbit hole and much more complexity but please humor me
+
+what if we adopted bazel into this project, we pin the exact version of opencode we want to use. We can create diffs to maintain our own patch of opencode fully isolated. This would allow us to create more granular integration and have complete control over the code. The fork exists within the repo as a collection of diffs against a pinned version of opencode.
+
+could you consult the bazel expert for this? Could you also do some research on which repos/rules exist for bazel that could help us with this?
+
+Essentially we would be building the hivemind binary which wraps opencode

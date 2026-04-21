@@ -1,0 +1,43 @@
+Subject: Bake `bash.sudo *: deny` into Permission.fromConfig
+
+Replaces hivemind's runtime injection of `permissions.bash."sudo *":
+"deny"` into ~/.config/opencode/opencode.json with a default that's
+baked into opencode's own permission ruleset builder.
+
+Every Permission.fromConfig() call now produces a ruleset prefixed with
+{permission: "bash", pattern: "sudo *", action: "deny"}. Because
+permission/evaluate.ts:9-15 uses findLast() to pick the matching rule,
+user-supplied rules placed later in the merged ruleset still win — so
+a user with `bash: { "sudo *": "allow" }` in their config opts back in.
+
+A blanket `bash: { "*": "allow" }` will also override (the catch-all
+matches and is later in the list) — that is intentional; explicit user
+opt-out remains possible. Users without any bash config get sudo deny
+by default.
+
+---
+--- a/packages/opencode/src/permission/index.ts	2026-04-20 22:22:00
++++ b/packages/opencode/src/permission/index.ts	2026-04-20 22:23:45
+@@ -276,8 +276,21 @@
+     return pattern
+   }
+
++  // Hivemind hardening: every ruleset includes `bash.sudo *: deny`
++  // prepended so sudo is denied by default. User config rules appear
++  // later in the merged ruleset and findLast() in evaluate() picks the
++  // last match, so a user-supplied `bash: { "sudo *": "allow" }` still
++  // wins. A blanket `bash: { "*": "allow" }` will also override (the
++  // catch-all matches and is later in the list) — that is intentional;
++  // explicit user opt-out remains possible.
++  const HIVEMIND_DENY_SUDO: Rule = {
++    permission: "bash",
++    pattern: "sudo *",
++    action: "deny",
++  }
++
+   export function fromConfig(permission: Config.Permission) {
+-    const ruleset: Ruleset = []
++    const ruleset: Ruleset = [HIVEMIND_DENY_SUDO]
+     for (const [key, value] of Object.entries(permission)) {
+       if (typeof value === "string") {
+         ruleset.push({ permission: key, action: value, pattern: "*" })

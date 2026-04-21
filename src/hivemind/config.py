@@ -25,7 +25,6 @@ from hivemind.constants import (
     CACHE_DIR,
     OPENCODE_CONFIG_DIR,
     OPENCODE_DIR,
-    OPENCODE_PLUGINS_DIR,
 )
 from hivemind.models import (
     AppConfig,
@@ -54,7 +53,6 @@ __all__ = [
     "HIVEMIND_ROOT",
     "OPENCODE_CONFIG_DIR",
     "OPENCODE_DIR",
-    "OPENCODE_PLUGINS_DIR",
     "REPOS_DIR",
     "REPOS_LINK",
     "STAGING_DIR",

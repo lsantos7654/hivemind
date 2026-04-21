@@ -1,0 +1,54 @@
+Subject: Rebrand the OPENCODE wordmark + TUI logo to HIVEMIND
+
+Replaces the two ASCII-art glyph sources in the opencode source tree
+that the user sees: the static `wordmark` array used by the exit screen
+(`cli/ui.ts`), and the `logo.left`/`logo.right` paired arrays used by
+the home-screen `<Logo />` component (`cli/logo.ts`).
+
+Replaces the work of the deprecated `opencode/plugins/branding.js` TUI
+plugin with a native source-level patch.
+
+The HIVEMIND art is taken from the original branding plugin (5 slash-
+art lines). The wordmark is trimmed to 4 lines to match the existing
+exit-message template that references `logo[0]..logo[3]`. The TUI
+`<Logo />` component iterates `logo.left` so we put the full 5-line art
+on the left and emit empty padding strings on the right; the existing
+shadow-marker rendering still works on the empty strings (no-op).
+
+---
+diff --git a/packages/opencode/src/cli/logo.ts b/packages/opencode/src/cli/logo.ts
+--- a/packages/opencode/src/cli/logo.ts
++++ b/packages/opencode/src/cli/logo.ts
+@@ -1,6 +1,12 @@
+ export const logo = {
+-  left: ["                   ", "█▀▀█ █▀▀█ █▀▀█ █▀▀▄", "█__█ █__█ █^^^ █__█", "▀▀▀▀ █▀▀▀ ▀▀▀▀ ▀~~▀"],
+-  right: ["             ▄     ", "█▀▀▀ █▀▀█ █▀▀█ █▀▀█", "█___ █__█ █__█ █^^^", "▀▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀"],
++  left: [
++    "    __  _______    __________  ________   ______",
++    "   / / / /  _/ |  / / ____/  |/  /  _/ | / / __ \\",
++    "  / /_/ // / | | / / __/ / /|_/ // //  |/ / / / /",
++    " / __  // /  | |/ / /___/ /  / // // /|  / /_/ /",
++    "/_/ /_/___/  |___/_____/_/  /_/___/_/ |_/_____/",
++  ],
++  right: ["", "", "", "", ""],
+ }
+
+ export const marks = "_^~"
+diff --git a/packages/opencode/src/cli/ui.ts b/packages/opencode/src/cli/ui.ts
+--- a/packages/opencode/src/cli/ui.ts
++++ b/packages/opencode/src/cli/ui.ts
+@@ -5,10 +5,10 @@
+
+ export namespace UI {
+   const wordmark = [
+-    `⠀                                ▄     `,
+-    `█▀▀█ █▀▀█ █▀▀█ █▀▀▄ █▀▀▀ █▀▀█ █▀▀█ █▀▀█`,
+-    `█  █ █  █ █▀▀▀ █  █ █    █  █ █  █ █▀▀▀`,
+-    `▀▀▀▀ █▀▀▀ ▀▀▀▀ ▀  ▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀`,
++    `   / / / /  _/ |  / / ____/  |/  /  _/ | / / __ \\`,
++    `  / /_/ // / | | / / __/ / /|_/ // //  |/ / / / /`,
++    ` / __  // /  | |/ / /___/ /  / // // /|  / /_/ /`,
++    `/_/ /_/___/  |___/_____/_/  /_/___/_/ |_/_____/`,
+   ]
+
+   export const CancelledError = NamedError.create("UICancelledError", z.void())

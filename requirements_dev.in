@@ -1,0 +1,3 @@
+# Dev-time / test-only deps not part of the runtime CLI.
+# Keep in sync with pyproject.toml [dependency-groups] dev.
+pytest>=8.0.0

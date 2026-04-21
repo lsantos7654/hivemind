@@ -696,8 +696,13 @@ def status() -> None:
     cfg = opencode._cfg()
     registry.load(refresh=True)
 
+    try:
+        engine_path = opencode._engine_path()
+    except RuntimeError as e:
+        engine_path = f"<unavailable: {e}>"
+
     overview_lines: list[str] = []
-    overview_lines.append(f"Engine: [heading]{escape(cfg.engine)}[/heading]")
+    overview_lines.append(f"Engine: [heading]{escape(engine_path)}[/heading]")
     overview_lines.append(f"Model: [heading]{escape(cfg.model)}[/heading]")
 
     if is_server_running():
