@@ -1,21 +1,3 @@
-load("@rules_uv//uv:pip.bzl", "pip_compile")
-
-# ---------------------------------------------------------------------------
-# pyproject.toml → requirements_lock.txt (rules_uv)
-# ---------------------------------------------------------------------------
-
-pip_compile(
-    name = "requirements_lock",
-    requirements_in = "pyproject.toml",
-    requirements_txt = "requirements_lock.txt",
-)
-
-pip_compile(
-    name = "requirements_dev_lock",
-    requirements_in = "requirements_dev.in",
-    requirements_txt = "requirements_dev_lock.txt",
-)
-
 # ---------------------------------------------------------------------------
 # Top-level CLI binary (alias to the actual py_binary defined alongside __main__.py)
 # ---------------------------------------------------------------------------

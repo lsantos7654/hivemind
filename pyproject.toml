@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "Central expert agent management for AI coding platforms"
 requires-python = ">=3.11"
 dependencies = [
+    # Runtime
     "typer>=0.12.0",
     "rich>=13.7.0",
     "textual>=0.90.0",
@@ -14,24 +15,17 @@ dependencies = [
     "jinja2>=3.1.0",
     "pydantic>=2.12.5",
     "mcp>=1.9.0",
+    # Test + dev tooling (lives here so rules_py.uv exposes them in the
+    # single implicit "hivemind" venv; Bazel per-target deps keep them
+    # out of the runtime binary's closure).
+    "pytest>=8.0.0",
+    "ruff>=0.11.0",
+    "mypy>=1.15.0",
+    "pre-commit>=4.0.0",
+    # rules_py.uv requires these for sdist builds.
+    "build>=1.0.0",
+    "setuptools>=68.0.0",
 ]
-
-[project.scripts]
-hivemind = "hivemind.cli:main_entry"
-
-[tool.hatch.build.targets.wheel]
-packages = ["src/hivemind"]
-
-# Include the bun-compiled engine binary that `make install` writes into
-# the package. Without this, `uv tool install` would skip the binary.
-[tool.hatch.build.targets.wheel.shared-data]
-"src/hivemind/_bundled/hivemind-engine" = "share/hivemind/hivemind-engine"
-
-[tool.hatch.build.targets.wheel.force-include]
-"src/hivemind/_bundled" = "hivemind/_bundled"
-
-[dependency-groups]
-dev = ["ruff>=0.11.0", "mypy>=1.15.0", "pre-commit>=4.0.0", "pytest>=8.0.0"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -138,7 +132,3 @@ module = "hivemind.tui.*"
 disallow_untyped_defs = false
 disallow_incomplete_defs = false
 disable_error_code = ["attr-defined", "arg-type", "no-any-return", "assignment", "type-arg", "unreachable"]
-
-[build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"

@@ -4,25 +4,38 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Build & Run
 
+`bazelisk` is the only required system dependency. Everything else (Python
+toolchain, PyPI deps, bun, opencode source, patches) is fetched and built
+hermetically by Bazel.
+
 ```bash
-uv tool install -e .          # Install CLI (editable)
-uv run hivemind               # Launch opencode (attaches to running server if present)
-uv run hivemind tui           # Open TUI dashboard
-uv run hivemind status        # Full dashboard
-uv run hivemind redeploy      # Regenerate all agent files
-uv run hivemind init          # Set up opencode dirs + orchestrator memory
+make install            # Build + symlink ~/.local/bin/hivemind (first-time setup)
+make update             # Pull, rebuild, refresh launcher
+make test               # bazel test //...
+make engine             # Rebuild the bun-compiled engine only
+make clean              # bazel clean + remove launcher symlink
+
+hivemind                # Launch opencode (attaches to running server if present)
+hivemind tui            # Open TUI dashboard
+hivemind status         # Full dashboard
+hivemind -- -s ses_xxx  # Forward args to opencode (explicit -- separator)
 ```
+
+Source edits in `src/hivemind/*.py` are live without rebuild — the Bazel
+launcher uses a runfiles tree of symlinks to workspace source. Only
+`pyproject.toml`, `uv.lock`, a `third_party/patches/*.patch`, or an engine
+version bump in `MODULE.bazel` requires `make update`.
 
 Verify changes:
 ```bash
-uv run pytest                              # run full test suite
-uv run pytest tests/test_core.py::test_x   # run single test
-uv run ruff check src/                     # lint
-uv run ruff format src/                    # format
-uv run mypy src/                           # type-check
-uv run pre-commit run --all-files          # all hooks
-uv run hivemind redeploy                   # smoke test: regenerate all agents
+bazelisk test //...                                      # full Bazel test suite
+bazelisk test //tests:test_core                          # single test target
+bazelisk run //src/hivemind:hivemind -- redeploy         # smoke: regenerate agents
 ```
+
+Lint/format/type-check tools (`ruff`, `mypy`, `pre-commit`) are pinned in
+`pyproject.toml` and locked in `uv.lock`, but not exposed as Bazel targets.
+Install them however you prefer (e.g., `brew install ruff mypy pre-commit`).
 
 ## Architecture
 
@@ -204,7 +217,7 @@ call and required the user to type `continue` to resume.
   `opencode.json` / `tui.json` dicts).
 - No backwards-compat shims, re-export facades, or alias layers —
   update callers directly.
-- Only editable installs supported (`uv tool install -e .`).
+- Bazel produces a launcher whose runfiles are symlinks to workspace source — Python edits in `src/hivemind/*.py` are live without rebuild. Only `pyproject.toml` / `uv.lock` / patch / engine-version changes need `make update`.
 - When editing experts, edit `experts/<name>/HEAD/agent.md` then
   `hivemind redeploy`. (MCP mutations are non-destructive now, but the
   CLI is still convenient for manual edits.)
@@ -217,5 +230,6 @@ The `hivemind mcp` subprocess is spawned once by opencode and held for
 the life of the opencode instance. After editing anything under
 `src/hivemind/mcp/` (or anything imported by the MCP handlers),
 **restart opencode** so the subprocess loads the new bytecode. The
-repo ships as an editable install (`uv tool install -e .`), so source
-edits are live — but the subprocess has to restart to re-import.
+launcher's runfiles tree is live (symlinks to workspace source), so
+source edits are visible immediately — but the subprocess still has to
+restart to re-import.

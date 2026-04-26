@@ -10,8 +10,8 @@ module(
 # Python toolchain + PyPI deps
 # ---------------------------------------------------------------------------
 
-bazel_dep(name = "rules_python", version = "0.36.0")
-bazel_dep(name = "rules_uv",     version = "0.40.0")
+bazel_dep(name = "rules_python",    version = "1.0.0")
+bazel_dep(name = "aspect_rules_py", version = "1.11.2")
 
 python = use_extension("@rules_python//python/extensions:python.bzl", "python")
 python.toolchain(
@@ -20,32 +20,27 @@ python.toolchain(
 )
 use_repo(python, "python_3_11", "python_versions")
 
-pip = use_extension("@rules_python//python/extensions:pip.bzl", "pip")
-pip.parse(
+# rules_py.uv extension reads uv.lock directly — no requirements.txt
+# translation step. Single hub, single project; the project block
+# auto-creates one venv per [dependency-groups] section in pyproject.toml
+# (plus an implicit venv named after the project for [project.dependencies]).
+uv = use_extension("@aspect_rules_py//uv/unstable:extension.bzl", "uv")
+uv.declare_hub(hub_name = "pypi")
+uv.project(
     hub_name = "pypi",
-    python_version = "3.11",
-    requirements_lock = "//:requirements_lock.txt",
-    # lxml 5.x optionally depends on lxml_html_clean (for the moved
-    # lxml.html.clean module), and lxml_html_clean depends on lxml —
-    # a real cycle in PyPI metadata. Bundle both into one cycle group.
-    experimental_requirement_cycles = {
-        "lxml": ["lxml", "lxml-html-clean"],
-    },
+    pyproject = "//:pyproject.toml",
+    lock = "//:uv.lock",
 )
-pip.parse(
-    hub_name = "pypi_dev",
-    python_version = "3.11",
-    requirements_lock = "//:requirements_dev_lock.txt",
-)
-use_repo(pip, "pypi", "pypi_dev")
+use_repo(uv, "pypi")
 
 # ---------------------------------------------------------------------------
 # Build-time helpers (used in later phases for opencode/bun pipeline)
 # ---------------------------------------------------------------------------
 
-bazel_dep(name = "aspect_bazel_lib", version = "2.9.4")
-bazel_dep(name = "bazel_skylib",     version = "1.7.1")
+bazel_dep(name = "aspect_bazel_lib", version = "2.19.3")
+bazel_dep(name = "bazel_skylib",     version = "1.8.1")
 bazel_dep(name = "rules_testing",    version = "0.6.0")
+bazel_dep(name = "platforms",        version = "1.0.0")
 
 # ---------------------------------------------------------------------------
 # External engine sources

@@ -1,10 +1,9 @@
 SHELL := /bin/bash
 
-.PHONY: help install uninstall update test python-tests clean engine
+.PHONY: help install update test clean engine
 
-BAZELISK   ?= bazelisk
-BUNDLE_DIR := src/hivemind/_bundled
-ENGINE     := $(BUNDLE_DIR)/hivemind-engine
+BAZELISK ?= bazelisk
+LAUNCHER := $(HOME)/.local/bin/hivemind
 
 .DEFAULT_GOAL := help
 
@@ -16,52 +15,40 @@ help: ## Show this help.
 	@printf "Hivemind — Bazel-native build for the Python CLI + bundled opencode engine.\n\n"
 	@printf "Usage: make <target>\n\n"
 	@printf "Targets:\n"
-	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / { printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
-	@printf "\nFirst-time setup: \033[36mmake install\033[0m\n"
+	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / { printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
+	@printf "\nFirst-time setup: \033[36mmake install\033[0m  (bazelisk is the only required system dep)\n"
 
-install: $(ENGINE) ## Build the bundled engine and install the hivemind CLI via uv.
-	@command -v uv >/dev/null || { echo "ERROR: uv required."; exit 1; }
-	uv tool install --reinstall --force --editable .
+install: ## Build hivemind and write a launcher wrapper into ~/.local/bin/.
+	@command -v $(BAZELISK) >/dev/null || { \
+	  echo "ERROR: bazelisk required. brew install bazelisk"; exit 1; }
+	$(BAZELISK) build //:hivemind
+	@mkdir -p $(HOME)/.local/bin
+	@# Resolve the launcher via cquery, not the workspace bazel-bin/ symlink.
+	@# rules_py applies a configuration transition, so the binary lives at
+	@# bazel-out/<cfg>-ST-<hash>/bin/... — and the workspace bazel-bin/ symlink
+	@# can rotate between transitioned and un-transitioned dirs depending on
+	@# what was last built. cquery gives us the exact file path for this
+	@# specific target. The wrapper sets RUNFILES_DIR explicitly so the
+	@# launcher's runfiles initializer doesn't try to look next to the wrapper.
+	@execroot=$$($(BAZELISK) info execution_root 2>/dev/null); \
+	 relpath=$$($(BAZELISK) cquery --output=files //:hivemind 2>/dev/null | grep -E '/hivemind$$' | head -1); \
+	 launcher="$$execroot/$$relpath"; \
+	 rm -f $(LAUNCHER); \
+	 printf '#!/usr/bin/env bash\nLAUNCHER=%q\nexec env RUNFILES_DIR="$${LAUNCHER}.runfiles" "$$LAUNCHER" "$$@"\n' "$$launcher" > $(LAUNCHER); \
+	 chmod +x $(LAUNCHER)
 	@echo ""
-	@echo "✓ hivemind installed. The bundled engine is at $(ENGINE)."
-	@echo "  Try: hivemind --help"
+	@echo "✓ Installed: $(LAUNCHER)"
+	@echo "  (Make sure ~/.local/bin is on your PATH.)"
 
-uninstall: ## Remove the hivemind CLI and the bundled engine binary.
-	-uv tool uninstall hivemind 2>/dev/null
-	rm -f $(ENGINE)
-
-update: ## Force-rebuild the engine and reinstall the CLI.
-	rm -f $(ENGINE)
+update: ## Pull, rebuild, refresh launcher (binary refreshes; Python source is live via runfiles).
 	$(MAKE) install
 
-engine: $(ENGINE) ## Rebuild only the engine (no Python install).
+engine: ## Rebuild only the bun-compiled engine.
+	$(BAZELISK) build //:engine
 
-test: python-tests ## Run the full test suite (uv pytest + bazel test //...).
+test: ## Run the full Bazel test suite (Python tests + bun/engine smoke tests).
 	$(BAZELISK) test //...
 
-python-tests: ## Run only the Python pytest suite via uv.
-	uv run pytest
-
-clean: ## Clean Bazel outputs and remove the bundled engine.
+clean: ## Clean Bazel outputs and remove the launcher symlink.
 	$(BAZELISK) clean
-	rm -f $(ENGINE)
-
-# ---------------------------------------------------------------------------
-# Internal targets
-# ---------------------------------------------------------------------------
-
-# Build the engine via Bazel and copy it into the Python package so that
-# `uv tool install -e .` finds it via importlib.resources at import time.
-#
-# The cquery output is execroot-relative (e.g. external/.../hivemind-engine),
-# so we prefix it with the execution_root reported by `bazel info`.
-$(ENGINE):
-	@command -v $(BAZELISK) >/dev/null || { \
-	  echo "ERROR: bazelisk required. Install with: brew install bazelisk"; \
-	  exit 1; }
-	$(BAZELISK) build //:engine
-	@mkdir -p $(BUNDLE_DIR)
-	@execroot=$$($(BAZELISK) info execution_root 2>/dev/null); \
-	relpath=$$($(BAZELISK) cquery --output=files //:engine 2>/dev/null); \
-	cp -f "$$execroot/$$relpath" $(ENGINE)
-	chmod +x $(ENGINE)
+	rm -f $(LAUNCHER)

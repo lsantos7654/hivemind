@@ -1,17 +1,30 @@
-load("@rules_python//python:defs.bzl", "py_binary", "py_library")
+load("@aspect_bazel_lib//lib:expand_template.bzl", "expand_template")
+load("@aspect_rules_py//py:defs.bzl", "py_library")
+load("@aspect_rules_py//py/unstable:defs.bzl", "py_venv_binary")
 
 package(default_visibility = ["//visibility:public"])
+
+# Bake the engine's rlocation key into a Python constant at build time.
+# Single source of truth: $(rlocationpath //:engine) resolves through
+# Bazel's label graph, so any rename in MODULE.bazel (extension or repo)
+# flows through here automatically.
+expand_template(
+    name = "_engine_rlocation",
+    out = "_engine_rlocation.py",
+    template = "_engine_rlocation.py.tpl",
+    substitutions = {
+        "__ENGINE_RLOCATION__": "$(rlocationpath //:engine)",
+    },
+    data = ["//:engine"],
+)
 
 py_library(
     name = "lib",
     srcs = glob(
         ["**/*.py"],
         exclude = ["__main__.py", "**/__pycache__/**"],
-    ),
-    data = glob([
-        "templates/**/*.j2",
-        "templates/**/*.md",
-    ]),
+    ) + [":_engine_rlocation"],
+    data = glob(["templates/**/*.j2"]),
     imports = [".."],
     deps = [
         "@pypi//typer",
@@ -27,10 +40,14 @@ py_library(
     ],
 )
 
-py_binary(
+# py_venv_binary builds the venv as a cached Bazel action instead of
+# re-validating it on every launcher invocation (which py_binary does and
+# costs ~1.9s per call). Drops cold start from ~2.4s to ~500ms.
+py_venv_binary(
     name = "hivemind",
     srcs = ["__main__.py"],
     main = "__main__.py",
     imports = [".."],
     deps = [":lib"],
+    data = ["//:engine"],
 )

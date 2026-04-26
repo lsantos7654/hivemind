@@ -6,7 +6,11 @@
     - post-mutation hook registry (`hooks.py`) now fires `/global/dispose` automatically from every ingress (CLI/TUI/MCP). MCP path accepts the session interrupt; see `HIVEMIND.md` for the abort-and-continue flow.
 - [ ] add to mcp server ability to pick a specific version/tag/commit
     - `refresh_agent` fetches latest only; `switch-version` is CLI-only. Want an MCP `switch_version(name, commit)` tool.
-- [ ] add background agents to workflow (plugin)
+- [ ] add background agents to workflow (plugin) (via /plugins in /opencode)
+- [ ] add support for adding (/agents to opencode/)
+- [ ] rename commands to skills (confirm this is the same)
+- [ ] port over working crawl infra
+- [ ] add mcp server to reference ongoing sessions from other sessions
 
 
 - [-] should notes.md | memory.md | short/long_memory.md be part of the agent class?
@@ -42,11 +46,3 @@ Out of scope for the layering refactor, noted in `refactor.md` / `CONTEXT.md`:
 
 
 can you consult the bazel expert and give me a rundown on how aspects work
-
-okay new rabbit hole and much more complexity but please humor me
-
-what if we adopted bazel into this project, we pin the exact version of opencode we want to use. We can create diffs to maintain our own patch of opencode fully isolated. This would allow us to create more granular integration and have complete control over the code. The fork exists within the repo as a collection of diffs against a pinned version of opencode.
-
-could you consult the bazel expert for this? Could you also do some research on which repos/rules exist for bazel that could help us with this?
-
-Essentially we would be building the hivemind binary which wraps opencode

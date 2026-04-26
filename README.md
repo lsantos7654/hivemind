@@ -11,24 +11,26 @@ Works with [OpenCode](https://opencode.ai).
 
 ## Install
 
-Requires [bazelisk](https://github.com/bazelbuild/bazelisk) and
-[uv](https://docs.astral.sh/uv/getting-started/installation/).
+Requires only [bazelisk](https://github.com/bazelbuild/bazelisk). The Python
+toolchain, PyPI dependencies, bun, and the patched opencode engine are all
+fetched and built hermetically by Bazel.
 
 ```bash
 git clone https://github.com/lsantos7654/hivemind.git
 cd hivemind
-make install     # builds the bundled engine via Bazel + uv tool installs the CLI
+make install     # bazelisk builds everything; symlinks ~/.local/bin/hivemind
 hivemind init
 ```
 
-`make install` does two things behind the scenes: builds a patched, pinned
-`opencode` engine binary via Bazel into `src/hivemind/_bundled/`, then
-`uv tool install -e .`'s the Python CLI so it picks up the bundled engine.
-This is intentionally hidden behind `make install` — you don't need to
-think about Bazel or uv directly.
+Make sure `~/.local/bin` is on your `PATH`.
 
-To upgrade to a new opencode pin (or rebuild after pulling): `make update`.
-To uninstall: `make uninstall`.
+`make install` builds the patched opencode engine binary and the Python CLI
+launcher via Bazel, then symlinks the launcher into `~/.local/bin/hivemind`.
+The launcher's runfiles tree contains symlinks to workspace source — Python
+edits in `src/hivemind/*.py` are live without rebuild.
+
+To upgrade to a new opencode pin (or rebuild after `git pull`): `make update`.
+To uninstall: `make clean`.
 
 ## Quick Start
 
@@ -201,5 +203,5 @@ All commands support tab completion for expert names.
 
 ## Requirements
 
-- Python 3.10+
-- [OpenCode](https://opencode.ai) CLI
+- [bazelisk](https://github.com/bazelbuild/bazelisk) on your `PATH` (only system dep)
+- `~/.local/bin` on your `PATH` (where `make install` drops the launcher)

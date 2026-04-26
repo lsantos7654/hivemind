@@ -71,27 +71,38 @@ def _cfg() -> HivemindConfig:
 
 
 def _engine_path() -> str:
-    """Resolve the bun-compiled hivemind-engine binary.
+    """Resolve the bun-compiled hivemind-engine binary via Bazel runfiles.
 
-    Resolution order:
-      1. ``$HIVEMIND_ENGINE`` — set by ``bazel run //:hivemind`` via the
-         ``env={"HIVEMIND_ENGINE": "$(rootpath ...)"}`` on the py_binary.
-      2. The bundled binary at ``src/hivemind/_bundled/hivemind-engine``,
-         placed there by ``make install`` (which builds via Bazel and
-         copies the artifact into the package).
+    Resolution:
+      1. ``$HIVEMIND_ENGINE`` — explicit override (tests, ad-hoc runs).
+      2. ``$RUNFILES_DIR / ENGINE_RLOCATION`` — direct concatenation.
+         ``ENGINE_RLOCATION`` is generated at build time from
+         ``$(rlocationpath //:engine)`` via the ``_engine_rlocation``
+         ``expand_template`` rule in ``src/hivemind/BUILD.bazel``, so
+         it's already a canonical (post-repo-mapping) rlocation key.
+         We bypass ``python.runfiles.Runfiles`` because that class uses
+         ``__file__``-based walk-up to find the runfiles root, which
+         lands inside the venv under ``py_venv_binary``.
 
-    No fallback to a system ``opencode``. The project is Bazel-native;
-    if the bundled binary isn't present, fail fast and ask the user to
-    run ``make install``.
+    Works for both ``bazel run //:hivemind`` and direct launcher invocation
+    (via ``~/.local/bin/hivemind``) — rules_py's launcher sets ``RUNFILES_DIR``
+    regardless of how it's invoked.
     """
-    env = os.environ.get("HIVEMIND_ENGINE")
-    if env:
+    if env := os.environ.get("HIVEMIND_ENGINE"):
         return env
-    bundled = Path(__file__).parent / "_bundled" / "hivemind-engine"
-    if bundled.exists():
-        return str(bundled)
-    msg = "hivemind-engine binary not found. Run `make install` to build it via Bazel and bundle it into the package."
-    raise RuntimeError(msg)
+
+    runfiles_dir = os.environ.get("RUNFILES_DIR")
+    if not runfiles_dir:
+        msg = "hivemind-engine not found: $RUNFILES_DIR unset (not running under Bazel)."
+        raise RuntimeError(msg)
+
+    from hivemind._engine_rlocation import ENGINE_RLOCATION  # type: ignore[import-untyped]
+
+    path = Path(runfiles_dir) / ENGINE_RLOCATION
+    if not path.exists():
+        msg = f"hivemind-engine runfile missing at {path} (key={ENGINE_RLOCATION!r})."
+        raise RuntimeError(msg)
+    return str(path)
 
 
 def invalidate_config_cache() -> None:
@@ -470,7 +481,7 @@ def attach_command(server_url: str, extra_args: list[str] | None = None) -> list
 
     Previously the no-empty-args branch always routed through
     ``run --attach``, which silently used non-interactive mode for
-    e.g. ``hivemind -s ses_xxx`` resume requests.
+    e.g. ``hivemind -- -s ses_xxx`` resume requests.
     """
     binary = _engine_path()
     args = extra_args or []

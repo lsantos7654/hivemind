@@ -765,26 +765,19 @@ def status() -> None:
 # ---------------------------------------------------------------------------
 
 
-_KNOWN_SUBCOMMANDS = {
-    "tui",
-    "mcp",
-    "init",
-    "redeploy",
-    "status",
-    "server",
-    "expert",
-    "team",
-    "--help",
-    "--install-completion",
-    "--show-completion",
-}
-
-
 def main_entry() -> None:
-    """Entry point that passes unknown args through to opencode."""
+    """Entry point. With ``--``, forwards trailing args to opencode; otherwise dispatches via typer."""
     import sys
 
     args = sys.argv[1:]
-    if args and args[0] not in _KNOWN_SUBCOMMANDS:
-        _launch_opencode(args)
-    app()
+    if "--" in args:
+        idx = args.index("--")
+        if idx != 0:
+            console.print(
+                "[error]hivemind: '--' must be the first argument; "
+                "use 'hivemind -- <opencode args>' to forward to opencode[/error]"
+            )
+            sys.exit(2)
+        _launch_opencode(args[1:])
+
+    app(prog_name="hivemind")

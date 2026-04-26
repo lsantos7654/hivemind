@@ -1,4 +1,4 @@
-load("@rules_python//python:defs.bzl", "py_test")
+load("@aspect_rules_py//py:defs.bzl", "py_test")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -9,7 +9,7 @@ py_test(
     imports = [".."],
     deps = [
         "//src/hivemind:lib",
-        "@pypi_dev//pytest",
+        "@pypi//pytest",
     ],
 )
 
@@ -20,6 +20,6 @@ py_test(
     imports = [".."],
     deps = [
         "//src/hivemind:lib",
-        "@pypi_dev//pytest",
+        "@pypi//pytest",
     ],
 )

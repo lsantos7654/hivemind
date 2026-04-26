@@ -13,3 +13,7 @@ build --disk_cache=~/.cache/bazel/disk
 build --incompatible_strict_action_env
 
 test --test_output=errors
+
+# rules_py.uv: select the default venv for all builds. The implicit
+# venv name comes from the pyproject.toml project name.
+common --@pypi//venv=hivemind
