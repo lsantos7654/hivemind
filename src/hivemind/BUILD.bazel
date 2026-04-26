@@ -43,6 +43,12 @@ py_library(
 # py_venv_binary builds the venv as a cached Bazel action instead of
 # re-validating it on every launcher invocation (which py_binary does and
 # costs ~1.9s per call). Drops cold start from ~2.4s to ~500ms.
+#
+# interpreter_options = ["-P"]: don't prepend the script's directory to
+# sys.path. Without this, sys.path[0] becomes <runfiles>/_main/src/hivemind/
+# which shadows the third-party `mcp` package (we have hivemind/mcp/ on disk).
+# py_binary used -I (isolated mode) which implies -P; py_venv_binary strips -I
+# (see rules_py py_venv.bzl::_interpreter_flags), so we set -P explicitly.
 py_venv_binary(
     name = "hivemind",
     srcs = ["__main__.py"],
@@ -50,4 +56,5 @@ py_venv_binary(
     imports = [".."],
     deps = [":lib"],
     data = ["//:engine"],
+    interpreter_options = ["-P"],
 )

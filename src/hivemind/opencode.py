@@ -605,9 +605,15 @@ def _post_init_dirs() -> list[InitResult]:
     mcp_section = existing.get("mcp")
     if not isinstance(mcp_section, dict):
         mcp_section = {}
+    # Use the absolute launcher path (~/.local/bin/hivemind, written by `make
+    # install`). opencode spawns this as a subprocess and may not have
+    # ~/.local/bin on its PATH (it inherits the parent process's PATH, which
+    # depends on how the user launched opencode). Resolving the path here
+    # eliminates that dependency entirely.
+    launcher = str(Path.home() / ".local" / "bin" / "hivemind")
     mcp_section["hivemind"] = {
         "type": "local",
-        "command": ["hivemind", "mcp"],
+        "command": [launcher, "mcp"],
         "environment": {"PYTHONUNBUFFERED": "1"},
     }
     existing["mcp"] = mcp_section
