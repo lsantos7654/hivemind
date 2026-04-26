@@ -1,4 +1,10 @@
-Subject: Bake `bash.sudo *: deny` into Permission.fromConfig
+From 1f51fe88da85f7ba21282df786132eb6fa09de2b Mon Sep 17 00:00:00 2001
+From: Lucas Santos <lsantos7654@gmail.com>
+Date: Mon, 20 Apr 2026 21:22:13 -0400
+Subject: [PATCH 6/6] Bake `bash.sudo *: deny` into Permission.fromConfig
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
 
 Replaces hivemind's runtime injection of `permissions.bash."sudo *":
 "deny"` into ~/.config/opencode/opencode.json with a default that's
@@ -14,11 +20,15 @@ A blanket `bash: { "*": "allow" }` will also override (the catch-all
 matches and is later in the list) — that is intentional; explicit user
 opt-out remains possible. Users without any bash config get sudo deny
 by default.
-
 ---
---- a/packages/opencode/src/permission/index.ts	2026-04-20 22:22:00
-+++ b/packages/opencode/src/permission/index.ts	2026-04-20 22:23:45
-@@ -276,8 +276,21 @@
+ packages/opencode/src/permission/index.ts | 15 ++++++++++++++-
+ 1 file changed, 14 insertions(+), 1 deletion(-)
+
+diff --git a/packages/opencode/src/permission/index.ts b/packages/opencode/src/permission/index.ts
+index b2cc0f9..ffc0b7e 100644
+--- a/packages/opencode/src/permission/index.ts
++++ b/packages/opencode/src/permission/index.ts
+@@ -276,8 +276,21 @@ export namespace Permission {
      return pattern
    }
 
@@ -41,3 +51,5 @@ by default.
      for (const [key, value] of Object.entries(permission)) {
        if (typeof value === "string") {
          ruleset.push({ permission: key, action: value, pattern: "*" })
+--
+2.50.1

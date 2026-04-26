@@ -75,6 +75,15 @@ def _opencode_install_impl(ctx):
     #    system `patch -p1` accepts the same diffs `git apply` would.
     for patch in ctx.attr.patches:
         patch_path = ctx.path(patch)
+
+        # Bazel 8's `--incompatible_no_implicit_watch_label` default is true, so
+        # `ctx.path(label)` does NOT add the file's content to recordedInputs.
+        # Without an explicit watch, edits to the patch file content won't
+        # invalidate the rule and `bazel build` will reuse the stale repo. Force
+        # the patch digest into the marker so `make dev-save` → `make update`
+        # picks up patch edits with no other plumbing.
+        ctx.watch(patch_path)
+
         result = ctx.execute(
             ["patch", "-p1", "--input", str(patch_path)],
             timeout = 60,

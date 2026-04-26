@@ -1,4 +1,10 @@
-Subject: Hardened opencode config defaults
+From 3769ebaf1559f93a44195737c1aa593063cd62ad Mon Sep 17 00:00:00 2001
+From: Lucas Santos <lsantos7654@gmail.com>
+Date: Mon, 20 Apr 2026 21:22:13 -0400
+Subject: [PATCH 5/6] Hardened opencode config defaults
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
 
 Bakes hivemind's hardening defaults into the opencode config schema so
 they don't have to be merged into ~/.config/opencode/opencode.json by
@@ -17,11 +23,15 @@ Changes:
                          cli/network.ts default)
 
 Users can still override any of these in their own opencode.json.
-
 ---
---- a/packages/opencode/src/config/config.ts	2026-04-20 22:17:02
-+++ b/packages/opencode/src/config/config.ts	2026-04-20 22:20:33
-@@ -775,7 +775,7 @@
+ packages/opencode/src/config/config.ts | 5 ++++-
+ 1 file changed, 4 insertions(+), 1 deletion(-)
+
+diff --git a/packages/opencode/src/config/config.ts b/packages/opencode/src/config/config.ts
+index 15d7fca..cee060b 100644
+--- a/packages/opencode/src/config/config.ts
++++ b/packages/opencode/src/config/config.ts
+@@ -775,7 +775,7 @@ export namespace Config {
    export const Server = z
      .object({
        port: z.number().int().positive().optional().describe("Port to listen on"),
@@ -30,7 +40,7 @@ Users can still override any of these in their own opencode.json.
        mdns: z.boolean().optional().describe("Enable mDNS service discovery"),
        mdnsDomain: z.string().optional().describe("Custom domain name for mDNS service (default: opencode.local)"),
        cors: z.array(z.string()).optional().describe("Additional domains to allow for CORS"),
-@@ -932,16 +932,19 @@
+@@ -932,16 +932,19 @@ export namespace Config {
        share: z
          .enum(["manual", "auto", "disabled"])
          .optional()
@@ -50,3 +60,5 @@ Users can still override any of these in their own opencode.json.
          .describe(
            "Automatically update to the latest version. Set to true to auto-update, false to disable, or 'notify' to show update notifications",
          ),
+--
+2.50.1

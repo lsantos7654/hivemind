@@ -1,6 +1,6 @@
 SHELL := /bin/bash
 
-.PHONY: help install update test clean engine
+.PHONY: help install update test clean engine dev dev-save dev-reset
 
 BAZELISK ?= bazelisk
 LAUNCHER := $(HOME)/.local/bin/hivemind
@@ -52,3 +52,18 @@ test: ## Run the full Bazel test suite (Python tests + bun/engine smoke tests).
 clean: ## Clean Bazel outputs and remove the launcher symlink.
 	$(BAZELISK) clean
 	rm -f $(LAUNCHER)
+
+# ---------------------------------------------------------------------------
+# Patch dev workflow — clone opencode into dev/, edit, save patches.
+# See scripts/dev-opencode.py for details.
+# ---------------------------------------------------------------------------
+
+dev: ## Clone opencode into dev/opencode and apply patches as commits.
+	@python3 scripts/dev-opencode.py clone
+
+dev-save: ## Regenerate third_party/patches/*.patch from dev/opencode commits.
+	@python3 scripts/dev-opencode.py save
+
+dev-reset: ## Wipe dev/opencode and re-clone from scratch.
+	rm -rf dev/opencode
+	@python3 scripts/dev-opencode.py clone

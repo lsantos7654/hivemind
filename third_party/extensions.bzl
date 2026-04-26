@@ -84,14 +84,13 @@ def _ext_impl(ctx):
 # Patches applied to the fetched opencode tree, in order. Resolved relative
 # to //third_party/patches/.
 _OPENCODE_PATCHES = [
-    "0001-rewrite-exit-continue-to-hivemind.patch",
-    "0002-rebrand-logo-to-hivemind.patch",
-    "0003-add-hivemind-connection-indicator.patch",
-    "0004-add-reload-agents-endpoint.patch",
-    "0005-hardened-config-defaults.patch",
-    "0006-deny-sudo-by-default.patch",
+    "0001-Rewrite-the-TUI-exit-Continue-suggestion-to-hivemind.patch",
+    "0002-Rebrand-the-OPENCODE-wordmark-TUI-logo-to-HIVEMIND.patch",
+    "0003-Inline-connection-indicator-into-home-sidebar-footer.patch",
+    "0004-Non-destructive-agent-reload-endpoint.patch",
+    "0005-Hardened-opencode-config-defaults.patch",
+    "0006-Bake-bash.sudo-deny-into-Permission.fromConfig.patch",
 ]
-
 external_engines = module_extension(
     implementation = _ext_impl,
     tag_classes = {

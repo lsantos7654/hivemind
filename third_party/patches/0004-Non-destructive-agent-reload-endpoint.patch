@@ -1,4 +1,10 @@
-Subject: Non-destructive agent reload endpoint
+From 08ec3348641caa243103f88337032d64ae0f1e13 Mon Sep 17 00:00:00 2001
+From: Lucas Santos <lsantos7654@gmail.com>
+Date: Mon, 20 Apr 2026 21:22:13 -0400
+Subject: [PATCH 4/6] Non-destructive agent reload endpoint
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
 
 Adds `POST /global/reload-agents` to opencode that re-reads agents/*.md
 for every active instance without disposing the InstanceState. Unlike
@@ -24,70 +30,18 @@ Mechanism:
     Agent.reloadAll can iterate them without breaking encapsulation.
   - Adds POST /global/reload-agents route that calls Agent.reloadAll()
     and emits a new AgentsReloadedEvent on GlobalBus.
-
 ---
---- a/packages/opencode/src/project/instance.ts	2026-04-20 22:15:53
-+++ b/packages/opencode/src/project/instance.ts	2026-04-20 22:16:06
-@@ -172,4 +172,12 @@
+ packages/opencode/src/agent/agent.ts          | 46 +++++++++++++++++++
+ packages/opencode/src/config/config.ts        | 14 ++++++
+ packages/opencode/src/project/instance.ts     |  8 ++++
+ packages/opencode/src/server/routes/global.ts | 44 ++++++++++++++++++
+ 4 files changed, 112 insertions(+)
 
-     return disposal.all
-   },
-+  /**
-+   * Hivemind: list directories of every cached instance. Used by the
-+   * /global/reload-agents route to iterate and refresh agent state without
-+   * disposing the InstanceState (which would SIGTERM MCP subprocesses).
-+   */
-+  directories(): string[] {
-+    return [...cache.keys()]
-+  },
- }
---- a/packages/opencode/src/config/config.ts	2026-04-20 22:17:02
-+++ b/packages/opencode/src/config/config.ts	2026-04-20 22:17:02
-@@ -1122,6 +1122,7 @@
-     readonly update: (config: Info) => Effect.Effect<void>
-     readonly updateGlobal: (config: Info) => Effect.Effect<Info>
-     readonly invalidate: (wait?: boolean) => Effect.Effect<void>
-+    readonly invalidateState: () => Effect.Effect<void>
-     readonly directories: () => Effect.Effect<string[]>
-     readonly waitForDependencies: () => Effect.Effect<void>
-   }
-@@ -1582,6 +1583,14 @@
-             )
-           if (wait) yield* Effect.promise(() => task)
-           else void task
-+        })
-+
-+        // Hivemind: non-destructive cache invalidation. Clears the per-instance
-+        // Config cache for the current directory so the next get() re-reads
-+        // config files from disk (including agents/*.md). Does NOT call
-+        // Instance.dispose, so MCP subprocesses survive.
-+        const invalidateState = Effect.fn("Config.invalidateState")(function* () {
-+          yield* InstanceState.invalidate(state)
-         })
-
-         const updateGlobal = Effect.fn("Config.updateGlobal")(function* (config: Info) {
-@@ -1612,6 +1621,7 @@
-           update,
-           updateGlobal,
-           invalidate,
-+          invalidateState,
-           directories,
-           waitForDependencies,
-         })
-@@ -1650,6 +1660,10 @@
-     return runPromise((svc) => svc.invalidate(wait))
-   }
-
-+  export async function invalidateState() {
-+    return runPromise((svc) => svc.invalidateState())
-+  }
-+
-   export async function directories() {
-     return runPromise((svc) => svc.directories())
-   }
---- a/packages/opencode/src/agent/agent.ts	2026-04-20 22:17:42
-+++ b/packages/opencode/src/agent/agent.ts	2026-04-20 22:17:42
-@@ -22,6 +22,8 @@
+diff --git a/packages/opencode/src/agent/agent.ts b/packages/opencode/src/agent/agent.ts
+index 2a8bed0..d3179d6 100644
+--- a/packages/opencode/src/agent/agent.ts
++++ b/packages/opencode/src/agent/agent.ts
+@@ -22,6 +22,8 @@ import { Skill } from "../skill"
  import { Effect, ServiceMap, Layer } from "effect"
  import { InstanceState } from "@/effect/instance-state"
  import { makeRuntime } from "@/effect/run-service"
@@ -96,7 +50,7 @@ Mechanism:
 
  export namespace Agent {
    export const Info = z
-@@ -51,10 +53,18 @@
+@@ -51,10 +53,18 @@ export namespace Agent {
      })
    export type Info = z.infer<typeof Info>
 
@@ -115,7 +69,7 @@ Mechanism:
      readonly generate: (input: {
        description: string
        model?: { providerID: ProviderID; modelID: ModelID }
-@@ -326,6 +336,17 @@
+@@ -326,6 +336,17 @@ export namespace Agent {
          defaultAgent: Effect.fn("Agent.defaultAgent")(function* () {
            return yield* InstanceState.useEffect(state, (s) => s.defaultAgent())
          }),
@@ -133,11 +87,10 @@ Mechanism:
          generate: Effect.fn("Agent.generate")(function* (input: {
            description: string
            model?: { providerID: ProviderID; modelID: ModelID }
-@@ -423,5 +444,30 @@
-
+@@ -424,4 +445,29 @@ export namespace Agent {
    export async function generate(input: { description: string; model?: { providerID: ProviderID; modelID: ModelID } }) {
      return runPromise((svc) => svc.generate(input))
-+  }
+   }
 +
 +  /**
 +   * Hivemind: reload the agent registry for every active instance. Iterates
@@ -162,11 +115,76 @@ Mechanism:
 +      }
 +    }
 +    return { instances: dirs.length, agents }
-   }
++  }
  }
---- a/packages/opencode/src/server/routes/global.ts	2026-04-20 22:18:02
-+++ b/packages/opencode/src/server/routes/global.ts	2026-04-20 22:18:25
-@@ -11,12 +11,21 @@
+diff --git a/packages/opencode/src/config/config.ts b/packages/opencode/src/config/config.ts
+index ff79b73..15d7fca 100644
+--- a/packages/opencode/src/config/config.ts
++++ b/packages/opencode/src/config/config.ts
+@@ -1122,6 +1122,7 @@ export namespace Config {
+     readonly update: (config: Info) => Effect.Effect<void>
+     readonly updateGlobal: (config: Info) => Effect.Effect<Info>
+     readonly invalidate: (wait?: boolean) => Effect.Effect<void>
++    readonly invalidateState: () => Effect.Effect<void>
+     readonly directories: () => Effect.Effect<string[]>
+     readonly waitForDependencies: () => Effect.Effect<void>
+   }
+@@ -1584,6 +1585,14 @@ export namespace Config {
+           else void task
+         })
+
++        // Hivemind: non-destructive cache invalidation. Clears the per-instance
++        // Config cache for the current directory so the next get() re-reads
++        // config files from disk (including agents/*.md). Does NOT call
++        // Instance.dispose, so MCP subprocesses survive.
++        const invalidateState = Effect.fn("Config.invalidateState")(function* () {
++          yield* InstanceState.invalidate(state)
++        })
++
+         const updateGlobal = Effect.fn("Config.updateGlobal")(function* (config: Info) {
+           const file = globalConfigFile()
+           const before = (yield* readConfigFile(file)) ?? "{}"
+@@ -1612,6 +1621,7 @@ export namespace Config {
+           update,
+           updateGlobal,
+           invalidate,
++          invalidateState,
+           directories,
+           waitForDependencies,
+         })
+@@ -1650,6 +1660,10 @@ export namespace Config {
+     return runPromise((svc) => svc.invalidate(wait))
+   }
+
++  export async function invalidateState() {
++    return runPromise((svc) => svc.invalidateState())
++  }
++
+   export async function directories() {
+     return runPromise((svc) => svc.directories())
+   }
+diff --git a/packages/opencode/src/project/instance.ts b/packages/opencode/src/project/instance.ts
+index a0d6f24..ed7de63 100644
+--- a/packages/opencode/src/project/instance.ts
++++ b/packages/opencode/src/project/instance.ts
+@@ -172,4 +172,12 @@ export const Instance = {
+
+     return disposal.all
+   },
++  /**
++   * Hivemind: list directories of every cached instance. Used by the
++   * /global/reload-agents route to iterate and refresh agent state without
++   * disposing the InstanceState (which would SIGTERM MCP subprocesses).
++   */
++  directories(): string[] {
++    return [...cache.keys()]
++  },
+ }
+diff --git a/packages/opencode/src/server/routes/global.ts b/packages/opencode/src/server/routes/global.ts
+index 16b9e55..8abef06 100644
+--- a/packages/opencode/src/server/routes/global.ts
++++ b/packages/opencode/src/server/routes/global.ts
+@@ -11,12 +11,21 @@ import { Installation } from "@/installation"
  import { Log } from "../../util/log"
  import { lazy } from "../../util/lazy"
  import { Config } from "../../config/config"
@@ -188,12 +206,10 @@ Mechanism:
  async function streamEvents(c: Context, subscribe: (q: AsyncQueue<string | null>) => () => void) {
    return streamSSE(c, async (stream) => {
      const q = new AsyncQueue<string | null>()
-@@ -250,6 +259,41 @@
-           },
-         })
+@@ -252,6 +261,41 @@ export const GlobalRoutes = lazy(() =>
          return c.json(true)
-+      },
-+    )
+       },
+     )
 +    .post(
 +      "/reload-agents",
 +      describeRoute({
@@ -227,6 +243,10 @@ Mechanism:
 +          },
 +        })
 +        return c.json(result)
-       },
-     )
++      },
++    )
      .post(
+       "/upgrade",
+       describeRoute({
+--
+2.50.1

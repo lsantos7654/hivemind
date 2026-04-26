@@ -1,4 +1,7 @@
-Subject: Rebrand the OPENCODE wordmark + TUI logo to HIVEMIND
+From 6658168f97b0ef792150f57247de22ff65dafb93 Mon Sep 17 00:00:00 2001
+From: Lucas Santos <lsantos7654@gmail.com>
+Date: Mon, 20 Apr 2026 21:22:13 -0400
+Subject: [PATCH 2/6] Rebrand the OPENCODE wordmark + TUI logo to HIVEMIND
 
 Replaces the two ASCII-art glyph sources in the opencode source tree
 that the user sees: the static `wordmark` array used by the exit screen
@@ -14,30 +17,39 @@ exit-message template that references `logo[0]..logo[3]`. The TUI
 `<Logo />` component iterates `logo.left` so we put the full 5-line art
 on the left and emit empty padding strings on the right; the existing
 shadow-marker rendering still works on the empty strings (no-op).
-
 ---
+ packages/opencode/src/cli/logo.ts | 14 ++++++++++++--
+ packages/opencode/src/cli/ui.ts   |  8 ++++----
+ 2 files changed, 16 insertions(+), 6 deletions(-)
+
 diff --git a/packages/opencode/src/cli/logo.ts b/packages/opencode/src/cli/logo.ts
+index 44fb93c..1708ce4 100644
 --- a/packages/opencode/src/cli/logo.ts
 +++ b/packages/opencode/src/cli/logo.ts
-@@ -1,6 +1,12 @@
+@@ -1,6 +1,16 @@
  export const logo = {
 -  left: ["                   ", "█▀▀█ █▀▀█ █▀▀█ █▀▀▄", "█__█ █__█ █^^^ █__█", "▀▀▀▀ █▀▀▀ ▀▀▀▀ ▀~~▀"],
 -  right: ["             ▄     ", "█▀▀▀ █▀▀█ █▀▀█ █▀▀█", "█___ █__█ █__█ █^^^", "▀▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀"],
 +  left: [
-+    "    __  _______    __________  ________   ______",
-+    "   / / / /  _/ |  / / ____/  |/  /  _/ | / / __ \\",
-+    "  / /_/ // / | | / / __/ / /|_/ // //  |/ / / / /",
-+    " / __  // /  | |/ / /___/ /  / // // /|  / /_/ /",
-+    "/_/ /_/___/  |___/_____/_/  /_/___/_/ |_/_____/",
++    "                   ",
++    "█  █ ▀█▀  █  █ █▀▀█",
++    "█^^█  █   █__█ █^^^",
++    "▀~~▀ ▀▀▀   ▀▀  ▀▀▀▀",
 +  ],
-+  right: ["", "", "", "", ""],
++  right: [
++    "                    ",
++    "█▄ ▄█ ▀█▀  █▀▀▄ █▀▀▄",
++    "█_█_█  █   █__█ █__█",
++    "▀   ▀ ▀▀▀  ▀~~▀ ▀▀▀ ",
++  ],
  }
 
  export const marks = "_^~"
 diff --git a/packages/opencode/src/cli/ui.ts b/packages/opencode/src/cli/ui.ts
+index b24a2a2..4cb79d4 100644
 --- a/packages/opencode/src/cli/ui.ts
 +++ b/packages/opencode/src/cli/ui.ts
-@@ -5,10 +5,10 @@
+@@ -5,10 +5,10 @@ import { logo as glyphs } from "./logo"
 
  export namespace UI {
    const wordmark = [
@@ -45,10 +57,12 @@ diff --git a/packages/opencode/src/cli/ui.ts b/packages/opencode/src/cli/ui.ts
 -    `█▀▀█ █▀▀█ █▀▀█ █▀▀▄ █▀▀▀ █▀▀█ █▀▀█ █▀▀█`,
 -    `█  █ █  █ █▀▀▀ █  █ █    █  █ █  █ █▀▀▀`,
 -    `▀▀▀▀ █▀▀▀ ▀▀▀▀ ▀  ▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀`,
-+    `   / / / /  _/ |  / / ____/  |/  /  _/ | / / __ \\`,
-+    `  / /_/ // / | | / / __/ / /|_/ // //  |/ / / / /`,
-+    ` / __  // /  | |/ / /___/ /  / // // /|  / /_/ /`,
-+    `/_/ /_/___/  |___/_____/_/  /_/___/_/ |_/_____/`,
++    `                                        `,
++    `█  █ ▀█▀  █  █ █▀▀█ █▄ ▄█ ▀█▀  █▀▀▄ █▀▀▄`,
++    `█▀▀█  █   █  █ █▀▀▀ █ █ █  █   █  █ █  █`,
++    `▀  ▀ ▀▀▀   ▀▀  ▀▀▀▀ ▀   ▀ ▀▀▀  ▀  ▀ ▀▀▀▀`,
    ]
 
    export const CancelledError = NamedError.create("UICancelledError", z.void())
+--
+2.50.1

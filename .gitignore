@@ -33,6 +33,9 @@ build/
 bazel-*
 MODULE.bazel.lock
 
+# Local opencode dev checkout (created by `make dev`)
+dev/
+
 # Bundled engine binary (produced by `make install`)
 src/hivemind/_bundled/hivemind-engine
 

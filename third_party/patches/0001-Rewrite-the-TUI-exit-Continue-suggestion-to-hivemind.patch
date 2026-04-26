@@ -1,4 +1,10 @@
-Subject: Rewrite the TUI exit "Continue" suggestion to `hivemind`
+From 8d45f354d64d04f94688c1b15ed11af1f8f58c1d Mon Sep 17 00:00:00 2001
+From: Lucas Santos <lsantos7654@gmail.com>
+Date: Mon, 20 Apr 2026 21:22:13 -0400
+Subject: [PATCH 1/6] Rewrite the TUI exit "Continue" suggestion to `hivemind`
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
 
 The opencode TUI prints a `Continue  opencode -s <session-id>` line on
 exit. Under hivemind, the user-facing CLI is `hivemind`, not `opencode`,
@@ -8,16 +14,15 @@ The literal is hardcoded — there is no plugin slot, event, env var, or
 config seam that lets a TUI plugin override the line (verified against
 upstream source). This patch is the only path that currently works and
 is the originating motivation for the bun-vendored build.
-
 ---
  packages/opencode/src/cli/cmd/tui/routes/session/index.tsx | 2 +-
  1 file changed, 1 insertion(+), 1 deletion(-)
 
 diff --git a/packages/opencode/src/cli/cmd/tui/routes/session/index.tsx b/packages/opencode/src/cli/cmd/tui/routes/session/index.tsx
-index 0000000..0000000 100644
+index 32a9d13..1f061cc 100644
 --- a/packages/opencode/src/cli/cmd/tui/routes/session/index.tsx
 +++ b/packages/opencode/src/cli/cmd/tui/routes/session/index.tsx
-@@ -257,7 +257,7 @@
+@@ -257,7 +257,7 @@ export function Session() {
          `${logo[3] ?? ""}`,
          ``,
          `  ${weak("Session")}${UI.Style.TEXT_NORMAL_BOLD}${title}${UI.Style.TEXT_NORMAL}`,
@@ -26,3 +31,5 @@ index 0000000..0000000 100644
          ``,
        ].join("\n"),
      )
+--
+2.50.1

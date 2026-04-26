@@ -89,6 +89,7 @@ max-complexity = 15
 "src/hivemind/mcp/*.py" = ["TRY003", "EM101"]
 "src/hivemind/tui/**/*.py" = ["TRY003", "EM101"]
 "tests/**/*.py" = ["S101", "PLR2004", "PT011", "SIM117"]
+"scripts/*.py" = ["T201"]
 
 [tool.ruff.format]
 quote-style = "double"
