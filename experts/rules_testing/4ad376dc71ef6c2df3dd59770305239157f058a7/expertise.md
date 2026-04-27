@@ -1,0 +1,428 @@
+### Analysis Testing Framework
+
+**Core Testing Concepts**:
+- Creating analysis tests with `analysis_test()` function for testing rule behavior during Bazel's analysis phase
+- Writing test implementation functions with signature `impl(env, target)` or `impl(env, targets)`
+- Using `util.helper_target()` to create test targets hidden from `//...` and `:all` expansions
+- Testing single targets with `target` parameter vs multiple targets with `targets` dict
+- Applying configuration settings to targets under test using `config_settings` parameter
+- Testing aspects by attaching them to targets with `aspects` parameter
+- Creating custom testing aspects with `util.make_testing_aspect()`
+
+**Test Organization**:
+- Aggregating multiple test functions into test suites with `test_suite()`
+- Using `basic_tests` parameter for simple unit tests that don't need setup functions
+- Organizing test files with test setup functions and implementation functions
+- Structuring BUILD files to include test suite declarations
+- Running tests with `bazel test` command
+
+**Advanced Testing Patterns**:
+- Testing cross-platform behavior by analyzing same target with different `config_settings`
+- Using custom attributes in tests via `attrs` and `attr_values` parameters
+- Testing configuration transitions and platform-specific behavior
+- Testing flag handling and compiler flag construction
+- Verifying backwards compatibility with multiple configuration variants
+
+### Truth-Style Assertion Library
+
+**Core Assertion API**:
+- Using `env.expect` object as entry point for all assertions
+- Creating type-specific subjects with `that_target()`, `that_action()`, `that_str()`, etc.
+- Chaining assertions for fluent test code
+- Adding context to assertions with `.where(details=...)`
+- Understanding the subject pattern: wrappers that provide type-specific assertion methods
+
+**Target Assertions (TargetSubject)**:
+- Accessing providers with `.provider(provider_key)` and `.has_provider()`
+- Verifying default outputs with `.default_outputs()` returning `CollectionSubject`
+- Checking runfiles with `.runfiles()` returning `RunfilesSubject`
+- Accessing executable with `.executable()` returning `FileSubject`
+- Finding actions that generate files with `.action_generating(file)`
+- Finding actions by mnemonic with `.action_named(mnemonic)`
+- Accessing target attributes with `.attr(name)` (requires TestingAspectInfo)
+
+**Action Assertions (ActionSubject)**:
+- Verifying action arguments with `.argv()`, `.contains_at_least_args()`, `.contains_exactly_args()`
+- Checking flag-value pairs with `.contains_flag_values(flag_value_pairs)`
+- Excluding specific arguments with `.contains_none_of_args()`
+- Checking action mnemonic with `.mnemonic()` returning `StrSubject`
+- Verifying environment variables with `.env()` returning `DictSubject`
+- Checking input files with `.inputs()` returning `DepsetFileSubject`
+- Verifying output files with `.outputs()` returning `CollectionSubject`
+- Accessing template substitutions with `.substitutions()` for template actions
+
+**Collection Assertions (CollectionSubject)**:
+- Exact matching with `.contains_exactly(items)`
+- Subset matching with `.contains_at_least(items)` and `.contains(item)`
+- Exclusion with `.contains_none_of(items)`
+- Size checking with `.has_size(n)` and `.is_empty()`
+- Order verification with `.is_in_order()`
+- Predicate-based matching with `.contains_predicate(matcher)`
+- Multiple predicate matching with `.contains_at_least_predicates()` and `.contains_exactly_predicates()`
+
+**Runfiles Assertions (RunfilesSubject)**:
+- Checking runfiles paths with `.contains()`, `.contains_exactly()`, `.contains_at_least()`
+- Excluding paths with `.contains_none_of()`
+- Using predicates for pattern matching with `.contains_predicate()`
+- Accessing all paths with `.paths()` returning `CollectionSubject`
+- Understanding workspace-relative path format for runfiles
+
+**File Assertions (FileSubject)**:
+- Checking file path with `.path()` returning `StrSubject`
+- Verifying short path with `.short_path()` returning `StrSubject`
+- Checking basename with `.basename()` returning `StrSubject`
+- Verifying extension with `.extension()` returning `StrSubject`
+- Direct file comparison with `.equals(other_file)`
+
+**Dictionary Assertions (DictSubject)**:
+- Exact matching with `.contains_exactly(dict)`
+- Subset matching with `.contains_at_least(dict)`
+- Key inspection with `.keys()` returning `CollectionSubject`
+- Value access with `.get(key, factory=...)` returning appropriate subject
+
+**String Assertions (StrSubject)**:
+- Equality checking with `.equals(expected)`
+- Substring matching with `.contains(substring)`
+- Pattern matching with `.matches(pattern)` using glob-style patterns
+- Splitting into collection with `.split(sep)` returning `CollectionSubject`
+
+**Integer Assertions (IntSubject)**:
+- Equality with `.equals(expected)`
+- Comparisons with `.is_greater_than()`, `.is_at_least()`, `.is_at_most()`
+
+**Boolean Assertions (BoolSubject)**:
+- Direct value checks with `.is_true()` and `.is_false()`
+- Equality with `.equals(expected)`
+
+**Struct Assertions (StructSubject)**:
+- Accessing struct fields with type-specific subjects
+- Verifying struct field values
+- Nested struct assertion patterns
+
+**Label Assertions (LabelSubject)**:
+- Checking label components (name, package, workspace)
+- Label equality and comparison
+
+**Provider-Specific Assertions**:
+- DefaultInfoSubject for DefaultInfo provider
+- ExecutionInfoSubject for execution requirements
+- InstrumentedFilesInfoSubject for coverage testing
+- RunEnvironmentInfoSubject for runtime environment variables
+
+### Matcher System for Predicate-Based Testing
+
+**Built-in File Matchers**:
+- `matching.file_basename_contains(substr)` - Match files by basename substring
+- `matching.file_path_matches(pattern)` - Match file paths with glob patterns
+- `matching.file_short_path_equals(path)` - Match files by exact short path
+
+**Built-in String Matchers**:
+- `matching.str_matches(pattern)` - Match strings with glob patterns (supports `*`)
+- `matching.equals_wrapper(value)` - Convert any value to a matcher for equality
+
+**Matcher Composition**:
+- `matching.all(*matchers)` - Create AND matcher (all must match)
+- `matching.any(*matchers)` - Create OR matcher (any must match)
+
+**Custom Matchers**:
+- Creating custom matchers with `matching.custom_matcher(desc, predicate_func)`
+- Understanding the Matcher interface (desc and match function)
+- Implementing predicate functions that return boolean results
+- Using custom matchers with `.contains_predicate()` methods
+
+**Practical Matcher Use Cases**:
+- Ignoring platform-specific file extensions (`.exe` on Windows)
+- Matching generated files with variable components
+- Finding files in specific directories
+- Complex multi-condition matching with composition
+
+### Unit Testing for Starlark Code
+
+**Unit Test Creation**:
+- Using `unit_test(name, impl, attrs={})` for testing pure Starlark functions
+- Writing unit test implementations with signature `impl(env)`
+- Testing utility functions, helpers, and custom logic
+- Testing code that doesn't require rule instantiation or analysis phase
+
+**Unit Test Patterns**:
+- Testing string parsing and formatting functions
+- Testing data structure manipulation
+- Testing validation logic
+- Testing Starlark utility libraries
+
+**Comparison with Analysis Tests**:
+- Unit tests run faster (no analysis phase required)
+- Unit tests cannot access targets or actions
+- Unit tests ideal for pure functions and logic
+- Analysis tests required for rule behavior and provider testing
+
+### Utility Functions and Helpers
+
+**Test Setup Utilities**:
+- `util.helper_target(rule, **kwargs)` - Create test targets with automatic tags
+- `util.runfiles_paths(workspace_name, runfiles)` - Convert runfiles to path list
+- `util.merge_kwargs(*dicts)` - Merge keyword argument dictionaries with list concatenation
+- `util.make_testing_aspect(aspects=[])` - Create custom testing aspects
+
+**Test Environment Access**:
+- Accessing workspace name via `env.ctx.workspace_name`
+- Understanding the `env` parameter structure in test implementations
+- Using `env.expect` for creating subjects
+
+### Custom Provider Testing
+
+**Provider Subject Factories**:
+- Defining custom subject classes for custom providers
+- Implementing subject constructors with signature `new(info, meta)`
+- Creating subject methods for provider-specific assertions
+- Registering factories with `provider_subject_factories` parameter
+
+**Factory Registration**:
+- Creating factory struct with `type`, `name`, and `factory` fields
+- Passing factories to `analysis_test()` via `provider_subject_factories`
+- Automatic factory lookup when accessing custom providers
+
+**Custom Subject Implementation**:
+- Threading `ExpectMeta` through subject methods
+- Returning appropriate subject types from methods
+- Providing descriptive error messages
+- Following subject pattern conventions from built-in subjects
+
+### Test Configuration and Attributes
+
+**Custom Test Attributes**:
+- Adding attributes using attribute objects via `attrs` parameter
+- Providing attribute values with `attr_values` parameter
+- Using `select()` with custom attributes for conditional test behavior
+- Accessing custom attributes in test implementation
+
+**Target Configuration with Dict Templates**:
+- Using `@config_settings` special key in `attrs` dict templates
+- Applying different configuration settings to named targets
+- Testing same target with multiple configurations
+- Specifying platform constraints and build flags per-target
+
+**Configuration Settings**:
+- Applying flags to targets under test with `config_settings` parameter
+- Testing platform-specific behavior with platform constraints
+- Verifying configuration transition effects
+- Testing flag propagation through dependencies
+
+### Best Practices and Patterns
+
+**Test Structure Best Practices**:
+- Separating test setup (target creation) from test implementation
+- Using descriptive test and target names with consistent suffixes
+- Organizing related tests into test suites
+- Following Arrange-Act-Assert pattern in test implementations
+
+**Error Message Quality**:
+- Adding context with `.where(details=...)` for clearer failures
+- Using appropriate subject types for better error messages
+- Chaining assertions to build clear test intent
+- Understanding how ExpectMeta tracks assertion context
+
+**Testing Anti-Patterns to Avoid**:
+- Not using `util.helper_target()` for test targets (pollutes `//...` expansion)
+- Testing implementation details instead of observable behavior
+- Overly rigid assertions that break on harmless changes
+- Not testing cross-platform behavior when relevant
+
+**Performance Considerations**:
+- Preferring unit tests for pure Starlark code (faster execution)
+- Using analysis tests only when testing rule behavior
+- Sharing test targets across multiple tests when possible
+- Minimizing number of targets created per test
+
+### Integration with Bazel Ecosystem
+
+**Dependency Management**:
+- Adding rules_testing as dev dependency with `bazel_dep(name = "rules_testing", dev_dependency = True)`
+- Depending on bazel_skylib (required runtime dependency)
+- Using bzlmod for modern dependency management
+- Legacy WORKSPACE setup with http_archive
+
+**Loading Test APIs**:
+- Loading from `@rules_testing//lib:analysis_test.bzl`
+- Loading from `@rules_testing//lib:truth.bzl` for assertions
+- Loading from `@rules_testing//lib:util.bzl` for utilities
+- Loading from `@rules_testing//lib:test_suite.bzl` for aggregation
+
+**Integration with CI/CD**:
+- Running tests with `bazel test //...`
+- Using test suites for organized test execution
+- Test result caching and incremental testing
+- Cross-platform CI testing with multiple Bazel versions
+
+### Migration and Compatibility
+
+**Migrating from skylib unittest**:
+- Using compatibility layer in `@rules_testing//lib:unittest.bzl`
+- Understanding API differences between unittest and rules_testing
+- Gradual migration path for existing test suites
+- Benefits of rules_testing over unittest (better errors, more features)
+
+**Version Compatibility**:
+- Minimum Bazel version requirements
+- Compatibility with different Bazel releases
+- Bzlmod vs WORKSPACE support
+- Platform support (Linux, macOS, Windows)
+
+### Advanced Topics
+
+**Aspect Testing**:
+- Testing aspect-generated actions and providers
+- Using custom testing aspects with `util.make_testing_aspect()`
+- Attaching aspects to targets under test
+- Verifying aspect propagation through dependencies
+
+**Template Action Testing**:
+- Accessing template substitutions with `.substitutions()`
+- Verifying template expansion behavior
+- Testing template actions vs spawn actions
+
+**Depset Testing**:
+- Using `DepsetFileSubject` for testing depsets of files
+- Understanding depset traversal order in assertions
+- Converting depsets to collections for assertion
+
+**Instrumented Files and Coverage**:
+- Testing coverage instrumentation with `InstrumentedFilesInfoSubject`
+- Verifying coverage metadata collection
+- Testing instrumentation across languages
+
+**Execution Info Testing**:
+- Verifying execution requirements with `ExecutionInfoSubject`
+- Testing execution platform constraints
+- Checking execution tags and properties
+
+**Run Environment Testing**:
+- Using `RunEnvironmentInfoSubject` for environment variable testing
+- Verifying runtime environment setup
+- Testing environment variable propagation
+
+### Documentation and Resources
+
+**Official Documentation**:
+- API reference at docs/source/api/ (generated from Stardoc)
+- User guides in docs/source/ (analysis_tests.md, truth.md, etc.)
+- Best practices guide at docs/source/best_practices.md
+- ReadTheDocs site at https://rules-testing.readthedocs.io
+
+**Example Tests**:
+- Self-testing suite in tests/ directory demonstrates real usage
+- Tests for each subject type in tests/ subdirectories
+- Analysis test examples in tests/analysis_test_tests.bzl
+- Truth assertion examples in tests/truth_tests.bzl
+
+**Source Code Organization**:
+- Public API in lib/*.bzl files
+- Implementation details in lib/private/*.bzl
+- Each subject in separate file (lib/private/*_subject.bzl)
+- Utilities split between public (lib/util.bzl) and private (lib/private/util.bzl)
+
+### Framework Architecture and Internals
+
+**Execution Model**:
+- Loading phase: Test setup functions create targets and call analysis_test()
+- Analysis phase: Test rule instantiated, aspects applied, test impl function runs
+- Assertion phase: Subjects created, assertions executed, failures collected
+- Reporting phase: Test results reported to Bazel
+
+**ExpectMeta Threading**:
+- ExpectMeta carries context through all assertion chains
+- Tracks call history for detailed error messages
+- Propagates custom failure handlers
+- Manages provider subject factory registration
+
+**Subject Pattern Implementation**:
+- Each subject wraps an actual value and ExpectMeta instance
+- Constructor pattern: `SubjectType.new(actual_value, meta)`
+- Methods return new subjects for chaining
+- Assertion methods use check_util for failure reporting
+
+**Testing Aspect Infrastructure**:
+- TestingAspectInfo provides access to target internals
+- Collects attribute values and action information
+- Applied automatically when needed for `.attr()` access
+- Can be customized with util.make_testing_aspect()
+
+**Failure Collection and Reporting**:
+- Multiple assertions can fail in single test
+- All failures collected and reported together
+- Error messages include full context chain
+- Formatted for readability in test output
+
+### Common Patterns and Idioms
+
+**Arrange-Act-Assert Structure**:
+- Arrange: Create targets with util.helper_target()
+- Act: Run analysis_test with target under test
+- Assert: Use env.expect subjects to verify behavior
+
+**Subject Chaining**:
+- `env.expect.that_target(t).runfiles().contains(...)`
+- Each method returns appropriate subject type
+- Enables readable, fluent test code
+
+**Flag Verification Patterns**:
+- Using `contains_flag_values()` for compiler/linker flags
+- Handling flag order independence
+- Testing presence vs exact matches
+
+**Provider Extraction Patterns**:
+- `subject.provider(MyInfo)` returns provider value or subject
+- Can be chained with further assertions
+- Custom factories enable custom provider subjects
+
+**Runfiles Path Handling**:
+- Paths always workspace-relative: `workspace_name/package/file.txt`
+- Use `util.runfiles_paths()` for conversion
+- Handle runfiles from different workspaces
+
+**Generated File Path Patterns**:
+- Using `{bindir}`, `{package}`, `{target}` placeholders
+- Platform-agnostic path matching
+- Handling configuration-specific output directories
+
+**Multi-Configuration Testing**:
+- Using `targets` dict with named configs
+- Dict templates in `attrs` with `@config_settings`
+- Testing platform-specific compilation
+
+**Predicate Composition**:
+- Combining matchers with `matching.all()` (AND)
+- Alternative matching with `matching.any()` (OR)
+- Building complex matching logic
+
+### Troubleshooting and Debugging
+
+**Understanding Test Failures**:
+- Reading assertion error messages with context
+- Identifying which assertion failed in chain
+- Understanding expected vs actual value diffs
+
+**Analysis Testing Limits**:
+- `--analysis_testing_deps_limit` flag controls dependency depth
+- Default limits may need adjustment for complex tests
+- Understanding when limit is reached
+
+**Configuration Mismatch Issues**:
+- File objects from different configurations aren't equal
+- Using short_path comparisons for cross-config files
+- Understanding configuration transitions in tests
+
+**Aspect Introspection**:
+- When TestingAspectInfo is automatically applied
+- Accessing target attributes via `.attr()`
+- Custom aspect testing with util.make_testing_aspect()
+
+**Runfiles Debugging**:
+- Understanding runfiles tree structure
+- Workspace name prefixes in paths
+- Handling symlinks and actual files
+
+**Custom Subject Debugging**:
+- Implementing clear error messages
+- Using check_util for consistent failure format
+- Threading ExpectMeta correctly

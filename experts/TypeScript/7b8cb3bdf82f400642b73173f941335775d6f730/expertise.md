@@ -1,0 +1,62 @@
+- TypeScript compiler architecture and pipeline overview
+- Lexical scanner (`src/compiler/scanner.ts`) — tokenization, `SyntaxKind`, `Scanner` interface
+- Recursive-descent parser (`src/compiler/parser.ts`) — AST construction, error recovery, `createSourceFile()`
+- Binder (`src/compiler/binder.ts`) — symbol table creation, `NodeFlags`, control flow graph
+- Type checker (`src/compiler/checker.ts`) — type inference, type compatibility, assignability, narrowing, generics, overload resolution, `createTypeChecker()`, `TypeChecker` interface
+- Emitter (`src/compiler/emitter.ts`) — code generation, `createPrinter()`, `emitFiles()`, source maps
+- Transformer pipeline (`src/compiler/transformer.ts`, `src/compiler/transformers/`) — AST-to-AST transformations
+- ES2015+ downlevel transforms — classes, arrow functions, destructuring, generators, async/await
+- JSX transform (`src/compiler/transformers/jsx.ts`) — React.createElement, new JSX transform
+- Decorator transforms — TC39 decorators (`esDecorators.ts`) vs legacy TypeScript decorators (`legacyDecorators.ts`)
+- Module transforms (`src/compiler/transformers/module/`) — CJS, AMD, UMD, SystemJS, ESM
+- Declaration emit (`src/compiler/transformers/declarations.ts`) — generating `.d.ts` files
+- AST node types (`src/compiler/types.ts`) — all `Node` subtypes, `SyntaxKind` enum, `NodeFlags`, `TypeFlags`, `SymbolFlags`
+- Public type interfaces — `SourceFile`, `Program`, `TypeChecker`, `CompilerOptions`, `Diagnostic`, `Type`, `Symbol`, `Signature`
+- Node factory API (`src/compiler/factory/nodeFactory.ts`) — `ts.factory.createXxx()` functions
+- Node type guard functions (`src/compiler/factory/nodeTests.ts`) — `ts.isXxx()` predicates
+- AST visitor utilities — `ts.forEachChild`, `ts.visitEachChild`, `ts.visitNode`
+- `createProgram()` — compilation entry point, `Program` interface, `CompilerHost`
+- `getPreEmitDiagnostics()` — collecting all diagnostics before emit
+- Incremental compilation — builder programs, `builderState.ts`, `.tsbuildinfo` files
+- Solution builder (`src/compiler/tsbuild.ts`) — `createSolutionBuilder()`, project reference builds
+- Watch mode (`src/compiler/watch.ts`) — `createWatchProgram()`, `createWatchCompilerHost()`
+- Module name resolution (`src/compiler/moduleNameResolver.ts`) — Classic, Node, Node16, NodeNext, Bundler strategies
+- `tsconfig.json` parsing (`src/compiler/commandLineParser.ts`) — `parseJsonConfigFileContent()`, `CompilerOptions` declarations, `optionDeclarations`
+- Language service API (`src/services/services.ts`, `src/services/types.ts`) — `createLanguageService()`, `LanguageService` interface, `LanguageServiceHost`
+- Code completions (`src/services/completions.ts`) — `getCompletionsAtPosition()`, auto-import completions
+- Go-to-definition (`src/services/goToDefinition.ts`)
+- Find all references (`src/services/findAllReferences.ts`)
+- Rename symbol (`src/services/rename.ts`)
+- Document highlights (`src/services/documentHighlights.ts`)
+- Inlay hints (`src/services/inlayHints.ts`)
+- Code fixes (`src/services/codefixes/`) — 50+ individual fix providers
+- Refactoring (`src/services/refactors/`) — extract function/type, convert syntax
+- Formatting (`src/services/formatting/`)
+- Organize imports (`src/services/organizeImports.ts`)
+- Transpile API — `transpileModule()`, `transpileDeclaration()`, `transpile()`
+- Document registry (`src/services/documentRegistry.ts`) — shared source file caching
+- Call hierarchy (`src/services/callHierarchy.ts`)
+- Navigation bar / outline (`src/services/navigationBar.ts`)
+- tsserver (`src/server/`) — server session, project management, protocol, script info
+- tsserver protocol types (`src/server/protocol.ts`)
+- Standard library `.d.ts` files (`src/lib/`) — ES5 through ESNext, DOM, WebWorker
+- Build system — hereby tasks, `Herebyfile.mjs`, build pipeline
+- Diagnostic messages — `diagnosticMessages.json`, `processDiagnosticMessages.mjs`, formatting
+- Test harness (`src/harness/`) — virtual file system, compiler tests, fourslash tests
+- Fourslash test format — `[|caret|]` markers, `@-directives`, test case structure
+- Baseline testing — `tests/baselines/reference/`, `hereby baseline-accept`, `hereby diff`
+- Custom transformer authoring — `TransformationContext`, `Transformer<T>`, inject via `program.emit()`
+- Programmatic AST analysis — walking trees, finding nodes, extracting type information
+- Source map support (`src/compiler/sourcemap.ts`)
+- Performance tracing (`src/compiler/tracing.ts`, `src/compiler/performance.ts`)
+- Debug utilities (`src/compiler/debug.ts`) — assertions, `Debug.assert`, `Debug.fail`
+- `sys` abstraction layer (`src/compiler/sys.ts`) — `ts.sys`, `CompilerHost` file I/O
+- Path utilities (`src/compiler/path.ts`) — cross-platform path handling
+- `@internal` annotation and its effect on the published API
+- `const enum` usage in TypeScript internals and implications for external consumers
+- Project references (`composite`, `declaration`, `declarationMap`)
+- `isolatedDeclarations` mode and its requirements
+- Namespace barrel file pattern (`_namespaces/ts.ts`)
+- LKG (Last Known Good) bootstrap compiler
+- Maintenance mode status — TypeScript 6.0 is last JS-based release; 7.0 development is in `microsoft/typescript-go`
+- Accepted PR categories — crashes, security issues, language service crashes, serious regressions only

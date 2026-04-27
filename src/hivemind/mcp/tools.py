@@ -147,7 +147,8 @@ TOOLS: list[Tool] = [
     Tool(
         name="create_team",
         description=(
-            "Create a new team-lead agent with an AI-generated lead.md. Added to the catalog in the *unlisted* state."
+            "Create a new team-lead agent with AI-generated per-expert sections. "
+            "Added to the catalog in the *unlisted* state."
         ),
         inputSchema={
             "type": "object",

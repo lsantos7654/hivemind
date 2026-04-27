@@ -2,25 +2,7 @@
 
 from __future__ import annotations
 
-from hivemind.opencode import extract_description, strip_frontmatter, yaml_escape_double_quoted
-
-
-class TestExtractDescription:
-    def test_extracts_paragraph_after_heading(self):
-        body = "# Expert: Bazel\n\nExpert on Bazel build system.\n\n## Overview"
-        assert extract_description(body) == "Expert on Bazel build system."
-
-    def test_handles_empty_string(self):
-        assert extract_description("") == ""
-
-    def test_no_heading_returns_empty(self):
-        body = "Just body content with no heading."
-        assert extract_description(body) == ""
-
-    def test_overview_fallback(self):
-        body = "# Expert: Test\n\n## Overview\n\nDescription from overview.\n\n## Details"
-        result = extract_description(body)
-        assert "Description from overview" in result
+from hivemind.opencode import strip_frontmatter, yaml_escape_double_quoted
 
 
 class TestStripFrontmatter:

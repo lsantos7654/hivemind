@@ -1,0 +1,124 @@
+- `Website` struct builder API and all `.with_*()` configuration methods
+- `website.crawl()`, `website.scrape()`, `website.crawl_smart()` async methods
+- `website.subscribe(buffer)` broadcast channel streaming pattern
+- `website.get_links()`, `website.get_pages()`, `website.get_all_links_visited()`
+- `website.stop()`, `website.pause()`, `website.resume()` control methods (feature: control)
+- `Page` struct: `get_url()`, `get_html()`, `get_content()`, `get_html_bytes_u8()`, `status_code`, `headers`
+- `Configuration` struct and all configuration options
+- `SpiderCloudConfig`, `SpiderCloudMode` (Proxy/Api/Unblocker/Fallback/Smart), `SpiderCloudReturnFormat`
+- Spider Cloud smart mode: auto-detect bot protection from status codes and content markers
+- `SpiderBrowserConfig` for Browser Cloud (`wss://browser.spider.cloud`)
+- Chrome rendering features: `chrome`, `chrome_headed`, `chrome_stealth`, `chrome_intercept`, `chrome_screenshot`
+- `RequestInterceptConfiguration` for blocking ads, analytics, stylesheets in Chrome
+- `WaitForIdleNetwork`, `WaitForSelector`, `WaitForDelay`, `WaitForDom` wait conditions
+- `Viewport` and `ClipViewport` configuration
+- Smart mode: hybrid HTTP + Chrome crawling via `crawl_smart()`
+- WebDriver support via `thirtyfour`: `WebDriverConfig`, `WebDriverBrowser`
+- Feature flags: full list of 100+ feature flags and their purposes
+- `io_uring` Linux async I/O (default on Linux)
+- NUMA-aware thread pinning
+- TCP fast-open, zero-copy parsing, SIMD JSON via `sonic-rs`
+- Adaptive concurrency (AIMD) via `adaptive_concurrency` feature
+- Per-domain token bucket rate limiting via `rate_limit` feature
+- Request coalescing (dedup in-flight requests) via `request_coalesce` feature
+- Priority URL frontier with scoring via `priority_frontier` feature
+- Hedged requests for slow crawls via `hedge` feature
+- mmap bloom filter for URL deduplication via `bloom` feature
+- HTTP/2 multiplexing tracker via `h2_multiplex` feature
+- ETag-based HTTP cache via `etag_cache` feature
+- Cross-crawl robots.txt TTL cache via `robots_cache` feature
+- `auto_throttle` for adaptive request pacing
+- Cron scheduling via `cron` feature
+- WARC archive output via `warc` feature and `WarcConfig`
+- `sitemap` feature for sitemap.xml integration
+- `full_resources` for CSS/JS/image collection
+- `cookies` feature and cookie management
+- `ua_generator` for random User-Agent generation
+- `real_browser` for real browser behavior bypass
+- `spoof` for HTTP header spoofing
+- Proxy support: `socks` feature, `with_proxies()`
+- `decentralized` distributed crawling with `spider_worker`
+- `firewall` feature via `spider_firewall`
+- HTTP caching: `cache` (disk), `cache_mem`, `cache_chrome_hybrid`, `cache_openai`, `cache_gemini`
+- Parallel backends: `lightpanda`, `servo`, `parallel_backends`
+- `cowboy` mode for full unrestricted concurrency
+- `balance` feature for CPU/memory adaptive scaling
+- `disk` / `disk_native_tls` SQLite hybrid storage
+- `encoding` feature for Shift_JIS and other encodings
+- Budget limiting by URL path prefix via `with_budget()`
+- Blacklist/whitelist URL filtering (string or regex)
+- Subdomain and external domain following
+- Redirect policy: `RedirectPolicy::Loose`, `Strict`, `None`
+- Screenshot configuration: `ScreenShotConfig`, `ScreenshotParams`, `CaptureScreenshotParams`
+- OpenAI integration for browser scripts: `GPTConfigs`, features `openai`, `openai_slim_fit`
+- Gemini integration: `GeminiConfigs`, feature `gemini`
+- `AllowListSet`, `AllowList` types for URL filtering
+- `RelativeSelectors` type for base domain tracking
+- `Client`, `ClientBuilder` HTTP client wrappers
+- `Crawler` and `PageData` traits
+- robots.txt parser in `packages/robotparser`
+- `spider_agent` `Agent` struct and `AgentBuilder`
+- Agent methods: `search()`, `search_with_options()`, `fetch()`, `extract()`, `extract_structured()`, `research()`, `prompt()`, `memory_get/set/clear()`
+- `AgentConfig`, `UsageLimits`, `LimitType`, `UsageStats`, `UsageSnapshot`
+- `ResearchOptions`: `with_max_pages()`, `with_synthesize()`, `with_extraction_prompt()`
+- `SearchOptions`: `with_limit()`, `with_country()`, `with_language()`
+- `SearchResults`, `SearchResult` types
+- `FetchResult`: html, status, content_type fields
+- `LLMProvider` trait and `OpenAIProvider`
+- `Message`, `CompletionOptions`, `CompletionResponse`, `TokenUsage`
+- `AgentMemory` (DashMap-backed session memory)
+- `CustomTool`, `CustomToolRegistry`, `CustomToolResult`
+- `AuthConfig`: None, Bearer, ApiKey, Basic, CustomHeader variants
+- `HttpMethod` enum for custom tools
+- `SpiderCloudToolConfig`: tools spider_cloud_crawl/scrape/search/links/transform/unblocker
+- `SpiderBrowserToolConfig`: tools spider_browser_navigate/html/screenshot/evaluate/click/fill/wait
+- `RemoteMultimodalEngine` for OpenAI-compatible LLM extraction
+- `RemoteMultimodalConfig`: `fast()`, `fast_with_planning()` presets
+- `ToolCallingMode`: Auto, JsonObject, Off
+- `HtmlDiffMode`: Auto, Disabled — 50–70% token reduction
+- `ReasoningEffort`: Low, Medium, High
+- `PlanningModeConfig` for multi-step planning
+- `SelfHealingConfig` for auto-repairing failed selectors
+- `ConfidenceRetryStrategy` for smart retry decisions
+- `ConfidenceTracker`, `ConfidenceSummary`, `Alternative`, `Verification`
+- `ActionType` enum: 30+ variants (Navigate, Click, Fill, Type, Select, Scroll, Wait, Screenshot, Script, etc.)
+- `ActionResult`, `ActionRecord` types
+- `ChainStep`, `ChainCondition`, `ChainContext`, `ChainResult`, `ChainStepResult`
+- `DependentStep`, `DependencyGraph`, `ConcurrentChainConfig`, `execute_graph()`
+- `ChainExecutor`, `BatchExecutor`, `PrefetchManager`
+- `ModelRouter`, `ModelSelector`, `RoutingDecision`, `SelectionStrategy`
+- `ModelPolicy`, `CostTier`, `ModelProfile`, `ModelRanks`, `ModelCapabilities`
+- `SmartCache`, `CacheValue`, `CacheStats` in `automation::cache`
+- `PageObservation`, `InteractiveElement`, `FormField`, `FormInfo`
+- `ExecutionPlan`, `PlannedStep`, `Checkpoint`, `PlanningModeConfig`, `ReplanContext`
+- `HtmlDiffResult`, `PageStateDiff`, `ElementChange`, `DiffStats`, `HtmlDiffMode`
+- `AutomationMemory`, `MemoryOperation`
+- `SynthesisConfig`, `SynthesisResult`, `MultiPageContext`, `PageContext`
+- `GeneratedSchema`, `SchemaCache`, `SchemaGenerationRequest`
+- `generate_schema()`, `infer_schema()`, `infer_schema_from_examples()`, `refine_schema()`
+- `ToolDefinition`, `FunctionDefinition`, `ToolCall`, `FunctionCall`
+- `parse_tool_calls()`, `tool_calls_to_steps()`
+- `HealingRequest`, `HealingResult`, `HealingDiagnosis`, `HealedSelectorCache`
+- `SelectorIssueType`, `SelfHealingConfig`, `HealingStats`
+- `extract_html_context()` for self-healing context extraction
+- HTML cleaning: `clean_html`, `clean_html_base`, `clean_html_full`, `clean_html_raw`, `clean_html_slim`, `smart_clean_html`
+- `HtmlCleaningProfile`, `CleaningIntent`
+- `HtmlCleaningMode` enum
+- System prompts: `DEFAULT_SYSTEM_PROMPT`, `ACT_SYSTEM_PROMPT`, `OBSERVE_SYSTEM_PROMPT`, `EXTRACT_SYSTEM_PROMPT`, `MAP_SYSTEM_PROMPT`
+- `MapResult`, `DiscoveredUrl`, `categories()` for URL mapping
+- `ExperienceMemory` long-term memory via memvid-rs (feature: memvid)
+- `SkillRegistry`, `Skill`, `SkillTrigger` for web challenge solving
+- `S3SkillSource` for loading skills from S3 (feature: skills_s3)
+- `spider_utils` CSS/XPath selector utilities: `DocumentSelectors`, `css_query_select_map_streamed()`
+- `spider_worker` distributed processing server
+- `spider_mcp` MCP server tools: crawl, scrape, links, transform, search
+- `spider_cli` commands: `crawl`, `scrape`, `download`, `authenticate`
+- CLI key resolution: `--spider-cloud-key` > `SPIDER_CLOUD_API_KEY` env > `~/.spider/credentials`
+- All environment variables: `CHROME_URL`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, `SPIDER_CLOUD_API_KEY`, `SERPER_API_KEY`, etc.
+- `spider_fingerprint` browser fingerprinting integration
+- `wreq` alternative HTTP client with browser impersonation
+- `llm_models_spider` model capabilities and pricing data
+- `chromey` Chrome CDP library internals
+- Crate dependency order and workspace structure
+- Publishing workflow via `release.sh`
+- `default.nix` Nix development shell

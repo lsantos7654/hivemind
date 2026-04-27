@@ -1,0 +1,107 @@
+- `Environment` class constructor parameters and their defaults (`src/jinja2/environment.py:145–319`)
+- `Environment.get_template`, `select_template`, `get_or_select_template`, `from_string` methods
+- `Environment.compile_expression` and `TemplateExpression` usage
+- `Environment.compile_templates` for ahead-of-time compilation
+- `Environment.overlay` for creating child environments with shared state
+- `Environment.add_extension` and dynamic extension loading
+- `Environment.parse`, `lex`, `preprocess`, `_tokenize` internal pipeline methods
+- `Environment.call_filter` and `Environment.call_test` programmatic invocation
+- `Environment.getitem` and `Environment.getattr` attribute resolution strategies
+- `Environment.extend` for adding extension-specific attributes
+- `Environment.policies` configuration dict and all recognized policy keys
+- `Template.render` and `Template.render_async` rendering methods
+- `Template.stream` and `Template.stream_async` for lazy/streaming output
+- `Template.generate` and `Template.generate_async` generator methods
+- `Template.make_module` and `Template.make_module_async` for template-as-module patterns
+- `Template.new_context` for creating render contexts
+- `TemplateStream.enable_buffering` for chunked streaming
+- `BaseLoader.get_source` return contract `(source, filename, uptodate_callable)`
+- `FileSystemLoader` — directory paths, encoding, followlinks
+- `PackageLoader` — package name, template folder, encoding
+- `DictLoader` — dict-based template storage
+- `FunctionLoader` — callable-based template loading
+- `PrefixLoader` — prefix-based routing to sub-loaders
+- `ChoiceLoader` — sequential fallback across loaders
+- `ModuleLoader` — loading from pre-compiled Python modules
+- Custom loader implementation via `BaseLoader` subclassing
+- Template path security in `split_template_path` (blocks `..` traversal)
+- `Undefined` — default silent undefined behavior
+- `DebugUndefined` — renders as `{{ varname }}`
+- `StrictUndefined` — immediate `UndefinedError` on any access
+- `ChainableUndefined` — chainable attribute access on undefined
+- `make_logging_undefined` — logging wrapper around any Undefined class
+- `is_undefined` utility function
+- `BytecodeCache` abstract base class (`src/jinja2/bccache.py`)
+- `Bucket` — container for template bytecode with checksum validation
+- `FileSystemBytecodeCache` — disk-based bytecode caching
+- `MemcachedBytecodeCache` — Memcached-based bytecode caching
+- Custom `BytecodeCache` implementation via `load_bytecode`/`dump_bytecode`
+- `bc_magic` and `bc_version` bytecode file format constants
+- `SandboxedEnvironment` (`src/jinja2/sandbox.py`) — restricted execution
+- `SecurityError` raised by sandbox violations
+- `UNSAFE_FUNCTION_ATTRIBUTES`, `UNSAFE_METHOD_ATTRIBUTES`, `UNSAFE_GENERATOR_ATTRIBUTES`
+- `MAX_RANGE = 100000` limit for `range()` in sandboxed mode
+- Mutable container method restrictions (`_mutable_spec`)
+- `NativeEnvironment` and `NativeTemplate` (`src/jinja2/nativetypes.py`)
+- `native_concat` — `ast.literal_eval` based value reconstruction
+- `NativeCodeGenerator` — skips `str()` wrapping in output nodes
+- `Extension` base class (`src/jinja2/ext.py:55`) — `tags`, `priority`, `parse`, `preprocess`, `filter_stream`
+- `InternationalizationExtension` — `{% trans %}`, `gettext`, `ngettext`, `pgettext`, `npgettext`
+- `install_gettext_translations`, `install_null_translations`, `install_gettext_callables`
+- `DebugExtension` — `{% debug %}` tag
+- `LoopControlsExtension` — `{% break %}` and `{% continue %}`
+- `ExprStmtExtension` — `{% do expression %}`
+- `ProfilerExtension`
+- Custom extension development: `Extension.parse`, `nodes.CallBlock`, `nodes.Output`
+- Extension `identifier` class variable auto-generated as `module.ClassName`
+- `nodes.Template`, `nodes.Stmt`, `nodes.Expr` — AST node hierarchy (`src/jinja2/nodes.py`)
+- All statement nodes: `If`, `For`, `Macro`, `Block`, `Extends`, `Include`, `Import`, `FromImport`, `Set`, `Assign`, `Output`, `TemplateData`, `ExprStmt`, `AssignBlock`
+- All expression nodes: `Name`, `Const`, `Add`, `Sub`, `Mul`, `Div`, `FloorDiv`, `Mod`, `Pow`, `And`, `Or`, `Not`, `Neg`, `Pos`, `Getattr`, `Getitem`, `Call`, `Filter`, `Test`, `Compare`, `Concat`, `Condexpr`, `Tuple`, `List`, `Dict`, `Pair`, `Keyword`, `MarkSafeIfAutoescape`, `MarkSafe`
+- `EvalContext` — runtime autoescape tracking
+- `CodeGenerator` and `Frame` internals (`src/jinja2/compiler.py`)
+- `generate()` top-level function for code generation
+- `optimizeconst` decorator for constant folding
+- `Symbols` and identifier tracking (`src/jinja2/idtracking.py`)
+- `VAR_LOAD_ALIAS`, `VAR_LOAD_PARAMETER`, `VAR_LOAD_RESOLVE`, `VAR_LOAD_UNDEFINED`
+- `Lexer`, `TokenStream`, `Token` (`src/jinja2/lexer.py`)
+- `get_lexer` — cached lexer factory
+- Default delimiters: `{%`, `%}`, `{{`, `}}`, `{#`, `#}`
+- `trim_blocks`, `lstrip_blocks`, `line_statement_prefix`, `line_comment_prefix` effects
+- `Parser` class and `parse_expression`, `parse_statement`, `parse_primary` methods
+- `pass_context`, `pass_eval_context`, `pass_environment` decorators (`src/jinja2/utils.py`)
+- `_PassArg` enum and `from_obj` class method
+- `LRUCache` thread-safe LRU implementation
+- `select_autoescape` function and its parameters
+- `Cycler`, `Joiner`, `Namespace` helpers exposed to templates as globals
+- `clear_caches` — clears internal LRU caches
+- `internalcode` — marks code to be excluded from template tracebacks
+- `htmlsafe_json_dumps` — JSON serialization safe for HTML embedding
+- `urlize` — converts URLs in text to clickable links
+- `missing` sentinel value
+- `meta.find_undeclared_variables` — static analysis of template variables
+- `meta.find_referenced_templates` — finds template name dependencies
+- `TrackingCodeGenerator` — abuses codegen for AST introspection
+- Default global namespace: `range`, `dict`, `lipsum`, `cycler`, `joiner`, `namespace`
+- All built-in filters: `abs`, `attr`, `batch`, `capitalize`, `center`, `count`, `d`/`default`, `dictsort`, `e`/`escape`, `filesizeformat`, `first`, `float`, `forceescape`, `format`, `groupby`, `indent`, `int`, `items`, `join`, `last`, `list`, `lower`, `map`, `max`, `min`, `pprint`, `random`, `reject`, `rejectattr`, `replace`, `reverse`, `round`, `safe`, `select`, `selectattr`, `slice`, `sort`, `string`, `striptags`, `sum`, `title`, `tojson`, `trim`, `truncate`, `unique`, `upper`, `urlencode`, `urlize`, `wordcount`, `wordwrap`, `xmlattr`
+- All built-in tests: `callable`, `defined`, `divisibleby`, `eq`, `escaped`, `even`, `filter`, `float`, `ge`, `gt`, `in`, `integer`, `iterable`, `le`, `lower`, `lt`, `mapping`, `ne`, `none`, `number`, `odd`, `sameas`, `sequence`, `string`, `test`, `undefined`, `upper`
+- `async_variant` decorator pattern for paired sync/async filter implementations
+- `auto_await`, `auto_aiter`, `auto_to_list` async utilities
+- Exception hierarchy: `TemplateError`, `TemplateNotFound`, `TemplatesNotFound`, `TemplateSyntaxError`, `TemplateAssertionError`, `TemplateRuntimeError`, `UndefinedError`, `SecurityError`, `FilterArgumentError`
+- `debug.py` — `translate_syntax_error`, `translate_exception` traceback rewriting
+- Template inheritance: `{% extends %}`, `{% block %}`, `{{ super() }}`
+- Template inclusion: `{% include %}` with `ignore missing` and `with`/`without context`
+- Template import: `{% import %}`, `{% from ... import %}`
+- Macro definition: `{% macro name(args) %}` and `caller()`, `varargs`, `kwargs`
+- Loop variable: `loop.index`, `loop.index0`, `loop.revindex`, `loop.first`, `loop.last`, `loop.length`, `loop.cycle()`, `loop.depth`, `loop.changed()`
+- `{% set %}` and `{% set ... %}...{% endset %}` for block assignment
+- `{% filter %}` tag for applying filters to a block
+- `{% call %}` block for passing block content to macros
+- `{% with %}` scoping block
+- `{% raw %}` for escaping template syntax
+- `{% autoescape %}` for dynamic autoescape control
+- Line statements and line comments via prefix configuration
+- `newline_sequence` and `keep_trailing_newline` whitespace control
+- `pyproject.toml` build configuration with Flit + uv
+- `tox.ini`-equivalent `[tool.tox]` configuration
+- `ruff` linting/formatting rules in use
+- `mypy` strict configuration applied to `src/`

@@ -1,0 +1,49 @@
+- **Test Framework Architecture**: Core testing framework design, test runner implementation, task execution models, worker thread management, test isolation strategies, and parallel execution patterns
+- **Vite Integration**: Deep integration with Vite's build system, transformation pipeline, module resolution, HMR capabilities, plugin system, and development server functionality
+- **CLI Implementation**: Command-line interface design using CAC library, argument parsing, command routing, help system, tab completions, and CLI workflow patterns
+- **Test Execution Engines**: Test runner core (`@vitest/runner`), test collection and execution, task state management, lifecycle hooks, test filtering, and execution strategies
+- **Assertion Libraries**: Expect API implementation, Chai integration, Jest-compatible matchers, custom matcher development, assertion state management, and error reporting
+- **Mocking System**: Vi utilities implementation, function mocking, module mocking, timer mocking, system mocking, spy functionality, and mock restoration patterns
+- **Snapshot Testing**: Snapshot generation and comparison, inline snapshots, snapshot serializers, snapshot updates, and snapshot environment handling
+- **Browser Testing**: Browser automation with Playwright and WebDriverIO, browser test execution contexts, component testing, browser API mocking, and cross-browser testing
+- **Code Coverage**: V8 and Istanbul coverage integration, coverage reporting, threshold enforcement, coverage configuration, and coverage collection strategies
+- **Configuration System**: Configuration parsing and validation, workspace configurations, project configurations, environment-specific configs, and configuration merging patterns
+- **Reporter System**: Test result reporting, built-in reporters (default, verbose, JSON, HTML), custom reporter development, real-time result streaming, and output formatting
+- **Environment Management**: Test environments (Node.js, JSDOM, Happy-DOM), environment setup and teardown, custom environments, and environment-specific APIs
+- **Development Experience**: Watch mode implementation, file change detection, smart re-running, HMR-like test updates, developer tooling integration, and debugging support
+- **Monorepo Architecture**: Package organization, workspace management, cross-package dependencies, build coordination, and monorepo testing strategies
+- **Type System Integration**: TypeScript integration, type-level testing with expect-type, TypeScript configuration, declaration file generation, and type checking workflows
+- **Performance Optimization**: Test execution performance, parallel processing, worker management, memory optimization, bundle size optimization, and startup performance
+- **Plugin Development**: Vite plugin integration, custom plugin development, plugin hooks, transformation pipelines, and plugin configuration patterns
+- **Error Handling**: Error reporting and formatting, stack trace processing, error recovery, graceful degradation, and debugging information
+- **File System Operations**: Test file discovery, glob patterns, file watching, virtual file systems, and file system abstraction layers
+- **Network and HTTP Testing**: HTTP mocking, network simulation, API testing patterns, request/response mocking, and network error simulation
+- **Async Testing Patterns**: Promise testing, async/await patterns, timeout handling, race condition testing, and asynchronous lifecycle management
+- **Build System Integration**: Rollup configuration, TypeScript compilation, ESM/CommonJS dual packages, license management, and dependency bundling
+- **Testing Utilities**: Test utility functions, helper libraries, test data generation, fixture management, and testing pattern libraries
+- **Component Testing**: Framework-specific component testing (React, Vue, Svelte, Lit), component isolation, rendering utilities, and interaction testing
+- **Benchmarking**: Performance benchmarking with Tinybench, benchmark reporting, performance regression detection, and benchmark configuration
+- **Workspace Support**: Multi-project configurations, project isolation, shared configurations, cross-project dependencies, and workspace-level operations
+- **API Design Patterns**: Public API design, backward compatibility, API evolution strategies, deprecation handling, and API documentation patterns
+- **Cross-Platform Support**: Windows/macOS/Linux compatibility, path handling, file system differences, and platform-specific optimizations
+- **Memory Management**: Memory leak detection, garbage collection optimization, worker process memory management, and resource cleanup patterns
+- **Security Considerations**: Test isolation security, dependency security, code injection prevention, and secure test execution environments
+- **Debugging Tools**: Debugging integration, sourcemap support, breakpoint handling, inspector integration, and debugging workflow optimization
+- **Internationalization**: Multi-language support, locale-specific testing, character encoding handling, and internationalization testing patterns
+- **Documentation System**: API documentation generation, example management, documentation testing, and documentation automation
+- **Release Management**: Version management, changelog generation, release automation, breaking change handling, and semantic versioning
+- **Community Integration**: Plugin ecosystem, community contributions, issue management, feature requests, and community support patterns
+- **Performance Monitoring**: Test execution metrics, performance profiling, bottleneck identification, and performance regression tracking
+- **CI/CD Integration**: Continuous integration patterns, automated testing workflows, test result reporting in CI, and deployment testing strategies
+- **Migration Tools**: Jest migration utilities, test transformation tools, configuration migration, and migration documentation
+- **Advanced Testing Patterns**: Property-based testing integration, mutation testing support, fuzz testing capabilities, and advanced testing methodologies
+- **Developer Experience**: IDE integration, editor plugins, syntax highlighting, IntelliSense support, and developer workflow optimization
+- **Quality Assurance**: Test quality metrics, test coverage analysis, test reliability measurement, and quality improvement strategies
+- **Extension Points**: Custom test runners, custom environments, custom reporters, plugin development APIs, and extensibility patterns
+- **Data Management**: Test data management, fixture loading, data mocking, database testing integration, and test data isolation
+- **Real-time Features**: WebSocket testing, real-time application testing, event-driven testing, and real-time data synchronization testing
+- **Mobile Testing**: Mobile browser testing, responsive testing, touch interaction testing, and mobile-specific testing patterns
+- **Accessibility Testing**: Accessibility testing integration, screen reader testing, keyboard navigation testing, and accessibility automation
+- **Visual Testing**: Screenshot testing, visual regression testing, cross-browser visual testing, and visual diff reporting
+- **Load Testing**: Performance testing integration, load testing patterns, stress testing capabilities, and scalability testing
+- **End-to-End Testing**: E2E testing integration, user journey testing, full-stack testing patterns, and integration testing strategies

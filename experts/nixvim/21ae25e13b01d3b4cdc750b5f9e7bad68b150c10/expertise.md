@@ -1,0 +1,78 @@
+- Nixvim architecture and evaluation pipeline
+- `programs.nixvim` top-level options: `opts`, `globals`, `keymaps`, `autoCmd`, `highlights`, `colorscheme`, `diagnostic`, `clipboard`, `filetype`, `commands`
+- `opts.*` — all Vim editor options (number, relativenumber, tabstop, shiftwidth, colorcolumn, signcolumn, etc.)
+- `globals.*` — vim.g.* global variables (mapleader, maplocalleader, etc.)
+- Keymap configuration: mode, key, action, options (silent, noremap, desc, expr, buffer, remap)
+- Autocommand configuration: event, pattern, command, callback, group, once, nested
+- Highlight group definitions and linking
+- Diagnostic configuration: virtual_text, signs, underline, update_in_insert, severity_sort, float
+- Plugin enabling and disabling via `plugins.<name>.enable`
+- Plugin package overriding via `plugins.<name>.package`
+- Plugin `settings` attrset and how it maps to `require('plugin').setup(settings)`
+- Plugin `luaConfig.pre` and `luaConfig.post` hooks
+- Plugin-provided keymap options
+- LSP configuration: `plugins.lsp.servers.*`, per-server settings, `plugins.lsp.keymaps`
+- All supported LSP servers: rust_analyzer, lua_ls, ts_ls, pyright, gopls, nil_ls, nixd, clangd, bashls, jsonls, yamlls, and many more
+- nvim-cmp configuration: sources, mapping, snippet, formatting, window
+- cmp sources: nvim_lsp, luasnip, buffer, path, cmdline, nvim_lua, treesitter, etc.
+- Telescope configuration: defaults, pickers, extensions (fzf-native, file_browser, etc.)
+- Telescope keymaps shorthand: `plugins.telescope.keymaps`
+- Treesitter: ensure_installed, highlight, indent, incremental_selection, textobjects
+- Colorscheme modules: catppuccin, tokyonight, gruvbox, rose-pine, kanagawa, dracula, nord, ayu, everforest, and 25+ more
+- Each colorscheme's specific `settings` options
+- Lualine configuration: sections, component options, themes
+- Bufferline configuration: options, highlights
+- Neo-tree configuration: sources, window, filesystem, buffers, git_status
+- Oil.nvim configuration
+- Gitsigns configuration: signs, on_attach callbacks
+- Which-key configuration: mappings, spec format
+- Noice.nvim configuration
+- Notify.nvim configuration
+- Alpha.nvim configuration: themes, layout
+- DAP (Debug Adapter Protocol) configuration
+- Conform.nvim formatter configuration
+- Trouble.nvim configuration
+- Mini.nvim plugin collection (mini.pairs, mini.comment, mini.surround, mini.files, etc.)
+- Harpoon configuration
+- Flash.nvim configuration
+- Aerial.nvim configuration
+- Indent-blankline configuration
+- Render-markdown configuration
+- Snacks.nvim configuration
+- Todo-comments configuration
+- `extraPlugins` — adding plugins not covered by Nixvim modules
+- `extraPackages` — adding tools to Neovim's PATH
+- `extraConfigLua` / `extraConfigLuaPre` / `extraConfigLuaPost` — raw Lua injection
+- `extraConfigVim` — Vimscript injection
+- `lib.nixvim.mkRaw` and `{ __raw = "..."; }` pattern for raw Lua values
+- `lib.nixvim.toLuaObject` — Nix-to-Lua serialization rules
+- `lib.nixvim.types.rawLua` and `types.maybeRaw` custom types
+- `lib.nixvim.types.highlight` and `types.border` types
+- `lib.nixvim.defaultNullOpts.*` option builder family
+- `lib.nixvim.plugins.mkNeovimPlugin` — creating new plugin modules
+- `lib.nixvim.plugins.mkVimPlugin` — creating Vim plugin modules
+- `lib.nixvim.modules.evalNixvim` — module evaluation API
+- Performance optimization: `performance.byteCompileLua` and `performance.combinePlugins`
+- Lazy loading: `performance.lazyLoad` (experimental)
+- Home Manager integration: `imports = [ nixvim.homeModules.nixvim ]`
+- NixOS integration: `imports = [ nixvim.nixosModules.nixvim ]`
+- nix-darwin integration: `imports = [ nixvim.darwinModules.nixvim ]`
+- `makeNixvim` standalone package builder
+- `makeNixvimWithModule` module-accepting standalone builder
+- `nixvimConfigurations` flake output
+- `nixvimModules` flake output for sharing configs
+- Platform wrapper architecture: `wrappers/modules/shared.nix`, `hm.nix`, `nixos.nix`, `darwin.nix`
+- Modular configuration with `imports` inside `programs.nixvim`
+- Sharing Nixvim modules as flake outputs
+- nixpkgs overlay integration within Nixvim
+- Flake template usage: `nix flake init -t github:nix-community/nixvim#simple`
+- Deprecation handling and migration between Nixvim versions
+- Contributing a new plugin module to Nixvim
+- Writing tests for Nixvim plugin modules
+- Clipboard configuration
+- Filetype detection configuration
+- Custom command definitions (`commands.*`)
+- EditorConfig integration (`editorconfig.enable`)
+- `extraFiles` for additional runtime files
+- nixpkgs pinning within Nixvim
+- Version compatibility between Nixvim and nixpkgs branches

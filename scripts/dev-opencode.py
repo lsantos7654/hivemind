@@ -3,17 +3,38 @@
 
 Subcommands:
   clone   Clone upstream sst/opencode at the pinned version into dev/opencode,
-          create branch `hivemind`, then `git am` each third_party/patches/*.patch
-          so every patch becomes one commit. Fails if dev/opencode already exists.
-  save    `git format-patch v<VERSION>..hivemind` inside dev/opencode, replace
-          third_party/patches/*.patch with the result, then rewrite
-          _OPENCODE_PATCHES in third_party/extensions.bzl from disk.
+          create branch `hivemind`, then `git am` each patch so every patch
+          becomes one commit. Dep patches (third_party/dep_patches/*.patch)
+          are applied FIRST, then code patches (third_party/patches/*.patch).
+          Fails if dev/opencode already exists.
+  save    `git format-patch v<VERSION>..hivemind` inside dev/opencode, then
+          route each output patch by what it touches:
+            * touches package.json or bun.lock  -> third_party/dep_patches/
+            * touches only source files         -> third_party/patches/
+          Wholesale-replaces the destination dirs and rewrites both
+          _OPENCODE_DEP_PATCHES + _OPENCODE_CODE_PATCHES in extensions.bzl.
+          Fails if a single commit touches BOTH dep manifests AND source
+          files (split the commit with `git rebase -i` before saving).
 
 Edit-and-save loop:
-    make dev                      # one-time clone
+    make dev                      # one-time clone (applies dep+code patches)
     cd dev/opencode && ...        # edit, commit, rebase as needed
-    make dev-save                 # regenerate patch files + bazel list
+    make dev-save                 # regenerate patch files + bazel lists
     make update                   # rebuild + refresh launcher
+
+Two patch tiers:
+    dep_patches  Modify package.json / bun.lock. Editing one invalidates
+                 @opencode_node_modules and @opencode_src (~30s rebuild).
+                 Rare.
+    code_patches Modify only source files. Editing one invalidates only
+                 @opencode_src (~3s rebuild). Common.
+
+Ordering: dep patches must precede code patches in the commit history,
+because clone replays them in `dep_patches/` then `patches/` order. If
+you commit them out of order, save will still classify correctly, but
+the next `make dev-reset && make dev` will replay in the canonical
+order — which may fail to apply if a code patch context-depends on a
+later dep change.
 
 Reads the opencode version from MODULE.bazel so dev/ tracks the bazel pin.
 """
@@ -29,11 +50,16 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DEV_DIR = REPO_ROOT / "dev" / "opencode"
-PATCHES_DIR = REPO_ROOT / "third_party" / "patches"
+DEP_PATCHES_DIR = REPO_ROOT / "third_party" / "dep_patches"
+CODE_PATCHES_DIR = REPO_ROOT / "third_party" / "patches"
 EXTENSIONS_BZL = REPO_ROOT / "third_party" / "extensions.bzl"
 MODULE_BAZEL = REPO_ROOT / "MODULE.bazel"
 UPSTREAM_URL = "https://github.com/sst/opencode.git"
 BRANCH = "hivemind"
+
+# A patch is a "dep patch" if its diff touches any path matching one of these
+# basenames. Rest go to code_patches/.
+_DEP_MANIFEST_BASENAMES = {"package.json", "bun.lock"}
 
 
 def _opencode_version() -> str:
@@ -51,7 +77,36 @@ def _run(cmd: list[str], cwd: Path | None = None) -> None:
 
 
 def _patches_sorted(directory: Path) -> list[Path]:
+    if not directory.exists():
+        return []
     return sorted(directory.glob("*.patch"))
+
+
+def _patch_touched_files(patch_path: Path) -> set[str]:
+    """Files touched by the diffs in a `git format-patch` output."""
+    files: set[str] = set()
+    for line in patch_path.read_text(errors="replace").splitlines():
+        m = re.match(r"^diff --git a/(\S+) b/(\S+)", line)
+        if m:
+            files.add(m.group(1))
+            files.add(m.group(2))
+    return files
+
+
+def _classify_patch(patch_path: Path) -> str:
+    """Returns 'dep' or 'code'. Fails if the patch touches both."""
+    files = _patch_touched_files(patch_path)
+    dep_files = {f for f in files if Path(f).name in _DEP_MANIFEST_BASENAMES}
+    code_files = files - dep_files
+    if dep_files and code_files:
+        sys.exit(
+            f"error: {patch_path.name} touches both dep manifests "
+            f"({sorted(dep_files)}) and source files ({sorted(code_files)}).\n"
+            f"  Split the commit so dep changes and code changes live in "
+            f"separate commits (use `git rebase -i` in dev/opencode), then "
+            f"re-run `make dev-save`."
+        )
+    return "dep" if dep_files else "code"
 
 
 def cmd_clone() -> None:
@@ -72,25 +127,33 @@ def cmd_clone() -> None:
         ]
     )
     _run(["git", "checkout", "-b", BRANCH], cwd=DEV_DIR)
-    for patch in _patches_sorted(PATCHES_DIR):
+    # Order matters: dep patches first (so subsequent code patches see the
+    # post-dep state), then code patches. Same order opencode_install
+    # applies them at build time.
+    for patch in _patches_sorted(DEP_PATCHES_DIR):
+        _run(["git", "am", str(patch)], cwd=DEV_DIR)
+    for patch in _patches_sorted(CODE_PATCHES_DIR):
         _run(["git", "am", str(patch)], cwd=DEV_DIR)
     print()
     print(f"✓ Dev tree ready at {DEV_DIR.relative_to(REPO_ROOT)} (branch: {BRANCH})")
     print("  Edit packages/opencode/src/... then commit; run `make dev-save` to write patches.")
 
 
-def _rewrite_patches_list(filenames: list[str]) -> None:
-    """Replace the `_OPENCODE_PATCHES = [...]` literal in extensions.bzl."""
+def _rewrite_patches_list(name: str, filenames: list[str]) -> None:
+    """Replace a `<name> = [...]` literal in extensions.bzl."""
     src = EXTENSIONS_BZL.read_text()
-    pattern = re.compile(r"^_OPENCODE_PATCHES\s*=\s*\[[^\]]*\]\s*$", re.MULTILINE)
+    pattern = re.compile(rf"^{re.escape(name)}\s*=\s*\[[^\]]*\]\s*$", re.MULTILINE)
     if not pattern.search(src):
-        sys.exit(f"error: could not find _OPENCODE_PATCHES literal in {EXTENSIONS_BZL.relative_to(REPO_ROOT)}")
-    body = "\n".join(f'    "{name}",' for name in filenames)
-    new_block = f"_OPENCODE_PATCHES = [\n{body}\n]"
+        sys.exit(f"error: could not find {name} literal in {EXTENSIONS_BZL.relative_to(REPO_ROOT)}")
+    if filenames:
+        body = "\n".join(f'    "{fname}",' for fname in filenames)
+        new_block = f"{name} = [\n{body}\n]"
+    else:
+        new_block = f"{name} = [\n]"
     new_src = pattern.sub(new_block, src, count=1)
     if new_src != src:
         EXTENSIONS_BZL.write_text(new_src)
-        print(f"  updated _OPENCODE_PATCHES in {EXTENSIONS_BZL.relative_to(REPO_ROOT)}")
+        print(f"  updated {name} in {EXTENSIONS_BZL.relative_to(REPO_ROOT)}")
 
 
 def cmd_save() -> None:
@@ -115,22 +178,35 @@ def cmd_save() -> None:
     if not new_patches:
         sys.exit("error: format-patch produced no files (no commits past the tag?)")
 
-    existing = _patches_sorted(PATCHES_DIR)
-    if len(new_patches) != len(existing):
-        print(f"warning: patch count changed ({len(existing)} -> {len(new_patches)})", file=sys.stderr)
+    # Classify each patch. _classify_patch() exits with a clear message if a
+    # single commit mixes dep + code changes.
+    dep_patches: list[Path] = []
+    code_patches: list[Path] = []
+    for patch in new_patches:
+        kind = _classify_patch(patch)
+        (dep_patches if kind == "dep" else code_patches).append(patch)
 
-    # Replace the patches dir contents wholesale. Filenames come from commit
-    # subjects, so leftover stale files would become orphans not referenced
-    # by _OPENCODE_PATCHES.
-    for old in existing:
+    # Wipe and replace BOTH destination dirs. Filenames come from commit
+    # subjects; leftover stale patches would become orphans not referenced
+    # by either _OPENCODE_*_PATCHES list.
+    DEP_PATCHES_DIR.mkdir(parents=True, exist_ok=True)
+    CODE_PATCHES_DIR.mkdir(parents=True, exist_ok=True)
+    for old in _patches_sorted(DEP_PATCHES_DIR):
         old.unlink()
-    for new in new_patches:
-        dst = PATCHES_DIR / new.name
-        shutil.copy2(new, dst)
-        print(f"  wrote {dst.relative_to(REPO_ROOT)}")
+    for old in _patches_sorted(CODE_PATCHES_DIR):
+        old.unlink()
+    for src_path in dep_patches:
+        dst = DEP_PATCHES_DIR / src_path.name
+        shutil.copy2(src_path, dst)
+        print(f"  wrote {dst.relative_to(REPO_ROOT)} (dep)")
+    for src_path in code_patches:
+        dst = CODE_PATCHES_DIR / src_path.name
+        shutil.copy2(src_path, dst)
+        print(f"  wrote {dst.relative_to(REPO_ROOT)} (code)")
     shutil.rmtree(staging)
 
-    _rewrite_patches_list([p.name for p in _patches_sorted(PATCHES_DIR)])
+    _rewrite_patches_list("_OPENCODE_DEP_PATCHES", [p.name for p in _patches_sorted(DEP_PATCHES_DIR)])
+    _rewrite_patches_list("_OPENCODE_CODE_PATCHES", [p.name for p in _patches_sorted(CODE_PATCHES_DIR)])
     print()
     print("✓ Patches saved. Run `make update` to rebuild with the new patches.")
 

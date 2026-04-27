@@ -1,0 +1,89 @@
+- Biome architecture overview and crate dependency graph
+- `biome_rowan` green/red lossless syntax tree infrastructure
+- `SyntaxNode`, `SyntaxToken`, `AstNode` traits and usage patterns
+- `biome_js_syntax` — all JavaScript/TypeScript AST node types
+- `biome_css_syntax`, `biome_json_syntax`, `biome_graphql_syntax` node types
+- `biome_js_parser` — error-tolerant lossless JS/TS/JSX parser design
+- `biome_css_parser`, `biome_json_parser`, `biome_graphql_parser` parsers
+- Parser error recovery strategies and event-based parsing
+- `.ungram` grammar definition file format and code generation
+- `biome_formatter` — `FormatElement` IR, `Format` and `FormatRule` traits
+- Formatter IR builders: `group`, `indent`, `soft_line_break`, `hard_line_break`, `text`, etc.
+- Comment handling in the formatter (`CommentStyle`, `SourceComment`)
+- `biome_js_formatter`, `biome_css_formatter`, `biome_json_formatter` implementations
+- `biome_analyze` — `Rule` trait, `RuleContext`, query types (`Ast<N>`, `Semantic<N>`)
+- `declare_lint_rule!` macro and rule boilerplate
+- Rule categories: a11y, complexity, correctness, nursery, performance, security, style, suspicious
+- Writing fix actions (`FixKind::Safe`, `FixKind::Unsafe`, code mutations)
+- `biome_js_analyze` — all JS/TS lint rules and assist rules
+- `biome_css_analyze`, `biome_json_analyze`, `biome_graphql_analyze` rules
+- `biome_html_analyze` — HTML lint rules
+- ARIA/accessibility rules and `biome_aria` metadata
+- `biome_js_semantic` — binding resolution, scope analysis, semantic model
+- `biome_control_flow` — control flow graph construction
+- `biome_js_type_info` — type inference for JS/TS
+- `biome_service` — `Workspace` trait and `WorkspaceServer` implementation
+- `OpenFileParams`, `FormatFileParams`, `PullDiagnosticsParams`, `FixFileParams`
+- `WorkspaceError` error types
+- `biome_cli` — command dispatch, traversal engine, reporters
+- All CLI commands: check, format, lint, ci, search, migrate, init, start, stop, rage
+- CLI options: `--write`, `--fix`, `--unsafe`, `--stdin-file-path`, `--changed`, `--since`
+- `biome_lsp` — LSP server implementation and capabilities
+- LSP capabilities: formatting, diagnostics, code actions, rename, on-type formatting
+- `biome_configuration` — `biome.json` configuration schema
+- All configuration sections: formatter, linter, assist, javascript, typescript, json, css, graphql, html, vcs, overrides, plugins
+- `extends` configuration inheritance
+- `overrides` per-path configuration
+- `biome_deserialize` and `#[derive(Deserializable)]` for config parsing
+- `biome_wasm` — WASM bindings and the `Workspace` WASM struct
+- `@biomejs/js-api` — `Biome`, `BiomeCommon`, `Distribution` enum, JS API methods
+- WASM targets: bundler, nodejs, web
+- `biome_grit_patterns` — GritQL pattern evaluation and search
+- GritQL plugin syntax and plugin registration in `biome.json`
+- `biome_migrate` — migration from ESLint, Prettier, and between Biome versions
+- `biome_module_graph` — import/export tracking for cross-file analysis
+- `biome_project_layout` — monorepo and project structure detection
+- `biome_resolver` — module specifier resolution
+- `biome_suppression` — `// biome-ignore` comment parsing
+- Suppression comment syntax and usage
+- `biome_diagnostics` — diagnostic types, rendering, severity levels
+- `biome_console` — markup-based terminal output
+- `biome_fs` — `FileSystem` trait, `OsFileSystem`, `MemoryFileSystem`
+- `biome_glob` — glob pattern matching for file inclusion/exclusion
+- `biome_text_size` — `TextSize` and `TextRange` byte-offset types
+- `biome_text_edit` — `TextEdit` for atomic text changes
+- `biome_line_index` — line/column ↔ byte-offset conversion
+- `xtask_codegen` — code generation pipeline for rules, grammar, config, schema
+- `just gen-rules`, `just gen-configuration`, `just gen-migrate`, `just gen-schema`
+- `just gen-bindings` — TypeScript type generation
+- Creating new lint rules with `just new-js-lintrule <Name>`
+- Promoting rules from nursery with `just move-rule <Name> <group>`
+- Snapshot testing with `insta` (`cargo insta review`, `cargo insta accept`)
+- Spec test pattern for lint rules (tests/specs/<category>/<rule>/)
+- `just test-lintrule <Name>` workflow
+- `biome_formatter_test` shared test utilities
+- Benchmarking vs Prettier and ESLint in `benchmark/`
+- `packages/@biomejs/backend-jsonrpc` TypeScript JSON RPC client
+- Daemon mode architecture (start, stop, socket transport)
+- VCS integration (git changed files, `--staged`, `--changed`, `--since`)
+- `biome_aria` / `biome_aria_metadata` — WAI-ARIA spec data for a11y rules
+- `biome_rule_options` — configurable rule option types
+- `biome_ruledoc_utils` — lint rule documentation validation
+- `biome_string_case` — case conversion for rule names and identifiers
+- Workspace `ScanProjectParams` and project scanning
+- `biome_package` — `package.json` and `tsconfig.json` parsing
+- `biome_plugin_loader` — plugin loading and execution
+- `biome_js_runtime` — JavaScript runtime globals and environments
+- Embedded language support (CSS-in-JS, HTML templates)
+- `AnyEmbeddedSnippet`, `EmbeddedSnippet` for embedded language handling
+- `biome_jsdoc_comment` — JSDoc comment parsing
+- Tailwind CSS utility class sorting (`biome_tailwind_*` crates)
+- HTML/Vue lint rule development
+- YAML and Markdown parser/formatter (experimental)
+- Clippy lint configuration and workspace-wide lint policy
+- Rust edition 2024 patterns used throughout the codebase
+- `bpaf` argument parsing for CLI
+- `tokio` async runtime usage in the LSP
+- `rayon` parallel file traversal
+- `schemars` JSON schema generation for configuration
+- Contributing workflow: AI disclosure, changeset creation, PR process

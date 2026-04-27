@@ -1,0 +1,65 @@
+- `LLMScraper` class — constructor, `run()`, `stream()`, `generate()` methods
+- `ScraperLLMOptions` type — all fields including `system`, `messages`, and Vercel AI SDK `CallSettings`
+- `ScraperGenerateOptions` type — `format` restriction to `html`/`raw_html` for code generation
+- `PreProcessOptions` discriminated union — all six format variants and their specific fields
+- `PreProcessResult` type — `url`, `content`, `format` fields
+- `format: 'html'` — DOM cleanup via `cleanup()`, pre-processed HTML, noise removal
+- `format: 'raw_html'` — unprocessed `page.content()` output
+- `format: 'markdown'` — Turndown HTML-to-Markdown conversion pipeline
+- `format: 'text'` — Mozilla Readability integration via dynamic CDN import inside `page.evaluate()`
+- `format: 'image'` — base64 screenshot for multimodal LLMs, `fullPage` option
+- `format: 'custom'` — `formatFunction` callback pattern, any string return
+- `cleanup()` function — which DOM elements are removed (script, style, form elements, nav, etc.)
+- `cleanup()` function — which attributes are stripped (style, src, aria-*, data-*, on*, etc.)
+- `preprocess()` function — how each format mode processes the Playwright `Page`
+- `generateAISDKCompletions()` — how page content is passed as user message to `generateText`
+- `streamAISDKCompletions()` — how `streamText` and `partialOutputStream` are used
+- `generateAISDKCode()` — how JSON Schema is extracted from `output.responseFormat` for code generation
+- `stripMarkdownBackticks()` — how LLM code output is cleaned before return
+- System prompt for extraction: `"You are a sophisticated web scraper. Extract the contents of the webpage"`
+- System prompt for code generation: IIFE JavaScript generation instructions
+- `Output.object({ schema })` — Zod and JSON Schema variants
+- `Output.array({ element })` — array extraction pattern
+- `jsonSchema()` from Vercel AI SDK — non-Zod JSON Schema usage
+- OpenAI provider setup: `openai('gpt-4o')`, `openai('gpt-4o-mini')` via `@ai-sdk/openai`
+- Anthropic provider setup: `anthropic('claude-3-5-sonnet-20240620')` via `@ai-sdk/anthropic`
+- Google provider setup: `google('gemini-1.5-flash')` via `@ai-sdk/google`
+- Groq provider setup: `createOpenAI({ baseURL, apiKey })` with custom OpenAI base URL
+- Ollama provider setup: `ollama('llama3')` via `ollama-ai-provider-v2`
+- TypeScript generics — how `Output.Output` generic type flows through `run()`, `stream()`, `generate()`
+- Type inference — how the returned `data` field is typed from the Zod schema
+- Streaming partial objects — consuming `partialOutputStream` as an async iterator
+- Streaming arrays — `Output.array()` + `stream()` for incremental array results
+- Code generation workflow — `generate()` → `page.evaluate(code)` → `schema.parse(result)`
+- Tool integration pattern — wrapping LLMScraper in Vercel AI SDK `tool()` for agent use
+- Custom system prompt override — `options.system` field
+- Additional messages injection — `options.messages` field for few-shot or context
+- `CallSettings` passthrough — `temperature`, `maxTokens`, etc. forwarded to AI SDK
+- `fullPage` screenshot option — `format: 'image'` with `fullPage: true/false`
+- Package structure — `type: "module"`, `main: "dist/index.js"`, ESM-only
+- TypeScript config — `NodeNext` module resolution, `.js` import extensions, `ESNext` target
+- Build command — `npm run build` → `tsc -p tsconfig.json` → `dist/`
+- Test command — `npm test` → `vitest run` with 30s timeout, requires `OPENAI_API_KEY`
+- Test fixture setup — `tests/index.ts` — shared Chromium browser, per-test page, `afterAll` cleanup
+- Test coverage — all six format modes tested, streaming tested, code generation tested, JSON Schema tested
+- Dependencies — `ai` (Vercel AI SDK v6), `@ai-sdk/provider`, `turndown`
+- Dev dependencies — `playwright`, `typescript`, `vitest`, `zod`, `@ai-sdk/openai`
+- Dynamic CDN dependency — `@mozilla/readability` from Skypack CDN at runtime
+- ESM module format — all files use `.js` extensions in imports, `"type": "module"`
+- `vitest.config.ts` — test timeout, include pattern
+- Error handling — `custom` format throws if `formatFunction` is not a function
+- No HTTP server, CLI, or persistence layer — library-only, embedded in caller apps
+- HackerNews scraping example — `examples/hn.ts`
+- Streaming example — `examples/streaming.ts`
+- Code generation example — `examples/codegen.ts`
+- Tool use example — `examples/toolUse.ts`
+- Ollama local model example — `examples/ollama.ts`
+- Vercel AI SDK v6 compatibility — updated from earlier versions
+- `generateText` vs `streamText` — when each is used internally
+- `partialOutputStream` — the specific AI SDK stream property returned by `streamText`
+- JSON Schema extraction from `output.responseFormat` for code generation mode
+- Browser lifecycle management — caller owns browser/page, scraper does not manage it
+- `page.evaluate()` usage — for both `cleanup()` injection and code generation execution
+- `page.innerHTML('body')` — used for markdown format
+- `page.content()` — used for html and raw_html formats
+- `page.screenshot()` — used for image format, returns Buffer converted to base64

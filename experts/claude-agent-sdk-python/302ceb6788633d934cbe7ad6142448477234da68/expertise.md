@@ -1,0 +1,75 @@
+- Installing and configuring the `claude-agent-sdk` Python package
+- Using `query()` async generator for one-shot stateless Claude Code interactions
+- Using `ClaudeSDKClient` for bidirectional, multi-turn stateful conversations
+- Async context manager usage with `ClaudeSDKClient` (`async with`)
+- Configuring `ClaudeAgentOptions` dataclass — all fields and their semantics
+- Setting `permission_mode`: `default`, `acceptEdits`, `plan`, `bypassPermissions`
+- Using `allowed_tools` and `disallowed_tools` for tool access control
+- Implementing `can_use_tool` permission callback for fine-grained control
+- Defining custom tools with `@tool` decorator
+- Creating in-process MCP servers with `create_sdk_mcp_server()`
+- Wiring MCP servers into `ClaudeAgentOptions.mcp_servers`
+- Understanding `SdkMcpTool` and `McpSdkServerConfig` types
+- Hook system: `HookMatcher` dataclass, `HookCallback` signature, `HookContext`
+- All hook event types: `PreToolUse`, `PostToolUse`, `PostToolUseFailure`, `UserPromptSubmit`, `Stop`, `SubagentStop`, `PreCompact`, `Notification`, `SubagentStart`, `PermissionRequest`
+- Writing `PreToolUse` hooks that approve or deny tool calls
+- Returning `permissionDecision` from hook callbacks
+- Understanding `HookInput` TypedDict fields for each event type
+- Sending messages to the user from hooks via `context.send_message()`
+- All message types: `AssistantMessage`, `UserMessage`, `SystemMessage`, `ResultMessage`
+- Streaming event types: `StreamEvent`, `RateLimitEvent`
+- Task message types: `TaskStartedMessage`, `TaskProgressMessage`, `TaskNotificationMessage`
+- Content block types: `TextBlock`, `ThinkingBlock`, `ToolUseBlock`, `ToolResultBlock`
+- Iterating messages and filtering by type with `isinstance()` checks
+- `ResultMessage` fields: `cost_usd`, `duration_ms`, `session_id`, `stop_reason`, `usage`
+- Using `receive_response()` vs `receive_messages()` on `ClaudeSDKClient`
+- Calling `client.interrupt()` to stop an in-progress query
+- Calling `client.set_model()` to switch models mid-conversation
+- Calling `client.set_permission_mode()` at runtime
+- File checkpointing with `enable_file_checkpointing` and `client.rewind_files()`
+- MCP server runtime control: `reconnect_mcp_server()`, `toggle_mcp_server()`, `get_mcp_status()`
+- Task management: `stop_task()`, `TaskStartedMessage`, `TaskNotificationMessage`
+- Session management: `list_sessions()`, `get_session_messages()`, `rename_session()`, `tag_session()`
+- Resuming sessions with `ClaudeAgentOptions(resume=session_id)`
+- Continuing the most recent session with `continue_conversation=True`
+- Forking sessions with `fork_session=True`
+- Setting `max_turns` and `max_budget_usd` to limit execution
+- Configuring `ThinkingConfig` for extended thinking/reasoning
+- Setting `effort` level for reasoning
+- Structured output with `OutputFormat` and JSON schema
+- System prompt override with `system_prompt` and `append_system_prompt`
+- Setting `cwd` and `add_dirs` for working directory control
+- Sandbox configuration with `SandboxConfig` (network access, allowed paths)
+- Environment variable injection via `ClaudeAgentOptions.env`
+- Using `cli_path` to specify a custom Claude Code CLI binary
+- Using `extra_args` to pass additional CLI arguments
+- Understanding `max_buffer_size` and `CLAUDE_CODE_STREAM_CLOSE_TIMEOUT`
+- `CLAUDE_CODE_ENTRYPOINT` telemetry environment variable
+- `CLAUDE_CODE_ENABLE_FINE_GRAINED_TOOL_STREAMING` for partial streaming
+- Partial message streaming with `StreamEvent` and `event_type == "text_delta"`
+- Rate limit tracking via `RateLimitEvent` (status, window_type fields)
+- Error handling: `ClaudeSDKError`, `CLINotFoundError`, `CLIConnectionError`, `ProcessError`, `CLIJSONDecodeError`, `MessageParseError`
+- Transport abstraction: `Transport` ABC and `SubprocessCLITransport`
+- CLI binary discovery order: bundled → PATH → common install locations
+- Minimum CLI version requirement (2.0.0)
+- Platform-specific wheel packaging (bundled CLI binary per platform)
+- Building wheels with `scripts/build_wheel.py`
+- Release process: automatic (CLI bump commit) and manual (GitHub Actions)
+- Running unit tests with `pytest tests/`
+- Running end-to-end tests with `pytest e2e-tests/` (requires API key)
+- Type checking with mypy in strict mode
+- Linting/formatting with ruff
+- Modern Python type hints used throughout (PEP 604, no `typing.Optional`)
+- `anyio` backend support: asyncio (default) and trio
+- Plugin integration via `ClaudeAgentOptions.plugins`
+- Subagent definitions via `ClaudeAgentOptions.agents` and `AgentDefinition`
+- `get_server_info()` for runtime server metadata
+- Internal architecture: Transport → Control Protocol → Internal Client → Public API
+- `_internal/query.py` control protocol: `initialize`, `hook_callback`, `mcp_message`, `can_use_tool`
+- `_internal/message_parser.py` deserialization of CLI JSON output
+- Write lock in `SubprocessCLITransport` for thread-safe stdin writes
+- `AsyncIterable[dict]` prompt format for progressive multi-message input
+- `session_id` parameter on `ClaudeSDKClient.query()` for multi-session management
+- Usage tracking via `ResultMessage.usage` and `UsageInfo`
+- `SDKSessionInfo` fields: `session_id`, `title`, `created_at`, tags
+- `SessionMessage` structure for historical messages

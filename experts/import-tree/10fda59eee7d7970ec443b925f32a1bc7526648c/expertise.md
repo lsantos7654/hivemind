@@ -1,0 +1,83 @@
+- Using `import-tree` as a Nix flake input (`inputs.import-tree.url = "github:vic/import-tree"`)
+- Using `import-tree` as a plain Nix import (`import ./import-tree`) without flakes
+- Using `import-tree` with `builtins.fetchTarball` for non-flake pinning
+- Calling `import-tree ./modules` to import all modules from a directory
+- Calling `import-tree [ ./a ./b ]` with a list of directories
+- Understanding that nested lists are automatically flattened
+- Understanding that `outPath` containers (like flake inputs) are treated as paths
+- Understanding that other import-tree objects can appear in path lists
+- Understanding that raw attrsets (non-paths) are passed through filters as-is
+- Understanding that when the argument has `options`, import-tree detects module eval and returns empty imports
+- The default filter behavior: `.nix` suffix + no `/_` infix (`nixFilter` at `default.nix:45`)
+- The `/_` underscore-prefix directory convention for private/helper files
+- Why `/_` directories are ignored by default and how to traverse one explicitly
+- Using `.filter (fn)` to add a predicate that must return true for a path to be included
+- Using `.filterNot (fn)` to exclude paths where a predicate returns true
+- Composing multiple `.filter` and `.filterNot` calls with logical AND
+- Using `.match (regex)` to include paths matching a full-string regex via `builtins.match`
+- Using `.matchNot (regex)` to exclude paths matching a regex
+- Understanding that `builtins.match` tests the ENTIRE string (regex must match full path)
+- Composing `.match` and `.filter` together
+- Using `.initFilter (fn)` to replace the default `.nix` + `/_` filter entirely
+- Using `.initFilter` to discover non-Nix files (e.g., `.txt`, `.md`)
+- Understanding that `.initFilter` also applies to non-path items in import lists
+- Using `.map (fn)` to transform each discovered path after filtering
+- Composing multiple `.map` calls (left-to-right composition)
+- Using `.map import` to actually import discovered files
+- Using `.map lib.traceVal` to debug discovered paths
+- Using `.map builtins.readFile` to read file contents outside module eval
+- Using `.addPath (path)` to accumulate paths without calling the tree as a function
+- Calling `.addPath` multiple times to build a list of directories
+- Understanding that `.addPath` appends paths in order
+- The equivalence between `(tree.addPath ./a).addPath ./b |>.files` and `tree.leafs [ ./a ./b ]`
+- Using `.addAPI (attrset)` to extend the import-tree object with custom named methods
+- Understanding that `.addAPI` methods receive `self` (the current import-tree) as their first argument
+- Understanding late binding: API methods resolve at call time, enabling forward references
+- Calling `.addAPI` multiple times cumulatively preserving previous extensions
+- Building module distributions using `.addAPI` with domain-specific names
+- Using `.withLib (lib)` to inject nixpkgs lib for outside-module-eval usage
+- Understanding that `.withLib` is required before `.leafs`, `.files`, and `.pipeTo` outside the module system
+- Understanding that inside module evaluation, lib is obtained lazily from module arguments
+- The error "You need to call withLib before trying to read the tree" and when it occurs
+- Using `.leafs` to get a file-list-producing import-tree instead of a module-producing one
+- The difference between `.leafs <path>` (file list) and `import-tree <path>` (module)
+- Using `.files` as a shorthand for `.leafs.result` after configuring paths with `.addPath`
+- Using `.pipeTo (fn)` to pipe the file list through a function (e.g., `builtins.length`)
+- Using `.result` to evaluate with an empty path list after pre-configuring via `.addPath`
+- Using `.new` to get a fresh import-tree with empty state
+- How the functor pattern works (`__functor` field on attrsets in Nix)
+- The `perform` function internals at `default.nix:3`
+- The `callable` and config accumulation mechanism at `default.nix:139`
+- The `leafs` inner function at `default.nix:29` and its `listFilesRecursive` logic
+- The `isDirectory`, `isPathLike`, `hasOutPath`, `isImportTree`, `inModuleEval` predicates
+- The `compose`, `and`, `andNot` function combinators
+- The `makeRelative` and `rootRelative` functions for path-string filter application
+- How `paths` accumulates as a list and is flattened during `leafs` execution
+- The `accAttr` and `mergeAttrs` helper patterns inside callable
+- The structure of `__config` (accumulator state record)
+- Using import-tree with flake-parts (`inputs.flake-parts.lib.mkFlake { inherit inputs; } (inputs.import-tree ./modules)`)
+- Using import-tree with NixOS modules (`imports = [ (import-tree ./modules) ]`)
+- Using import-tree with home-manager
+- Using import-tree with nix-darwin
+- Using import-tree with NixVim
+- Using import-tree with `lib.modules.evalModules`
+- Using import-tree without flakes (npins + with-inputs)
+- The Dendritic pattern: one Nix module per file, directory tree as system structure
+- Benefits of the Dendritic pattern: locality, composability, no boilerplate, git-friendly
+- The relationship between import-tree and the Dendritic pattern specification
+- Related projects: vic/flake-file, vic/with-inputs, vic/checkmate, mightyiam/dendritic
+- Running the test suite: `nix flake check github:vic/checkmate --override-input target path:.`
+- The test file structure at `checkmate/modules/tests.nix`
+- The test fixture tree at `checkmate/tree/`
+- Understanding test cases for each API method (leafs, filter, match, matchNot, map, addPath, addAPI, pipeTo, initFilter, new)
+- Formatting code: `nix run github:vic/checkmate#fmt`
+- The treefmt exclusions in `checkmate/modules/formatter.nix`
+- Building the documentation site: `cd docs && pnpm install && pnpm run dev`
+- The documentation site at `https://import-tree.oeiuwq.com`
+- Understanding the `flake.nix` as a trivial one-liner: `outputs = _: import ./.`
+- The zero-dependency design philosophy
+- Why `lib` is accessed lazily (deferred to module system when possible)
+- The `module` wrapper at `default.nix:22`: `{ lib, ... }: { imports = leafs lib path; }`
+- How the single `default.nix` file serves as both library and flake output
+- CI configuration: GitHub Actions test workflow using checkmate
+- CI configuration: GitHub Pages deployment workflow using pnpm + Astro

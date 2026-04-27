@@ -2,7 +2,7 @@ You are performing a deep analysis of the repository at {{ repo_dir }} to create
 
 The commit is {{ commit }}. Write all files into {{ commit_dir }}/.
 
-Generate these 5 files:
+Generate these 6 files:
 
 1. **{{ commit_dir }}/summary.md** (500-800 words)
    - Repository purpose and goals
@@ -31,26 +31,13 @@ Generate these 5 files:
    - Integration patterns and workflows
    - Configuration options and extension points
 
-5. **{{ commit_dir }}/agent.md** — Expert subagent definition. Use this exact template, filling in the bracketed sections from your analysis:
+5. **{{ commit_dir }}/description.md** — A single paragraph (no headings, no bullets, plain prose, ~3–6 sentences) used as the expert's agent description. Open with "Expert on the <project> repository — <one-line characterization>." Then list specific, concrete topics, scenarios, and trigger phrases that should invoke this expert. Mention canonical class names, modules, CLI commands, file formats, or APIs the expert covers, so the orchestrator can match user questions to this expert. End with a sentence beginning "Automatically invoked for questions about ..." that lists the most distinctive identifiers (function names, configuration keys, package names) tied to this repository.
 
-```markdown
-{{ agent_template }}
-```
+6. **{{ commit_dir }}/expertise.md** — A comprehensive bullet list (no `## Expertise` heading — bullets only, ~100–150 lines) enumerating what this expert knows. Group bullets under bold sub-topic labels (e.g. `### Core Architecture`, `### APIs`, `### Build Configuration`). Each entry should be specific: name actual classes, functions, files, or features. Avoid generic phrasing like "uses good patterns" — be concrete. This content goes verbatim under the `## Expertise` heading of the deployed agent.
 
-**CRITICAL: Do NOT include YAML frontmatter (---) in agent.md.** The file must start directly with `# Expert:`. Frontmatter is added automatically at deploy time.
-
-Replace the bracketed sections with specific content from your analysis:
-- The `[Full Repository Name]` heading should be the actual project name
-- The description paragraph MUST come directly after the `# Expert:` heading — do NOT add `## Overview` or any other section heading between them. This paragraph is extracted by parsing the first text block after the h1 heading; any `##` heading will cut off extraction and produce a blank description.
-- The `[Generate detailed list...]` in Expertise should be comprehensive (100-150+ lines)
-
-**IMPORTANT for Instructions Section:** The Instructions section MUST be comprehensive and mandate that the expert:
-- ALWAYS reads knowledge docs before answering
-- ALWAYS searches source code for verification
-- NEVER answers from LLM memory alone
-- ALWAYS provides file paths and line numbers
-- ALWAYS acknowledges when information is not found
-
-Use strong, mandatory language ("MUST", "ALWAYS", "NEVER") in the Instructions section.
+**Important formatting rules:**
+- `description.md` must contain ONLY the description paragraph. No leading heading, no frontmatter.
+- `expertise.md` must contain ONLY the bullet list / sub-section bullets. No leading `## Expertise` heading, no frontmatter.
+- Both files are inputs to a Jinja template that wraps them with the rest of the agent definition (workflow instructions, anti-hallucination rules, constraints) at deploy time.
 
 Analyze the repository thoroughly using Read, Grep, and Glob tools before writing. Explore the directory structure, key source files, build files, and documentation. Write comprehensive, accurate documentation based on actual code inspection.

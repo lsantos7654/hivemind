@@ -1,0 +1,82 @@
+- Application class instantiation and configuration options (`lib/application.js`)
+- `app.use()` middleware registration and chaining
+- `app.listen()` and `app.callback()` for HTTP server creation
+- `app.currentContext` and `AsyncLocalStorage` integration (new in v3)
+- The "onion" middleware execution model via `koa-compose`
+- Custom middleware composition with a user-provided `compose` function
+- Per-request Context object creation via `createContext()` (`lib/application.js:213`)
+- The `respond()` function and how Koa finalizes HTTP responses (`lib/application.js:268`)
+- `app.onerror()` default error handler behavior
+- Emitting and listening to app-level `error` events
+- `ctx.throw()` — throwing HTTP errors via `http-errors` (`lib/context.js:95`)
+- `ctx.assert()` — conditional HTTP error throwing via `http-assert` (`lib/context.js:72`)
+- `ctx.state` — per-request shared state namespace
+- `ctx.cookies` — lazy `Cookies` instance with signed cookie support
+- `ctx.respond = false` — bypassing Koa's automatic response handling
+- Context delegation pattern using the `delegates` package (`lib/context.js:195–249`)
+- Extending `app.context` with custom properties
+- `app.silent` property to suppress error logging
+- Request `header` / `headers` — read IncomingMessage headers
+- `ctx.method` and HTTP method detection
+- `ctx.url`, `ctx.path`, `ctx.querystring`, `ctx.search` getters and setters
+- `ctx.query` — URLSearchParams-based query object parsing and serialization (`lib/request.js:172`)
+- `ctx.URL` — WHATWG URL object, lazily memoized (`lib/request.js:296`)
+- `ctx.host` and `ctx.hostname` — proxy-aware host parsing (`lib/request.js:251`)
+- `ctx.protocol` — HTTP/HTTPS detection with X-Forwarded-Proto support (`lib/request.js:410`)
+- `ctx.secure` — HTTPS detection shorthand
+- `ctx.ip` and `ctx.ips` — proxy-aware IP resolution (`lib/request.js:442–468`)
+- `ctx.subdomains` — subdomain array with configurable offset
+- `ctx.href` and `ctx.origin` — full URL and origin header
+- `ctx.fresh` and `ctx.stale` — ETag / Last-Modified cache validation (`lib/request.js:318`)
+- `ctx.idempotent` — idempotent method check
+- `ctx.charset` — Content-Type charset parsing
+- `ctx.length` — request Content-Length
+- `ctx.accepts()` — content type negotiation via the `accepts` package
+- `ctx.acceptsEncodings()`, `ctx.acceptsCharsets()`, `ctx.acceptsLanguages()`
+- `ctx.is()` — request Content-Type check via `type-is`
+- `ctx.get()` — request header retrieval (case-insensitive, Referer/Referrer normalized)
+- Response `status` setter with validation (`lib/response.js:84`)
+- Response `message` getter/setter for HTTP status text
+- Response `body` setter — all supported body types (string, Buffer, Stream, ReadableStream, Blob, Response, JSON object, null) (`lib/response.js:135`)
+- Stream body handling — `on-finished` destroy, `isStream()` duck typing
+- WHATWG `ReadableStream`, `Blob`, and `Response` as body types (new in v3)
+- Automatic JSON serialization for plain objects
+- `ctx.response.length` — computed from body type or Content-Length header
+- `ctx.response.type` setter — MIME type resolution via `mime-types` (`lib/response.js:386`)
+- `ctx.etag` getter/setter — automatic quote normalization (`lib/response.js:434`)
+- `ctx.lastModified` getter/setter — date string / Date object (`lib/response.js:405`)
+- `ctx.redirect(url)` — 302 redirect with URL sanitization and escape-html body (`lib/response.js:302`)
+- `ctx.back(alt?)` — same-origin Referrer redirect with fallback (`lib/response.js:338`)
+- `ctx.attachment(filename?, options?)` — Content-Disposition header (`lib/response.js:363`)
+- `ctx.vary(field)` — Vary header management via `vary` package
+- `ctx.response.set()`, `ctx.response.get()`, `ctx.response.has()`, `ctx.response.remove()`, `ctx.response.append()`
+- `ctx.flushHeaders()` — early header flushing
+- `ctx.writable` — response writability check (`lib/response.js:597`)
+- `ctx.headerSent` — whether headers have been sent
+- `lib/is-stream.js` — duck-type stream detection logic
+- `lib/only.js` — property projection utility used in `toJSON()` methods
+- `lib/search-params.js` — URLSearchParams wrapper for query parse/stringify
+- ESM vs CJS distribution (`dist/koa.mjs` vs `lib/application.js`)
+- `package.json` exports map and conditional resolution
+- Node.js built-in test runner usage (`node --test`)
+- `c8` coverage collection
+- `standard` linting configuration
+- GitHub Actions CI configuration (Node 18, 20, 22)
+- Proxy configuration: `app.proxy`, `app.proxyIpHeader`, `app.maxIpsCount`, `app.subdomainOffset`
+- Signed cookies with `app.keys` and KeyGrip
+- v1 → v2 migration (generator middleware removal)
+- v2 → v3 migration: generator support removed, `http-errors` v2, `ctx.back()` replacing `redirect('back')`, URLSearchParams replacing querystring, AsyncLocalStorage, WHATWG body types
+- HTTP/2 server setup with `app.callback()`
+- Server-Sent Events with PassThrough streams
+- `NODE_DEBUG=koa*` debug logging
+- Named middleware (via `fn._name` or function name)
+- Composing sub-middleware stacks with `koa-compose`
+- Middleware best practices: factory functions, named functions, response middleware
+- Error handling patterns: try/catch in middleware, `app.on('error')`, `ctx.throw`, custom error middleware
+- Mounting Koa inside Express/Connect
+- `app.context.db = db()` pattern for injecting shared state
+- `HttpError` class re-exported from Koa for instanceof checks
+- `ctx.response._explicitNullBody` and explicit null body handling
+- `ctx.response._explicitStatus` tracking
+- `v8.startupSnapshot` integration for snapshot-compatible AsyncLocalStorage
+- Test helper patterns in `test-helpers/context.js` and `test-helpers/stream.js`

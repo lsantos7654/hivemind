@@ -1,0 +1,92 @@
+- `@click.command()` decorator — converting Python functions to CLI commands, `cls` parameter for custom Command subclasses, `no_args_is_help`, `hidden`, `deprecated`, `epilog`
+- `@click.group()` decorator — creating multi-command groups, `invoke_without_command`, `chain` mode for sequential subcommand execution
+- `@click.option()` decorator — all option parameters: `default`, `required`, `type`, `multiple`, `is_flag`, `flag_value`, `count`, `envvar`, `prompt`, `hide_input`, `confirmation_prompt`, `callback`, `is_eager`, `expose_value`, `show_default`, `help`, `metavar`, `show_choices`
+- `@click.argument()` decorator — positional arguments, `nargs=-1` variadic arguments, `required=False` optional arguments
+- `@click.pass_context` — injecting the `Context` object into command callbacks
+- `@click.pass_obj` — injecting `ctx.obj` directly into command callbacks
+- `@click.make_pass_decorator()` — creating custom context access decorators
+- `@click.pass_meta_key()` — accessing `ctx.meta` dictionary values via decorator
+- `@click.version_option()` — adding `--version` flags with auto-formatting
+- `@click.help_option()` — customizing the `--help` flag
+- `@click.confirmation_option()` — adding Y/N confirmation before command execution
+- `@click.password_option()` — hidden input with confirmation for passwords
+- `click.Context` class — execution context, `params`, `obj`, `meta`, `args`, `info_name`, `parent`, `color`, `max_content_width`, `default_map`
+- `ctx.ensure_object()` — initializing `ctx.obj` to a specific type if None
+- `ctx.with_resource()` — registering context managers for cleanup
+- `ctx.call_on_close()` — registering cleanup callbacks
+- `ctx.fail()` — raising `UsageError` with formatted message
+- `ctx.exit()` — raising `Exit` with specific code
+- `ctx.find_object()` — searching parent context chain for an object
+- `ctx.find_root()` — getting the root context
+- `click.get_current_context()` — accessing active context from anywhere
+- `click.Command` class — command name, params list, callback, help, epilog, short_help
+- `click.Group` class — `add_command()`, `list_commands()`, `get_command()`, `result_callback`
+- `click.MultiCommand` — abstract base for custom multi-command implementations
+- `click.CommandCollection` — merging multiple groups under one namespace
+- `click.Parameter` — abstract base class for Option and Argument
+- `click.Option` — option objects: `is_flag`, `flag_value`, `count`, `prompt`, `hide_input`
+- `click.Argument` — argument objects: nargs, required
+- `click.ParameterSource` — enum: `COMMANDLINE`, `ENVIRONMENT`, `DEFAULT`, `DEFAULT_MAP`, `PROMPT`
+- `click.ParamType` — base class for custom parameter types, `convert()`, `fail()`, `shell_complete()`, `to_info_dict()`
+- `click.STRING` — string type (default)
+- `click.INT` — integer type
+- `click.FLOAT` — float type
+- `click.BOOL` — boolean type (yes/no/1/0/true/false/on/off)
+- `click.UUID` — UUID type
+- `click.UNPROCESSED` — pass-through type
+- `click.Choice` — enumerated type with `case_sensitive`, help display
+- `click.IntRange` — integer with min/max bounds and `clamp` mode
+- `click.FloatRange` — float with min/max bounds and `clamp` mode
+- `click.DateTime` — date/time parsing with custom format strings
+- `click.File` — file handle type: mode (`r`/`w`/`rb`/`wb`), `lazy`, `atomic`, `encoding`
+- `click.Path` — filesystem path type: `exists`, `file_okay`, `dir_okay`, `writable`, `readable`, `resolve_path`, `allow_dash`, `path_type`, `executable`
+- `click.Tuple` — heterogeneous multi-value type
+- `click.echo()` — output function: `message`, `file`, `nl`, `err`, `color`
+- `click.style()` — ANSI styling: `fg`, `bg`, `bold`, `dim`, `underline`, `blink`, `reverse`, `reset`, RGB color tuples
+- `click.secho()` — combined style + echo
+- `click.prompt()` — interactive input: `default`, `hide_input`, `confirmation_prompt`, `type`, `value_proc`, `err`
+- `click.confirm()` — yes/no dialog: `default`, `abort`, `err`
+- `click.getchar()` — single raw character input
+- `click.pause()` — wait for any key
+- `click.progressbar()` — progress display: `length`, `label`, `fill_char`, `empty_char`, `show_eta`, `show_percent`, `item_show_func`
+- `click.edit()` — open system editor for text input
+- `click.echo_via_pager()` — paginated output
+- `click.launch()` — open URL or file with system default
+- `click.clear()` — clear terminal screen
+- `click.HelpFormatter` — help text builder: `write_heading()`, `write_text()`, `write_dl()`, `write_usage()`, `section()`, `indent()`
+- `click.wrap_text()` — intelligent text wrapping with paragraph preservation
+- `click.ClickException` — base exception class with `format_message()`, `show()`, `exit_code`
+- `click.UsageError` — usage errors (exit code 2) with `format_usage()`
+- `click.BadParameter` — invalid parameter value with `param` and `param_hint`
+- `click.MissingParameter` — missing required parameter
+- `click.BadOptionUsage` — invalid option usage with `option_name`
+- `click.BadArgumentUsage` — invalid argument with `argument_name`
+- `click.NoSuchOption` — unknown option
+- `click.FileError` — file operation failures
+- `click.Abort` — silent user abort (exit code 1, typically from Ctrl-C)
+- `click.Exit` — clean exit with configurable code
+- `click.testing.CliRunner` — test harness: `invoke()`, `isolated_filesystem()`, `charset`, `env`, `mix_stderr`
+- `click.testing.Result` — test result: `output`, `exit_code`, `exception`, `exc_info`, `return_value`
+- Shell completion system — `ShellComplete`, `BashComplete`, `ZshComplete`, `FishComplete`, `PowerShellComplete`
+- `click.shell_completion.CompletionItem` — completion suggestion with `value`, `type`, `help`
+- Custom type shell completion via `ParamType.shell_complete(ctx, param, incomplete)`
+- Context manager protocol for `Context` — `__enter__`/`__exit__` for resource cleanup
+- `standalone_mode` — controlling whether Click handles exceptions and sys.exit automatically
+- `auto_envvar_prefix` — automatic environment variable names from option names
+- `default_map` — dict-based default overrides for CI/configuration file integration
+- `token_normalize_func` — case/separator normalization for option names
+- `resilient_parsing` — completion-mode parsing that ignores errors
+- `allow_extra_args` and `allow_interspersed_args` — context-level parsing flags
+- Lazy command loading via custom `MultiCommand.get_command()` implementation
+- `__click_params__` protocol — how decorators attach parameters to functions
+- `to_info_dict()` pattern — introspection interface on Command, Option, Argument, ParamType
+- `Command.main()` — entry point with `prog_name`, `args`, `complete_var`, `standalone_mode`
+- `context_settings` — dict passed to `@command`/`@group` to configure Context defaults
+- Chained commands — `chain=True` on Group + `result_callback`
+- `invoke_without_command=True` — running group callback even without a subcommand
+- Windows console support — `_winconsole.py`, colorama integration
+- Cross-platform stream handling — `_compat.py`, `open_stream()`, `isatty()`, `should_strip_ansi()`
+- `py.typed` PEP 561 marker — Click ships full type annotations for consumer type checkers
+- Full mypy strict mode compliance
+- Pyright compatibility
+- `examples/` directory — canonical usage patterns: complex, repo, aliases, colors, completion, naval, imagepipe, inout, termui, validation

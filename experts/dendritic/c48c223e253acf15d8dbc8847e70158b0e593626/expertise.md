@@ -1,0 +1,57 @@
+- The Dendritic Pattern definition and motivation
+- The "every non-entry-point file is a top-level module" rule
+- Why file paths represent features, not configuration types or hosts
+- The single-feature-per-file principle
+- How cross-cutting concerns are handled in a single module file
+- Automatic importing with `import-tree` (`github:vic/import-tree`)
+- The role of `flake.nix` / `default.nix` as the only entry points
+- flake-parts as the top-level evaluation framework (`github:hercules-ci/flake-parts`)
+- `flake-parts.lib.mkFlake` and how modules are passed to it
+- The `flake.modules` option namespace (from `flakeModules.modules`)
+- Storing NixOS modules as `deferredModule` values under `flake.modules.nixos.<name>`
+- Storing home-manager modules under `flake.modules.homeManager.<name>`
+- Storing nix-darwin modules under `flake.modules.darwin.<name>`
+- Storing nix-on-droid modules under `flake.modules.nixOnDroid.<name>`
+- `lib.types.deferredModule` — semantics, merge behavior, and use in the pattern
+- `lib.types.lazyAttrsOf` for lazy configuration registries
+- `lib.types.submodule` for per-configuration option schemas
+- Declaring the `configurations.nixos` option pattern
+- Wiring `configurations.nixos` to `flake.nixosConfigurations` via `lib.nixosSystem`
+- Wiring `flake.checks` from NixOS configurations' `system.build.toplevel`
+- The Nix pipe operator (`|>`) usage pattern in `nixos.nix`
+- Declaring shared top-level constants as `lib.mkOption` (e.g. `username`)
+- Reading top-level `config.*` values from within feature modules
+- Avoiding `specialArgs` and `extraSpecialArgs` — the primary anti-pattern
+- How home-manager nested within NixOS is handled
+- The attrset vs. function form of `deferredModule` values
+- Accessing lower-level evaluated `config` from within a `deferredModule` lambda
+- How `lib.getExe` is used for shell references in lower-level modules
+- `flake-parts.flakeModules.modules` — what it provides and how to import it
+- The `import-tree` library — how it collects `.nix` files recursively
+- No lockfile in the repository — users generate their own
+- `nixpkgs.url = "github:nixos/nixpkgs/25.11"` — the pinned nixpkgs version in the example
+- `inputs.nixpkgs-lib.follows = "nixpkgs"` — avoiding duplicate nixpkgs evaluations
+- `nix flake check` as the CI command (checks all NixOS configurations' toplevels)
+- `nix flake lock` / `nix flake update` for dependency management
+- `nixos-rebuild switch --flake .#<hostname>` for applying NixOS configurations
+- `home-manager switch --flake .#<username>@<hostname>` for home-manager
+- `darwin-rebuild switch --flake .#<hostname>` for nix-darwin
+- Real-world examples: mightyiam/infra, vic/vix, drupol/nixos-x260, etc.
+- Related projects: vic/den, vic/dendritic-unflake, vic/dendrix
+- Community resources: GitHub Discussions, Matrix `#dendritic:matrix.org`
+- Comparison with non-dendritic patterns (file-type-based organization, host-based organization)
+- Benefits: known file type, automatic importing, file-path independence
+- How to add a new configuration class (extending the pattern beyond NixOS)
+- How to add new top-level options to the communication bus
+- Using `lib.evalModules` directly without flake-parts
+- The `doc-steve/dendritic-design-with-flake-parts` module design guide
+- Module class concept from `lib.evalModules` and how it applies to dendritic
+- When to use attrset form vs. function form for `deferredModule` values
+- How `lib.flip lib.mapAttrs` is used to transform configurations to flake outputs
+- The `lib.mkMerge` pattern for combining per-system checks
+- `lib.mapAttrsToList` usage in the nixos.nix wiring code
+- Why `lazyAttrsOf` is used instead of `attrsOf` for configuration registries
+- How feature files can be split, merged, renamed, and moved freely
+- The communication bus pattern: top-level options as inter-module data sharing
+- Difference between the dendritic pattern and traditional NixOS flake structures
+- How to migrate an existing infrastructure repo to the dendritic pattern

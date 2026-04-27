@@ -10,7 +10,12 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from hivemind import opencode
-from hivemind.constants import AGENT_FILENAME, ANALYSIS_DOCS, PROCESS_TERMINATE_TIMEOUT
+from hivemind.constants import (
+    ANALYSIS_DOCS,
+    DESCRIPTION_FILENAME,
+    EXPERTISE_FILENAME,
+    PROCESS_TERMINATE_TIMEOUT,
+)
 from hivemind.git import cleanup_log_files, read_analysis_error, revert_checkout
 from hivemind.models import (
     AnalysisResult,
@@ -33,10 +38,16 @@ __all__ = [
 
 
 def expected_analysis_files(*, is_update: bool = False) -> list[str]:
-    """Return the list of files an analysis run is expected to produce."""
+    """Return the list of files an analysis run is expected to produce.
+
+    For new experts, the AI writes the four knowledge docs plus
+    ``description.md`` and ``expertise.md`` (the deploy-time inputs to
+    ``agent.md.j2``). For updates, only the four knowledge docs are
+    regenerated; ``description.md`` and ``expertise.md`` are preserved.
+    """
     files = list(ANALYSIS_DOCS)
     if not is_update:
-        files.append(AGENT_FILENAME)
+        files.extend([DESCRIPTION_FILENAME, EXPERTISE_FILENAME])
     return files
 
 

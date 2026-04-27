@@ -167,38 +167,6 @@ def orchestrator_memory_dir() -> Path:
 # ---------------------------------------------------------------------------
 
 
-def extract_description(body: str) -> str:
-    """Extract description from agent.md body (first paragraph after h1 heading)."""
-    lines = body.strip().splitlines()
-
-    def _first_paragraph(start_idx: int) -> str:
-        paragraph_lines: list[str] = []
-        for line in lines[start_idx:]:
-            stripped = line.strip()
-            if not stripped and not paragraph_lines:
-                continue
-            if stripped.startswith("#") or (not stripped and paragraph_lines):
-                break
-            paragraph_lines.append(stripped)
-        return " ".join(paragraph_lines)
-
-    h1_idx = next((i for i, line in enumerate(lines) if line.startswith("# ")), None)
-    if h1_idx is None:
-        return ""
-
-    result = _first_paragraph(h1_idx + 1)
-    if result:
-        return result
-
-    for i, line in enumerate(lines):
-        if line.strip().lower() == "## overview":
-            result = _first_paragraph(i + 1)
-            if result:
-                return result
-
-    return ""
-
-
 def strip_frontmatter(content: str) -> str:
     """Remove YAML frontmatter from markdown content."""
     if not content.startswith("---"):

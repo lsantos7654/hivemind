@@ -1,0 +1,95 @@
+- Bun runtime architecture: three-layer design (JS APIs → C++ JSC bindings → Zig runtime)
+- JavaScriptCore integration and how it differs from V8/Node.js
+- HTTP server implementation via `Bun.serve()` including TLS, WebSocket upgrade, streaming
+- WebSocket server and client APIs
+- TCP/UDP socket APIs (`Bun.listen`, `Bun.connect`)
+- File I/O: `Bun.file()`, `Bun.write()`, streaming, MIME types, `BunFile` interface
+- Bundler internals: parse phase, link phase, chunk generation, tree-shaking, code splitting
+- `Bun.build()` programmatic API: options, plugins, loaders, targets (browser/bun/node)
+- Bundler plugin system: `onLoad`, `onResolve`, namespaces, custom loaders
+- HMR / dev server (`bun bake`) architecture and hot reloading
+- Package manager: `bun install`, `bun add`, `bun remove`, workspace support
+- npm registry client implementation (`src/install/npm.zig`)
+- `bun.lock` binary lockfile format
+- Dependency resolution and version constraint satisfaction
+- Module resolution engine: Node.js-compatible resolver in `src/resolver/resolver.zig`
+- `package.json` exports field, `imports` field, conditional exports parsing
+- `tsconfig.json` path aliases and resolution
+- TypeScript execution: how Bun strips types without tsc
+- JSX transformation to `React.createElement` / React fast refresh
+- Transpiler internals: `src/transpiler.zig`
+- JavaScript lexer and printer: `src/js_lexer.zig`, `src/js_printer.zig`
+- `bun:test` Jest-compatible test runner: `describe`, `test`, `it`, `expect`
+- Test runner matchers: `toBe`, `toEqual`, `toContain`, `toThrow`, `toMatchSnapshot`, etc.
+- Mock API: `mock()`, `jest.fn()`, `spyOn()`, `jest.mock()`
+- Snapshot testing and inline snapshots
+- Code coverage with `--coverage` flag
+- Test harness utilities: `bunExe()`, `bunEnv`, `tempDir()` in `test/harness.ts`
+- Writing regression tests for GitHub issues in `test/regression/issue/`
+- `bun:sqlite` SQLite API: `Database`, prepared statements, transactions, WAL mode
+- PostgreSQL client via `Bun.sql()`
+- Redis/Valkey client via `Bun.redis()`
+- AWS S3 client via `Bun.s3()`
+- FFI (`bun:ffi`): `dlopen`, `FFIType`, `CString`, calling C functions from JS
+- N-API compatibility for native Node.js addons
+- V8 C++ API compatibility layer
+- `Bun.spawn()` and `Bun.spawnSync()` for child processes
+- Bun Shell (`Bun.$`, `import { $ } from "bun"`): piping, redirection, interpolation
+- Worker threads: `Worker` API, `postMessage`, `onmessage`
+- `Bun.FileSystemRouter` for Next.js-style file-based routing
+- `Bun.Glob` pattern matching: `scan()`, `match()`
+- `Bun.hash` family: wyhash, xxHash32, xxHash64, xxHash3, adler32, crc32
+- `Bun.CryptoHasher`: SHA-256, SHA-512, MD5, etc.
+- `Bun.password`: Argon2id and bcrypt hashing/verification
+- Web Crypto API integration
+- `HTMLRewriter` for streaming HTML manipulation
+- `Bun.semver`: satisfies, order, parse
+- `Bun.version`, `Bun.revision`, `import.meta.main`, `import.meta.path`, `import.meta.dir`
+- `bunfig.toml` configuration: install, run, test, bundle sections
+- Event loop implementation: tasks, microtasks, timers, I/O polling
+- File system watcher: kqueue (macOS), inotify (Linux)
+- Platform abstractions in `src/sys.zig` and `src/windows.zig`
+- Memory allocators: mimalloc (production), debug allocator, zero allocator
+- Build system: `build.zig` profiles (debug, release, asan), cross-compilation targets
+- Build commands: `bun bd`, `bun run build:release`, `bun run watch`, `bun run zig:check`
+- Test commands: `bun bd test`, `bun run test`, `bun run node:test`
+- CPU feature variants: AVX2 default vs baseline (SSE4.2) builds
+- Platform support: Linux (x64/arm64), macOS (Intel/Apple Silicon), Windows (x64/arm64)
+- Minimum OS requirements: Linux 5.1+, macOS 13.0, Windows 10 RS5
+- Node.js compatibility: which APIs are implemented, known gaps
+- Built-in Node.js shims in `src/js/node/`: fs, path, crypto, http, net, stream, etc.
+- Code generation (bindgen) via `.classes.ts` files for JS class bindings
+- C++ JSC bindings architecture in `src/bun.js/bindings/`
+- Debugging support: Chrome DevTools Protocol integration
+- CPU profiler integration
+- Tracy profiler integration
+- AddressSanitizer (ASAN) builds for memory safety
+- Fuzzilli fuzzing support
+- Barrel import optimization in bundler
+- Source maps: inline, linked, external
+- CSS handling in bundler
+- HTML entry points in bundler
+- Asset handling and loaders (ts, tsx, jsx, json, text, base64, file, etc.)
+- Macros in the bundler (`bun:macro` and Bun macros)
+- `bunx` package runner (equivalent to npx)
+- `bun init` project scaffolding
+- `bun create` template-based project creation
+- `bun upgrade` self-update mechanism
+- `bun audit` security audit for dependencies
+- `bun pack` tarball creation
+- `bun publish` npm publishing
+- Workspace support in package manager
+- Git dependencies
+- Patch support (`bun patch`)
+- `bun-lambda` AWS Lambda runtime
+- `bun-wasm` WebAssembly builds
+- `bun-vscode` VS Code extension
+- VS Code debugger integration
+- Docker support and containerization
+- GitHub Actions integration
+- Buildkite CI/CD pipeline structure
+- Performance characteristics vs Node.js
+- CommonJS and ES module interoperability
+- Dynamic import and top-level await
+- Decorators support (TypeScript/JS decorators)
+- `import.meta.require` (CJS require in ESM context)

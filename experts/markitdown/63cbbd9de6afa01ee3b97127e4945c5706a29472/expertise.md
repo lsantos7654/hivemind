@@ -1,0 +1,62 @@
+- `MarkItDown` class architecture: constructor parameters, `enable_builtins`, `enable_plugins`, kwargs passthrough
+- `convert()` dispatch logic: how source type determines which convert_* method is called
+- `convert_local()`: local file path handling, binary mode opening, StreamInfo building from filename/extension
+- `convert_stream()`: binary stream handling, seekability check, BytesIO buffering
+- `convert_uri()`: URI scheme routing (file:, data:, http:, https:), data URI decoding
+- `convert_response()`: `requests.Response` handling, Content-Type header parsing, Content-Disposition filename extraction
+- `convert_url()`: alias for convert_uri, deprecation status
+- `_convert()`: sorted converter iteration, stream position preservation, error aggregation
+- `_get_stream_info_guesses()`: magika content detection, MIME/extension heuristic merging, compatibility checking
+- `_normalize_charset()`: charset normalization via `codecs.lookup`
+- `register_converter()`: priority-based insertion, stable sort behavior, ConverterRegistration dataclass
+- `enable_builtins()`: built-in converter registration order and priorities
+- `enable_plugins()`: entry-point loading via `importlib.metadata.entry_points`, plugin failure isolation
+- `ConverterRegistration`: frozen dataclass with `converter` and `priority` fields
+- `PRIORITY_SPECIFIC_FILE_FORMAT` (0.0) vs `PRIORITY_GENERIC_FILE_FORMAT` (10.0) constants
+- `DocumentConverter` abstract base: `accepts()` and `convert()` method contracts
+- `accepts()` stream-position invariant: must reset position if it reads
+- `convert()` return/raise contract: `DocumentConverterResult`, `MissingDependencyException`, `FileConversionException`
+- `DocumentConverterResult`: `markdown` attribute, `title` attribute, `text_content` deprecated alias, `__str__` method
+- `StreamInfo` frozen dataclass: all fields (mimetype, extension, charset, filename, local_path, url), `copy_and_update()`
+- Exception hierarchy: `MarkItDownException`, `MissingDependencyException`, `UnsupportedFormatException`, `FileConversionException`, `FailedConversionAttempt`
+- `MISSING_DEPENDENCY_MESSAGE` template and its `{converter}`, `{extension}`, `{feature}` placeholders
+- Lazy optional dependency loading pattern: module-level `try/except ImportError` storing `_dependency_exc_info`
+- `PdfConverter`: pdfplumber form/table detection, pdfminer fallback, `_extract_form_content_from_words()`, `_extract_tables_from_words()`, MasterFormat partial numbering merging (`_merge_partial_numbering_lines`)
+- `DocxConverter`: mammoth DOCX-to-HTML conversion, `pre_process_docx()`, style_map support
+- `PptxConverter`: slide iteration, shape sorting by position, image captioning, table HTML conversion, chart data extraction
+- `XlsxConverter` and `XlsConverter`: pandas+openpyxl/xlrd sheet reading, per-sheet HTML table conversion
+- `HtmlConverter`: BeautifulSoup parsing, script/style removal, `_CustomMarkdownify` usage, `convert_string()` helper
+- `_CustomMarkdownify`: ATX heading style, JavaScript link removal, data URI truncation, checkbox conversion
+- `ImageConverter`: EXIF metadata extraction via ExifTool, LLM captioning with data URI base64 encoding
+- `AudioConverter`: ExifTool metadata, speech transcription via `_transcribe_audio.py`, WAV/MP3/MP4 format detection
+- `YouTubeConverter`: URL-based accepts(), metadata extraction from HTML, transcript fetching with retry logic
+- `WikipediaConverter`: Wikipedia-specific HTML parsing
+- `BingSerpConverter`: Bing search results page parsing
+- `RssConverter`: RSS/Atom feed parsing
+- `ZipConverter`: ZIP entry iteration, recursive conversion via parent `MarkItDown` reference
+- `EpubConverter`: EPUB OPF parsing, spine-order content extraction, metadata formatting
+- `IpynbConverter`: Jupyter notebook cell extraction
+- `CsvConverter`: CSV to Markdown table conversion
+- `OutlookMsgConverter`: OLE file structure parsing, email header/body extraction, UTF-16 decoding
+- `DocumentIntelligenceConverter`: Azure AI integration, endpoint/credential configuration, `DocumentIntelligenceFileType` enum, OCR features, `prebuilt-layout` model
+- `_exiftool.py`: ExifTool subprocess invocation, path auto-discovery logic
+- `_llm_caption.py`: shared LLM captioning helper used by PptxConverter and ImageConverter
+- Plugin interface: `__plugin_interface_version__`, `register_converters()` signature, entry-point declaration in pyproject.toml
+- `markitdown-sample-plugin`: complete RTF plugin reference implementation
+- `markitdown-mcp` server: FastMCP setup, `convert_to_markdown` tool, STDIO vs HTTP/SSE transport, `MARKITDOWN_ENABLE_PLUGINS` env var, uvicorn/starlette routing, `/sse`, `/mcp`, `/messages/` routes
+- CLI (`__main__.py`): argparse setup, all flags (-v, -o, -x, -m, -c, -d, -e, -p, --list-plugins, --keep-data-uris), stdin handling, StreamInfo construction from hints
+- Optional dependency groups: all, pptx, docx, xlsx, xls, pdf, outlook, audio-transcription, youtube-transcription, az-doc-intel
+- Required core dependencies: beautifulsoup4, requests, markdownify, magika~=0.6.1, charset-normalizer, defusedxml
+- Build system: hatchling/hatch, pyproject.toml configuration, hatch environments (default, hatch-test, types), `hatch test` command
+- Docker: root Dockerfile for CLI, markitdown-mcp Dockerfile for server
+- Python version support: 3.10+ required, CPython and PyPy implementations
+- `requests.Session` configuration: Accept header with text/markdown preference for Markdown-for-Agents servers
+- `keep_data_uris` option: behavior in HTML and PPTX converters
+- `youtube_transcript_languages` kwarg for YouTubeConverter
+- `exiftool_path` auto-discovery: well-known system paths checked via `shutil.which`
+- `_uri_utils.py`: `parse_data_uri()`, `file_uri_to_path()` functions
+- `converter_utils/docx/`: DOCX pre-processing pipeline, math equation handling
+- Content normalization in `_convert()`: trailing whitespace stripping, 3+ newline collapsing
+- `markitdown-ocr` plugin: OCR via llm_client/llm_model for embedded images in PDF/DOCX/PPTX/XLSX
+- Version: `0.1.6b2` (commit `63cbbd9de6afa01ee3b97127e4945c5706a29472`)
+- Breaking changes in 0.1.0: optional-dependency groups, binary-only `convert_stream()`, `DocumentConverter` stream interface

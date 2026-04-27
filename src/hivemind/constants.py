@@ -29,7 +29,8 @@ DEFAULT_TEMPERATURE: float = 0.1
 
 # --- Analysis file contracts ---
 
-AGENT_FILENAME: str = "agent.md"
+DESCRIPTION_FILENAME: str = "description.md"
+EXPERTISE_FILENAME: str = "expertise.md"
 ANALYSIS_DOCS: list[str] = [
     "summary.md",
     "code_structure.md",

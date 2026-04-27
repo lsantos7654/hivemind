@@ -42,7 +42,7 @@ from hivemind.config import (
     get_head_commit,
     make_emit,
 )
-from hivemind.constants import AGENT_FILENAME
+from hivemind.constants import DESCRIPTION_FILENAME, EXPERTISE_FILENAME
 from hivemind.git import (
     clone_from_remote,
     commit_analysis_results,
@@ -60,7 +60,7 @@ from hivemind.models import (
     UpdatePhase,
     UpdateResult,
 )
-from hivemind.templates import create_expert_prompt, update_expert_prompt
+from hivemind.templates import create_expert_prompt, render_agent, update_expert_prompt
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -114,20 +114,41 @@ class GitAnalyzedBody:
 
     # --- body protocol -----------------------------------------------------
 
-    def render(self) -> str:
-        """Return the canonical body read from ``experts/<name>/HEAD/agent.md``."""
-        head_agent = get_expert_dir(self.name) / "HEAD" / AGENT_FILENAME
-        if not head_agent.exists():
+    def description(self) -> str:
+        """Read the AI-generated one-paragraph description for frontmatter."""
+        desc_md = get_expert_dir(self.name) / "HEAD" / DESCRIPTION_FILENAME
+        if not desc_md.exists():
             return ""
-        raw = head_agent.read_text(encoding="utf-8")
-        return opencode.strip_frontmatter(raw)
+        return desc_md.read_text(encoding="utf-8").strip()
+
+    def render(self) -> str:
+        """Render the deploy-time agent body from description.md + expertise.md.
+
+        These two files are AI-generated; the rest of the agent body
+        (workflow scaffolding, anti-hallucination rules, constraints) is
+        provided by the Jinja template at deploy time, so prompt-engineering
+        improvements take effect via ``hivemind redeploy`` — no AI spend.
+        """
+        head = get_expert_dir(self.name) / "HEAD"
+        desc_path = head / DESCRIPTION_FILENAME
+        expertise_path = head / EXPERTISE_FILENAME
+        if not desc_path.exists() or not expertise_path.exists():
+            return ""
+        description = desc_path.read_text(encoding="utf-8").strip()
+        expertise = expertise_path.read_text(encoding="utf-8").strip()
+        commit = head.resolve().name
+        return render_agent(
+            name=self.name,
+            commit=commit,
+            description=description,
+            expertise=expertise,
+        )
 
     def librarian_entry(self) -> str:
-        expert_dir = get_expert_dir(self.name)
-        description = opencode.extract_description(self.render())
+        description = self.description()
 
         summary_lines = ""
-        summary_md = expert_dir / "HEAD" / "summary.md"
+        summary_md = get_expert_dir(self.name) / "HEAD" / "summary.md"
         try:
             lines = summary_md.read_text(encoding="utf-8").splitlines()
             summary_lines = "\n".join(lines[:5])
@@ -529,7 +550,11 @@ async def switch_version(
             )
 
         target_dir = expert_dir / target_commit
-        if not target_dir.exists() or not (target_dir / AGENT_FILENAME).exists():
+        if (
+            not target_dir.exists()
+            or not (target_dir / DESCRIPTION_FILENAME).exists()
+            or not (target_dir / EXPERTISE_FILENAME).exists()
+        ):
             check_cancel(UpdatePhase.CHECKING)
             emit(
                 UpdatePhase.CHECKING,

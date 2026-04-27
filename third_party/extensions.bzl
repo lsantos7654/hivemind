@@ -7,7 +7,7 @@ Provides:
 """
 
 load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
-load(":opencode_install.bzl", "opencode_install")
+load(":opencode_install.bzl", "opencode_install", "opencode_node_modules_install")
 
 # Bun 1.3.11 release sha256 sums (from SHASUMS256.txt at oven-sh/bun release).
 _BUN_VARIANTS = {
@@ -71,19 +71,45 @@ def _ext_impl(ctx):
         )
 
     if opencode_tag:
+        dep_patches = ["@//third_party/dep_patches:" + p for p in _OPENCODE_DEP_PATCHES]
+        code_patches = ["@//third_party/patches:" + p for p in _OPENCODE_CODE_PATCHES]
+        # Install repo: download + dep_patches + bun install. Cached by
+        # version + sha256 + bun version + dep_patches contents. Survives
+        # code_patch edits so the build repo can ctx.symlink its
+        # node_modules instead of running `bun install` itself.
+        opencode_node_modules_install(
+            name = "opencode_node_modules",
+            version = opencode_tag.version,
+            sha256 = opencode_tag.sha256,
+            dep_patches = dep_patches,
+        )
+        # Build repo: download + dep_patches + code_patches + symlink
+        # node_modules + bun build. Patches concatenated in that order so
+        # the post-patch state matches what the install repo saw.
         opencode_install(
             name = "opencode_src",
             version = opencode_tag.version,
             sha256 = opencode_tag.sha256,
-            patches = ["@//third_party/patches:" + p for p in _OPENCODE_PATCHES],
+            patches = dep_patches + code_patches,
             build_file = "@//third_party/opencode:BUILD.bazel.opencode",
+            node_modules_anchor = "@opencode_node_modules//:BUILD.bazel",
         )
 
     return ctx.extension_metadata(reproducible = True)
 
-# Patches applied to the fetched opencode tree, in order. Resolved relative
-# to //third_party/patches/.
-_OPENCODE_PATCHES = [
+# Patches that modify dep manifests (package.json / bun.lock). Applied in
+# BOTH @opencode_node_modules and @opencode_src, before bun install. Editing
+# one invalidates the install repo (~30s rebuild). Resolved relative to
+# //third_party/dep_patches/. Empty by default — most patches should be
+# code patches.
+_OPENCODE_DEP_PATCHES = [
+]
+
+# Patches that modify only source files (no dep manifest changes). Applied
+# only in @opencode_src, after dep_patches, after install. Editing one
+# invalidates only the build repo (~3s rebuild). Resolved relative to
+# //third_party/patches/.
+_OPENCODE_CODE_PATCHES = [
     "0001-Rewrite-the-TUI-exit-Continue-suggestion-to-hivemind.patch",
     "0002-Rebrand-the-OPENCODE-wordmark-TUI-logo-to-HIVEMIND.patch",
     "0003-Inline-connection-indicator-into-home-sidebar-footer.patch",

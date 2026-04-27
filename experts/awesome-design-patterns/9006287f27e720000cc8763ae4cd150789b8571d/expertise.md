@@ -1,0 +1,96 @@
+- Curated design pattern resources for AngularJS
+- Curated design pattern resources for C# (including design-patterns-for-humans C# edition, DesignPatternsLibrary)
+- Curated design pattern resources for C++
+- Curated design pattern resources for Clojure
+- Curated design pattern resources for Go (go-patterns by tmrts)
+- Curated design pattern resources for Java (java-design-patterns, sourcemaking, oodesign, Effective Java patterns)
+- Curated design pattern resources for JavaScript (ES6 patterns, Addy Osmani's book, humans JS edition)
+- Curated design pattern resources for Kotlin (Design-Patterns-In-Kotlin)
+- Curated design pattern resources for Node.js (Real-world Design Patterns, Node.js Design Patterns book)
+- Curated design pattern resources for Object Oriented design (GoF book, Head First, Object Design Style Guide)
+- Curated design pattern resources for PHP (design-patterns-for-humans by kamranahmedse, DesignPatternsPHP)
+- Curated design pattern resources for Python (faif/python-patterns, PyPattyrn, python-patterns.guide, refactoring.guru Python, Django Design Patterns)
+- Curated design pattern resources for React (react-bits, reactpatterns.com)
+- Curated design pattern resources for Ruby
+- Curated design pattern resources for Rust (rust-unofficial patterns book)
+- Curated design pattern resources for Scala
+- Curated design pattern resources for Swift (Design-Patterns-In-Swift)
+- Curated design pattern resources for TypeScript
+- Curated design pattern resources for UML (quick reference, cheat sheet)
+- Curated design pattern resources for Vue.js (Vue Patterns)
+- Curated design pattern resources for Elixir (design-patterns-in-elixir, pipeline pattern)
+- General Architecture patterns (10 common architectural patterns, reactive design patterns, scalable system design, Martin Fowler eaaCatalog, system-design-primer, InnerSource patterns)
+- Cloud Architecture patterns — AWS Cloud Design Patterns (CDP), Azure Architecture Center patterns
+- Cloud Architecture patterns — GCP Solutions, cloud computing patterns, SaaS tenant isolation
+- Cloud Architecture patterns — cloud cost optimisation, multi-tenancy on AWS
+- Serverless Architecture patterns (5 design patterns, Jeremy Daly's serverless microservice patterns)
+- Serverless Architecture patterns — serverlessland.com Serverless Patterns Collection, serverless reference architectures
+- Microservices patterns (microservices.io pattern language by Chris Richardson)
+- Microservices anti-patterns and pitfalls (O'Reilly)
+- 12-Factor App methodology
+- Microservices sync vs async patterns
+- Message queue architecture comparison (AWS)
+- Enterprise Integration Patterns (Hohpe & Woolf messaging patterns)
+- Martin Fowler's patterns of distributed systems
+- IoT communication patterns (strengths, weaknesses)
+- IoT design pattern framework for architecture
+- Big Data patterns — MapReduce patterns
+- Big Data patterns — stream processing and real-time analytics (13 patterns)
+- Machine Learning distributed system patterns (terrytangyuan/distributed-ml-patterns)
+- SQL database tenancy patterns (Azure SaaS)
+- SQL data models by industry (databaseanswers.org — 50 categories)
+- SQL table design patterns
+- SQL database design errors to avoid
+- SQL data model design best practices (Talend)
+- SQL anti-patterns detection (sqlcheck by jarulraj)
+- AWS Redshift ETL/ELT design patterns (data lake house architecture)
+- NoSQL resilience design patterns (eBay enterprise patterns)
+- NoSQL pragmatic patterns (DZone)
+- MongoDB design patterns and applied design patterns book
+- DynamoDB advanced design patterns (Amazon labs)
+- Redis applied design patterns and best practices
+- AWS storage patterns (on-premises vs AWS storage services comparison)
+- S3 performance best practices design patterns
+- Container patterns (thousand ways to use containers)
+- Kubernetes production patterns
+- Container design patterns for Kubernetes pods
+- Shell script best practices and design patterns
+- Kubernetes patterns (book and presentation)
+- CDK patterns (cdkpatterns.com)
+- CDK Construct Catalog (awscdk.io)
+- iOS architecture patterns (MVC, MVVM, etc.)
+- Android design patterns (common patterns for Android)
+- Android MVC/MVP/MVVM comparison
+- UI patterns (user interface design patterns)
+- CSS architecture (OOCSS, ACSS, BEM, SMACSS)
+- CSS protips collection
+- Responsive design patterns
+- Front-end MV* architectures (MVC/MVP/MVVM/CLEAN/VIPER/REDUX/MVI)
+- GUI architectures (Martin Fowler)
+- Security architecture patterns (OpenSecurityArchitecture)
+- Web security basics (Martin Fowler)
+- Cloud security architecture introduction
+- OWASP Security by Design Principles
+- Azure security best practices and patterns
+- Recommended books: GoF (Design Patterns: Elements of Reusable OO Software)
+- Recommended books: Head First Design Patterns
+- Recommended books: Effective Java 3rd Edition (Joshua Bloch)
+- Recommended books: Node.js Design Patterns (Packt)
+- Recommended books: Game Programming Patterns
+- Recommended books: Object Design Style Guide (Manning)
+- Recommended books: Spring Boot in Practice (Manning)
+- Recommended books: Designing Microservices (Manning)
+- Recommended books: Django Design Patterns and Best Practices
+- Recommended books: MongoDB Applied Design Patterns (O'Reilly)
+- Contributing to the awesome-design-patterns list (PR guidelines, entry format)
+- awesome-list conventions (sindresorhus/awesome format and quality bar)
+- GitHub Pages / Jekyll rendering of the repository
+- CC0 license and public domain status of the list
+- Repository structure and navigation (TOC anchors, section organisation)
+- Finding whether a specific language or technology has design pattern resources in the list
+- Identifying which resources cover anti-patterns vs patterns
+- Locating ultra-simplified pattern explanations (design-patterns-for-humans variants)
+- Finding pattern resources that include UML diagrams
+- Locating language-agnostic pattern resources
+- Finding pattern resources with code examples vs conceptual explanations
+- Cross-referencing patterns across the AWS/Azure/GCP cloud provider resources

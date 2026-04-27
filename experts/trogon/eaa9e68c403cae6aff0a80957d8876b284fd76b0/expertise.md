@@ -1,0 +1,50 @@
+- `@tui()` decorator: signature, parameters (`name`, `command`, `help`), wrapping Click Groups and single Commands
+- `Trogon` Textual App class: constructor parameters, lifecycle, `run()`, `execute_on_exit`, `post_run_command`
+- `CommandBuilder` Screen: layout composition, command tree sidebar, parameter form, command preview pane
+- `init_tui()` Typer adapter: converting Typer apps to Click Groups, adding TUI subcommand to Typer
+- `introspect_click_app()`: how it recursively walks Click command trees, return value structure
+- `CommandSchema` dataclass: all fields (`name`, `function`, `options`, `arguments`, `subcommands`, `parent`, `docstring`, `is_group`), `path_from_root` property
+- `OptionSchema` dataclass: all fields (`name`, `type`, `default`, `required`, `is_flag`, `is_boolean_flag`, `flag_value`, `counting`, `multiple`, `multi_value`, `nargs`, `help`, `choices`)
+- `ArgumentSchema` dataclass: all fields (`name`, `type`, `required`, `default`, `multiple`, `choices`, `nargs`)
+- `MultiValueParamData`: structure, use as default/value wrapper
+- `CommandName` type alias: `NewType` usage as typed string identifier
+- `UserCommandData`: fields, `to_cli_args()` method, `to_cli_string()` method, nested subcommand handling
+- `UserOptionData`: fields, value tuple structure, `option_schema` reference
+- `UserArgumentData`: fields, value tuple structure, `argument_schema` reference
+- `CommandForm` widget: `get_values()`, `apply_filter()`, `Changed` message, parameter grouping by ancestry
+- `ParameterControls` widget: control selection logic per Click type, `get_values()`, `apply_filter()`, `Changed` message
+- `CommandTree` widget: populating from schema dict, `Tree.NodeHighlighted` event, group vs command styling
+- `CommandInfo` modal: Description tab, Metadata tab, `DataTable` fields
+- `MultipleChoice` widget: checkbox rendering, keyboard navigation, `Changed` message
+- `AboutDialog` modal: content, dismissal behavior
+- Click type to Textual widget mapping: STRING/INT/FLOAT/UUID/Path/File → Input; BOOL/flag → Checkbox; Choice (single) → Select; Choice (multiple=True) → MultipleChoice; nargs > 1 → multiple Inputs; counting → Input
+- Keyboard bindings: Ctrl+R (run), Ctrl+T (focus tree), Ctrl+S (search), F1 (about), F2 (command info), Escape (dismiss modal)
+- `trogon.scss`: CSS structure, widget selectors, CSS variables, layout definitions
+- `detect_run_string.py`: invocation detection via `sys.orig_argv` and ctypes
+- `constants.py`: `APP_TITLE`, `PACKAGE_NAME`, `TEXTUAL_URL`, `ORGANIZATION_NAME`
+- Package exports: what is in `trogon/__init__.py`, what is importable from sub-modules
+- Textual integration patterns: how Trogon uses `App`, `Screen`, `Widget`, message system, bindings, CSS
+- Click integration: supported parameter types, flag handling, counting options, multiple options, nargs, choices
+- Handling nested Click Groups: how subcommands are represented in schema and navigated in the tree
+- Command execution flow: from user form input → `UserCommandData` → `to_cli_args()` → subprocess execution
+- Command preview rendering: `to_cli_string()` output in the bottom preview pane
+- Search/filter functionality: `apply_filter()` on `CommandForm` and `ParameterControls`, matching against name and help text
+- Parameter grouping: options inherited from parent Click Groups displayed separately in the form
+- `multiple=True` option handling: dynamic control list with "+ Add value" button
+- `nargs > 1` handling: tuple parameters rendered as multiple side-by-side Inputs
+- Boolean flag handling: `is_flag`, `is_boolean_flag`, `flag_value` distinctions
+- Required parameter indication: UI treatment of required vs optional parameters
+- Default value display: how defaults from Click schemas are pre-populated in controls
+- `Select` dropdown widget usage for Choice type
+- Adding Trogon to an existing Click app with minimal code changes
+- Python version compatibility: 3.9–3.13 support
+- Poetry build system: `pyproject.toml`, installing from source, dev vs runtime deps
+- Optional Typer extra: `pip install trogon[typer]`
+- CI pipeline: GitHub Actions matrix (Ubuntu/macOS/Windows × Python 3.9–3.13)
+- Running examples: `demo.py`, `nogroup_demo.py`, `typer_example.py`
+- Textual devtools integration: `textual run --dev` for CSS hot-reload
+- Testing: `pytest tests/`, `test_help.py` (decorator tests), `test_run_command.py` (CLI arg building tests)
+- Subclassing `Trogon` for custom styling: overriding `CSS_PATH`
+- Programmatic use of `Trogon` class without the decorator
+- CHANGELOG and version history
+- Known limitations and beta status (version 0.6.0)

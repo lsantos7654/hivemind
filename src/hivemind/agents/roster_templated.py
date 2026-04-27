@@ -1,11 +1,15 @@
 """``RosterTemplatedBody`` — body strategy for team lead agents.
 
-A team lead agent is assembled from a ``lead.md`` template plus a roster of
-member experts. Membership mutations (``add_expert_to_team`` /
-``remove_expert_from_team``) AI-generate per-expert sections that are spliced
-into ``lead.md``. Enable/disable behaves like any other agent: the deployed
-``agents/team-lead-<name>.md`` is present when enabled and absent when not.
+A team lead agent is assembled at deploy time from per-file inputs under
+``teams/<name>/``: ``description.md`` (the team's one-paragraph blurb) and
+one ``expert-<expert>.md`` per roster member (the AI-generated section
+body). Membership mutations (``add_expert_to_team`` /
+``remove_expert_from_team``) write or delete those files; the Jinja
+``team_lead.md.j2`` template renders them into the deployed
+``agents/team-lead-<name>.md`` when ``Agent.deploy()`` runs.
 
+Enable/disable behaves like any other agent: the deployed
+``agents/team-lead-<name>.md`` is present when enabled and absent when not.
 Roster mutations are refused while the team is disabled — you must enable
 the team before modifying its roster.
 """
@@ -25,6 +29,7 @@ from hivemind.config import (
 from hivemind.config import (
     expert_names as get_all_expert_names,
 )
+from hivemind.constants import DESCRIPTION_FILENAME
 from hivemind.git import clone_from_remote
 from hivemind.hooks import afire_post_mutation, fire_post_mutation
 from hivemind.models import (
@@ -54,10 +59,8 @@ __all__ = [
     "create_team",
     "create_team_lead_notes_stub",
     "refresh_expert_notes_header",
-    "refresh_team_lead_body",
     "refresh_team_lead_notes_header",
     "remove_expert_from_team",
-    "remove_expert_section",
     "update_team",
 ]
 
@@ -98,15 +101,33 @@ class RosterTemplatedBody:
 
     # --- body protocol -----------------------------------------------------
 
+    def description(self) -> str:
+        """Read the team's one-paragraph description for frontmatter."""
+        desc_md = TEAMS_DIR / self.name / DESCRIPTION_FILENAME
+        if desc_md.exists():
+            return desc_md.read_text(encoding="utf-8").strip()
+        return self.params.description
+
     def render(self) -> str:
-        """Return lead.md with the current roster spliced in."""
-        lead_md = TEAMS_DIR / self.name / "lead.md"
-        if not lead_md.exists():
+        """Render the deploy-time team-lead body from per-expert section files.
+
+        Reads ``teams/<name>/description.md`` and one
+        ``teams/<name>/expert-<expert>.md`` per current roster member, then
+        passes them through the Jinja team-lead template. Roster mutations
+        write to those files directly; template tweaks take effect on
+        ``hivemind redeploy`` with no AI spend.
+        """
+        team_dir = TEAMS_DIR / self.name
+        desc_md = team_dir / DESCRIPTION_FILENAME
+        if not desc_md.exists():
             return ""
-        body = opencode.strip_frontmatter(lead_md.read_text(encoding="utf-8"))
-        roster_lines = "\n".join(f"- expert-{e}" for e in self.params.experts)
-        roster_section = f"## Team Roster\n\n{roster_lines}"
-        return body.replace("<!-- ROSTER -->", roster_section)
+        description = desc_md.read_text(encoding="utf-8").strip()
+        expert_sections: dict[str, str] = {}
+        for expert_name in self.params.experts:
+            section_path = team_dir / f"expert-{expert_name}.md"
+            if section_path.exists():
+                expert_sections[expert_name] = section_path.read_text(encoding="utf-8").strip()
+        return team_lead_template(self.name, description, expert_sections)
 
     def librarian_entry(self) -> str:
         roster = ", ".join(self.params.experts)
@@ -164,6 +185,11 @@ def _read_expert_summary(expert_name: str) -> str:
 
 
 def _parse_expert_sections(output: str, expert_names: list[str]) -> dict[str, str]:
+    """Parse AI output into ``{name: section_body}`` with the heading stripped.
+
+    The deploy-time Jinja template emits the ``## expert-<name>`` heading
+    itself, so the dict values must be heading-free body text.
+    """
     sections: dict[str, str] = {}
     for name in expert_names:
         marker = f"## expert-{name}"
@@ -178,7 +204,9 @@ def _parse_expert_sections(output: str, expert_names: list[str]) -> dict[str, st
             pos = output.find(other_marker, start + len(marker))
             if pos != -1 and pos < next_start:
                 next_start = pos
-        sections[name] = output[start:next_start].strip()
+        # Drop the marker line itself; keep the body underneath.
+        body = output[start + len(marker) : next_start]
+        sections[name] = body.strip()
     return sections
 
 
@@ -234,36 +262,6 @@ async def generate_expert_section(expert_name: str, team_name: str) -> str | Non
 # ---------------------------------------------------------------------------
 
 
-def remove_expert_section(team_name: str, expert_name: str) -> bool:
-    lead_md = TEAMS_DIR / team_name / "lead.md"
-    if not lead_md.exists():
-        return False
-
-    content = lead_md.read_text(encoding="utf-8")
-    heading = f"## expert-{expert_name}"
-    if heading not in content:
-        return False
-
-    lines = content.split("\n")
-    result: list[str] = []
-    skipping = False
-
-    for line in lines:
-        if line.strip() == heading:
-            skipping = True
-            continue
-        if skipping and line.startswith("## "):
-            skipping = False
-        if not skipping:
-            result.append(line)
-
-    cleaned = "\n".join(result)
-    while "\n\n\n" in cleaned:
-        cleaned = cleaned.replace("\n\n\n", "\n\n")
-    lead_md.write_text(cleaned, encoding="utf-8")
-    return True
-
-
 def create_expert_notes_stub(team_name: str, expert_name: str) -> None:
     notes_dir = TEAMS_DIR / team_name / f"expert-{expert_name}"
     notes_dir.mkdir(parents=True, exist_ok=True)
@@ -296,6 +294,24 @@ def create_team_lead_notes_stub(team_name: str) -> None:
         notes_file.write_text(team_lead_notes_template(team_name), encoding="utf-8")
 
 
+def _write_description_file(team_name: str, description: str) -> None:
+    team_dir = TEAMS_DIR / team_name
+    team_dir.mkdir(parents=True, exist_ok=True)
+    (team_dir / DESCRIPTION_FILENAME).write_text(description.strip() + "\n", encoding="utf-8")
+
+
+def _write_expert_section_file(team_name: str, expert_name: str, body: str) -> None:
+    team_dir = TEAMS_DIR / team_name
+    team_dir.mkdir(parents=True, exist_ok=True)
+    (team_dir / f"expert-{expert_name}.md").write_text(body.strip() + "\n", encoding="utf-8")
+
+
+def _delete_expert_section_file(team_name: str, expert_name: str) -> None:
+    section_path = TEAMS_DIR / team_name / f"expert-{expert_name}.md"
+    if section_path.exists():
+        section_path.unlink()
+
+
 def refresh_team_lead_notes_header(team_name: str) -> None:
     notes_file = TEAMS_DIR / team_name / "notes.md"
     if not notes_file.exists():
@@ -310,47 +326,6 @@ def refresh_team_lead_notes_header(team_name: str) -> None:
         notes_file.write_text(template + entries, encoding="utf-8")
     else:
         notes_file.write_text(template, encoding="utf-8")
-
-
-def refresh_team_lead_body(team_name: str) -> None:
-    """Regenerate lead.md wrapper from template, preserving ``## expert-*`` sections."""
-    from hivemind.agents import registry
-
-    lead_md = TEAMS_DIR / team_name / "lead.md"
-    if not lead_md.exists():
-        return
-
-    agent = registry.get(team_name)
-    if agent is None or not isinstance(agent.body, RosterTemplatedBody):
-        return
-
-    description = agent.body.params.description
-    content = lead_md.read_text(encoding="utf-8")
-    lines = content.split("\n")
-    expert_sections: list[str] = []
-    current_section: list[str] = []
-    in_expert_section = False
-
-    for line in lines:
-        if line.startswith("## expert-"):
-            if current_section:
-                expert_sections.append("\n".join(current_section))
-            current_section = [line]
-            in_expert_section = True
-        elif line.startswith("## ") and in_expert_section:
-            if current_section:
-                expert_sections.append("\n".join(current_section))
-                current_section = []
-            in_expert_section = False
-        elif in_expert_section:
-            current_section.append(line)
-
-    if current_section:
-        expert_sections.append("\n".join(current_section))
-
-    expert_content = "\n\n".join(s.rstrip() for s in expert_sections) if expert_sections else ""
-    lead_body = team_lead_template(team_name, description, expert_content)
-    lead_md.write_text(lead_body, encoding="utf-8")
 
 
 # ---------------------------------------------------------------------------
@@ -403,13 +378,11 @@ async def create_team(
             error=f"AI generation failed for expert section(s): {', '.join(failed)}",
         )
 
-    expert_sections = [sections[e] for e in experts]
+    _write_description_file(name, description)
     for expert_name in experts:
+        _write_expert_section_file(name, expert_name, sections[expert_name])
         create_expert_notes_stub(name, expert_name)
     create_team_lead_notes_stub(name)
-
-    lead_body = team_lead_template(name, description, "\n\n".join(expert_sections))
-    (team_dir / "lead.md").write_text(lead_body, encoding="utf-8")
 
     body = RosterTemplatedBody(
         name=name,
@@ -470,10 +443,12 @@ def update_team(
         if was_enabled:
             registry.set_enabled(new_name, True)
 
-        refresh_team_lead_body(new_name)
+        if description is not None:
+            _write_description_file(new_name, description)
     else:
         registry.save_body(agent)
-        refresh_team_lead_body(name)
+        if description is not None:
+            _write_description_file(name, description)
 
     fire_post_mutation()
     return OperationResult(success=True)
@@ -504,8 +479,6 @@ async def add_experts_to_team(
     failed: list[ExpertError] = []
     to_generate: list[str] = []
 
-    lead_md = TEAMS_DIR / team_name / "lead.md"
-
     for expert_name in expert_names:
         if expert_name in existing:
             skipped.append(expert_name)
@@ -526,17 +499,7 @@ async def add_experts_to_team(
             failed.append(ExpertError(name=expert_name, error="AI generation failed"))
             continue
 
-        if lead_md.exists():
-            content = lead_md.read_text(encoding="utf-8")
-            for marker in ["## Expert Notes", "## Instructions"]:
-                if marker in content:
-                    idx = content.index(marker)
-                    content = content[:idx] + section + "\n\n" + content[idx:]
-                    break
-            else:
-                content += "\n\n" + section + "\n"
-            lead_md.write_text(content, encoding="utf-8")
-
+        _write_expert_section_file(team_name, expert_name, section)
         create_expert_notes_stub(team_name, expert_name)
         existing.append(expert_name)
         added.append(expert_name)
@@ -574,18 +537,7 @@ async def add_expert_to_team(team_name: str, expert_name: str) -> OperationResul
             error=f"AI generation failed for expert section: {expert_name}",
         )
 
-    lead_md = TEAMS_DIR / team_name / "lead.md"
-    if lead_md.exists():
-        content = lead_md.read_text(encoding="utf-8")
-        for marker in ["## Expert Notes", "## Instructions"]:
-            if marker in content:
-                idx = content.index(marker)
-                content = content[:idx] + section + "\n\n" + content[idx:]
-                break
-        else:
-            content += "\n\n" + section + "\n"
-        lead_md.write_text(content, encoding="utf-8")
-
+    _write_expert_section_file(team_name, expert_name, section)
     create_expert_notes_stub(team_name, expert_name)
     body.params.experts.append(expert_name)
     registry.save_body(agent)
@@ -609,7 +561,7 @@ def remove_expert_from_team(team_name: str, expert_name: str) -> OperationResult
     if expert_name not in body.params.experts:
         return OperationResult(success=False, error=f"Expert '{expert_name}' not on team")
 
-    remove_expert_section(team_name, expert_name)
+    _delete_expert_section_file(team_name, expert_name)
 
     notes_dir = TEAMS_DIR / team_name / f"expert-{expert_name}"
     if notes_dir.exists():

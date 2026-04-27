@@ -1,0 +1,60 @@
+- Domain model design: `Product` aggregate root, `Batch` entity, `OrderLine` value object
+- Aggregate root pattern: how `Product` owns `Batch` objects and accumulates domain events
+- Domain events: `Allocated`, `Deallocated`, `OutOfStock` — their structure and when they are raised
+- Commands: `Allocate`, `CreateBatch`, `ChangeBatchQuantity` — their fields and usage
+- Difference between commands (imperative, one handler, exceptions propagate) and events (reactive, multiple handlers, exceptions swallowed)
+- `Product.allocate()` logic: sorting batches by ETA, `StopIteration` handling, event appending
+- `Product.change_batch_quantity()`: deallocation loop when batch is over-allocated
+- `Batch.can_allocate()`: SKU matching and available quantity check
+- `Batch.__gt__` / sorting semantics: `None` ETA (in-stock) sorts before dated batches
+- `OrderLine` as a frozen dataclass (value object with `unsafe_hash=True`)
+- `MessageBus.handle()` queue-based dispatch loop
+- How `MessageBus` differentiates `Event` vs `Command` and dispatches accordingly
+- Event handler error handling: exceptions caught and logged, bus continues
+- Command handler error handling: exceptions propagate to caller
+- `collect_new_events()` in `AbstractUnitOfWork`: draining `product.events` after each handler
+- `AbstractUnitOfWork` as a context manager: `__enter__` / `__exit__` / `commit()` / `rollback()`
+- `SqlAlchemyUnitOfWork` with `REPEATABLE READ` isolation level for optimistic concurrency
+- `version_number` field on `Product` for optimistic locking
+- `AbstractRepository.seen` set: tracking all products touched in a session
+- `AbstractRepository` add/get/get_by_batchref public API vs `_add`/`_get`/`_get_by_batchref` abstract methods
+- `SqlAlchemyRepository._get_by_batchref`: join query through `Batch` table
+- Classical SQLAlchemy mapper (`mapper()`) vs declarative base — why classical mapping is used
+- `start_mappers()` function and idempotency concern (called once at bootstrap)
+- `@event.listens_for(model.Product, "load")` — resetting `product.events = []` on ORM load
+- `allocations_view` table: denormalized read model for CQRS
+- `views.allocations()`: raw SQL query against `allocations_view`, bypasses ORM
+- `add_allocation_to_read_model` / `remove_allocation_from_read_model` handlers
+- CQRS pattern: separate write model (aggregate + ORM) from read model (view table)
+- `bootstrap()` function as composition root / dependency injection
+- `inject_dependencies()` using `inspect.signature()` for parameter-name-based DI
+- How to wire test vs production dependencies via `bootstrap(start_orm=False, uow=FakeUnitOfWork(), ...)`
+- `AbstractNotifications` / `EmailNotifications` via SMTP (`smtplib`)
+- `redis_eventpublisher.publish()`: JSON serialization of events via `dataclasses.asdict()`
+- Flask app routes: `POST /add_batch`, `POST /allocate`, `GET /allocations/<orderid>`
+- Error handling in Flask: `InvalidSku` → HTTP 400
+- `redis_eventconsumer.main()`: pub/sub loop on `change_batch_quantity` channel
+- `handle_change_batch_quantity()`: parsing JSON message and dispatching command
+- `reallocate()` handler: converts `Deallocated` event back to `Allocate` command
+- `send_out_of_stock_notification()` handler: email to `stock@made.com`
+- `publish_allocated_event()` handler: publishes to Redis `line_allocated` channel
+- `FakeRepository` pattern for unit tests: in-memory `set` of products
+- `FakeUnitOfWork` pattern: `committed` flag, no I/O
+- `FakeNotifications` pattern: `sent` dict for assertion
+- Three-tier test strategy: unit (fakes, no I/O), integration (real DB), e2e (full stack)
+- `conftest.py` fixtures: `in_memory_sqlite_db`, `postgres_db`, `mappers`, `restart_api`, `restart_redis_pubsub`
+- `tenacity` retry helpers: `wait_for_postgres_to_come_up`, `wait_for_webapp_to_come_up`, `wait_for_redis_to_come_up`
+- `random_refs.py`: generating unique `sku`, `orderid`, `batchref` test strings
+- Docker Compose stack: `api`, `redis_pubsub`, `postgres`, `redis`, `mailhog`
+- Port mapping conventions: non-standard local ports (5005, 54321, 63791, 11025, 18025)
+- Environment variables: `DB_HOST`, `DB_PASSWORD`, `REDIS_HOST`, `EMAIL_HOST`, `API_HOST`
+- `config.py` local-vs-container port detection logic
+- `Makefile` targets: `all`, `build`, `up`, `down`, `test`, `unit-tests`, `integration-tests`, `e2e-tests`, `logs`, `black`
+- `sqlalchemy<2` constraint: why classical `mapper()` requires SQLAlchemy below v2
+- `mypy.ini` configuration: `mypy_path = ./src`, `check_untyped_defs = True`, ignoring stubs
+- Python 3.9 base Docker image (`python:3.9-slim-buster`)
+- `setup.py`: editable install of `allocation` package via `pip install -e /src`
+- How to extend the architecture: adding new events, commands, handlers, notification adapters
+- Book chapter structure: each chapter has its own branch at the repo
+- Exercise branches convention: `{chapter_name}_exercise`
+- Trade-offs of the architecture: testability, indirection, complexity

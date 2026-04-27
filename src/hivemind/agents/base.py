@@ -52,6 +52,10 @@ class AgentBody(Protocol):
         """Produce the canonical markdown body for this agent."""
         ...
 
+    def description(self) -> str:
+        """Return the one-paragraph description used for agent frontmatter."""
+        ...
+
     def librarian_entry(self) -> str:
         """One agent's entry for the librarian catalog."""
         ...
@@ -87,7 +91,7 @@ class Agent:
 
     @property
     def description(self) -> str:
-        return opencode.extract_description(self.body.render())
+        return self.body.description()
 
     def render_for_deploy(self) -> str:
         """Body + appended memory-instructions section."""

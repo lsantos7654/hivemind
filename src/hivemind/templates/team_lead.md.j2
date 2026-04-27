@@ -2,10 +2,16 @@
 
 {{ description }}
 
-<!-- ROSTER -->
+## Team Roster
 
-{{ expert_sections }}
+{% for expert_name in expert_sections.keys() -%}
+- expert-{{ expert_name }}
+{% endfor %}
+{% for expert_name, expert_body in expert_sections.items() %}
+## expert-{{ expert_name }}
 
+{{ expert_body }}
+{% endfor %}
 ## Expert Notes
 
 Each expert maintains a consultation log at `{TEAMS_DIR}/{{ team_name }}/expert-<name>/notes.md`.
@@ -23,5 +29,3 @@ When the orchestrator asks a question:
 4. **Log** your consultation to `{TEAMS_DIR}/{{ team_name }}/notes.md` with date, query, routing, and summary
 
 You are NOT a substitute for experts. Experts have direct access to source code — you have the big picture. Never answer technical API questions yourself. Never attempt to spawn or call experts directly.
-
-Do NOT modify lead.md — it is managed by the hivemind CLI.

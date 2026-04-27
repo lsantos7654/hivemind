@@ -1,0 +1,65 @@
+- Client instantiation and `ClientOptions` configuration (`src/client.ts`)
+- `Anthropic` and `BaseAnthropic` class structure and resource namespaces
+- `client.messages.create()` overloads: non-streaming vs. streaming signatures (`src/resources/messages/messages.ts`)
+- `client.messages.stream()` — `MessageStream` creation, usage, and lifecycle
+- `MessageStream` event system: `connect`, `streamEvent`, `text`, `citation`, `inputJson`, `thinking`, `signature`, `message`, `contentBlock`, `finalMessage`, `error`, `abort`, `end` (`src/lib/MessageStream.ts`)
+- `MessageStream` methods: `abort()`, `done()`, `finalMessage()`, `finalText()`, `currentMessage`
+- `client.messages.parse()` for structured output — `ParsedMessage` with `.parsed_output`
+- `zodOutputFormat()` helper — Zod schema → `ParseableOutputFormat` (`src/helpers/zod.ts`)
+- `jsonSchemaOutputFormat()` helper — JSON Schema → `ParseableOutputFormat` (`src/helpers/json-schema.ts`)
+- `betaZodOutputFormat()` and `betaZodTool()` for beta API structured outputs and tool creation (`src/helpers/beta/zod.ts`)
+- `betaTool()` for JSON-Schema-typed tool creation (`src/helpers/beta/json-schema.ts`)
+- `BetaRunnableTool<T>` interface — `name`, `input_schema`, `description`, `run()`, `parse()` fields
+- `client.beta.messages.toolRunner()` — creating `BetaToolRunner` instances
+- `BetaToolRunner<Stream>` class: async iterator protocol, `done()`, `runUntilDone()`, `setMessagesParams()`, `pushMessages()`, `generateToolResponse()`, `params` (`src/lib/tools/BetaToolRunner.ts`)
+- `CompactionControl` — auto-context compaction: `enabled`, `contextTokenThreshold`, `model`, `summaryPrompt` (`src/lib/tools/CompactionControl.ts`)
+- `ToolError` — throwing structured tool error results from `run()` functions (`src/lib/tools/ToolError.ts`)
+- MCP integration: `mcpTool()`, `mcpTools()`, `mcpMessage()`, `mcpMessages()`, `mcpContent()`, `mcpResourceToContent()`, `mcpResourceToFile()` (`src/helpers/beta/mcp.ts`)
+- MCP duck-typed interfaces: `MCPToolLike`, `MCPClientLike`, `MCPCallToolResultLike`, `MCPPromptMessageLike`, `MCPReadResourceResultLike`
+- `UnsupportedMCPValueError` — thrown by MCP helpers for unsupported content types
+- `betaMemoryTool()` — typed handlers for the `memory_20250818` built-in tool (`src/helpers/beta/memory.ts`)
+- Message Batches API: `client.messages.batches.create()`, `retrieve()`, `list()`, `cancel()`, `delete()`, `results()` (`src/resources/messages/batches.ts`)
+- Batch result streaming via `JSONLDecoder` (`src/internal/decoders/jsonl.ts`)
+- Files API (beta): `client.beta.files.upload()`, `list()`, `retrieve()`, `delete()` (`src/resources/beta/files.ts`)
+- Skills API (beta): `client.beta.skills.create()`, `retrieve()`, `list()`, `delete()` + `versions` sub-resource (`src/resources/beta/skills/`)
+- `toFile()` utility for converting streams/buffers to `Uploadable` (`src/core/uploads.ts`)
+- Extended thinking: `ThinkingBlock`, `ThinkingBlockParam`, `ThinkingConfigEnabled`, `ThinkingConfigDisabled`, `ThinkingConfigAdaptive` types
+- Extended thinking streaming events: `thinking` delta and `signature` events on `MessageStream`
+- Prompt caching: `CacheControlEphemeral` on content block params
+- Tool choice: `ToolChoiceAuto`, `ToolChoiceAny`, `ToolChoiceNone`, `ToolChoiceTool` types
+- Content block types: `TextBlock`, `TextBlockParam`, `ImageBlockParam`, `DocumentBlock`, `DocumentBlockParam`, `ToolUseBlock`, `ToolResultBlockParam`, `ThinkingBlock`, `RedactedThinkingBlock`
+- Server tools: `ServerToolUseBlock`, `BashCodeExecutionTool`, `CodeExecutionTool`, `ToolSearchTool` types
+- Citations support: `TextCitation`, `CitationsDelta`, `CitationCharLocation`, `CitationPageLocation`
+- Error hierarchy: `AnthropicError` → `APIError` → `BadRequestError`, `AuthenticationError`, `PermissionDeniedError`, `NotFoundError`, `ConflictError`, `UnprocessableEntityError`, `RateLimitError`, `InternalServerError`, `APIConnectionError`, `APIConnectionTimeoutError`, `APIUserAbortError` (`src/core/error.ts`)
+- `APIError` properties: `.status`, `.headers`, `.error`, `.requestID`
+- Automatic retry behavior: exponential backoff for 429 and 5xx errors
+- `RequestOptions` type: `{ headers, query, signal, timeout, stream, idempotencyKey, maxRetries }`
+- AbortController-based cancellation: `stream.abort()`, passing `signal` in request options
+- Auto-pagination: `Page`, `PageCursor`, `TokenPage` iterables; `PagePromise`; `getAPIList()` (`src/core/pagination.ts`)
+- Dual package CJS/ESM exports: `package.json` exports map, `tsc-multi` build
+- Path alias resolution: `@anthropic-ai/sdk/*` → `dist/*` for sub-path imports
+- `BaseAnthropic` extension pattern used by sub-packages (`src/client.ts`)
+- AWS Bedrock client: `AnthropicBedrock` with SigV4 auth (`packages/bedrock-sdk/src/client.ts`, `AWS_restJson1.ts`)
+- Google Vertex AI client: `AnthropicVertex` with `google-auth-library` auth (`packages/vertex-sdk/src/client.ts`)
+- Anthropic Foundry client: `AnthropicFoundry` with OAuth/bearer token auth (`packages/foundry-sdk/src/client.ts`)
+- `Stream<T>` class: SSE-based async iterable (`src/core/streaming.ts`)
+- `LineDecoder` / `JSONLDecoder` for streaming decoders (`src/internal/decoders/`)
+- `partialParse()` — partial JSON parser for streaming tool input JSON (`src/_vendor/partial-json-parser/parser.ts`)
+- `buildHeaders()` — merging multiple header sources (`src/internal/headers.ts`)
+- `getPlatformHeaders()` — User-Agent header construction (`src/internal/detect-platform.ts`)
+- `stringifyQuery()` — query parameter serialization (`src/internal/utils/query.ts`)
+- `readEnv()` — safe environment variable access (`src/internal/utils/env.ts`)
+- `path\`\`` template tag for URL path construction with escaping (`src/internal/utils/path.ts`)
+- `uuid4()` utility (`src/internal/utils/uuid.ts`)
+- `toBase64()` / `fromBase64()` utilities (`src/internal/utils/base64.ts`)
+- `MODEL_NONSTREAMING_TOKENS` constant map for model-specific token limits (`src/internal/constants.ts`)
+- Deprecated model warnings in `messages.create()` (`src/resources/messages/messages.ts`)
+- `stainlessHelperHeader` / `collectStainlessHelpers()` / `SDK_HELPER_SYMBOL` — telemetry header for helper tracking (`src/lib/stainless-helper-header.ts`)
+- `transformJSONSchema()` — transforms Zod-generated schemas for Claude API compatibility (`src/lib/transform-json-schema.ts`)
+- `BetaMessageStream` — MessageStream variant for beta API (`src/lib/BetaMessageStream.ts`)
+- Node.js filesystem-backed memory tool (`src/tools/memory/node.ts`)
+- Stainless code generation workflow — most `src/resources/` files are auto-generated from OpenAPI spec
+- Build script pipeline: `scripts/build`, `scripts/build-all`, `tsc-multi` → CJS+ESM dual output
+- Jest test setup: `@swc/jest` transform, `moduleNameMapper` for in-source testing (`jest.config.ts`)
+- `yarn install` / `yarn build` / `yarn test` / `yarn lint` as main development commands
+- Version: 0.80.0, commit `0f8153b3a15212dc2e71eaa042ea28ee6efca348`, Node.js 18+ required

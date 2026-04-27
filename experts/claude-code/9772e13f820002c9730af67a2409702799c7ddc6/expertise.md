@@ -1,0 +1,54 @@
+- Plugin system architecture: commands, agents, skills, hooks, MCP integration
+- Slash command file format: YAML frontmatter fields (description, allowed-tools, argument-hint), bash injection with `!`, `$ARGUMENTS` substitution
+- Agent definition format: YAML frontmatter (name, description, model, color, tools), `<example>` blocks for reliable triggering, system prompt design
+- Skill format: SKILL.md with YAML frontmatter (description, context, agent), progressive disclosure pattern, trigger phrase design
+- Hook system: all 9 hook events (PreToolUse, PostToolUse, Stop, SubagentStop, SessionStart, SessionEnd, UserPromptSubmit, PreCompact, Notification)
+- Hook exit code protocol: 0 = allow, 1 = show stderr to user, 2 = block tool with Claude feedback
+- Hook input JSON schema: session_id, tool_name, tool_input structure for Edit/Write/Bash/etc.
+- `hooks.json` registration format: matcher syntax, `${CLAUDE_PLUGIN_ROOT}` usage, type/command fields
+- Session-scoped state in hooks: `~/.claude/<state>_<session_id>.json` pattern
+- Plugin manifest format (`plugin.json`): name, description, version, author fields
+- Marketplace registry format (`.claude-plugin/marketplace.json`): plugins array, source/category fields
+- `${CLAUDE_PLUGIN_ROOT}` portability pattern for hook commands
+- Settings hierarchy: user → project → project local → enterprise managed
+- Settings fields: permissions (allow/ask/deny/disableBypassPermissionsMode/additionalDirectories)
+- Sandbox settings: enabled, autoAllowBashIfSandboxed, network (allowedDomains, httpProxyPort, etc.)
+- Enterprise settings: allowManagedPermissionRulesOnly, allowManagedHooksOnly, strictKnownMarketplaces
+- Permission rule syntax: `Bash(git status:*)`, `Bash(git commit *)`, `WebFetch`, etc.
+- MDM deployment: macOS plist (Jamf/Kandji), mobileconfig, Windows ADMX/ADML, PowerShell Intune scripts
+- Managed settings path per platform, settings precedence
+- DevContainer architecture: node:20 base, firewall init, mounted volumes, VS Code extensions
+- DevContainer firewall: iptables/ipset rules, GitHub IP range fetching, allowed domain list
+- GitHub Actions integration via `anthropics/claude-code-action@v1`
+- `claude_args`, `allowed_non_write_users`, `prompt`, `github_token` action inputs
+- `CLAUDE_CODE_SCRIPT_CAPS` environment variable for script invocation limits
+- `GH_TOKEN`, `CLAUDE_CONFIG_DIR`, `API_TIMEOUT_MS` and other env vars
+- Issue triage workflow: `/triage-issue` command, label system, lifecycle labels (needs-repro, needs-info, stale, autoclose)
+- Issue deduplication workflow: `/dedupe` command, 5-agent parallel search, Statsig logging
+- @claude mention handler: `claude.yml` workflow triggers and conditions
+- All 13 bundled plugins: agent-sdk-dev, claude-opus-4-5-migration, code-review, commit-commands, explanatory-output-style, feature-dev, frontend-design, hookify, learning-output-style, plugin-dev, pr-review-toolkit, ralph-wiggum, security-guidance
+- agent-sdk-dev plugin: `/new-sdk-app` command, agent-sdk-verifier-py/ts agents
+- code-review plugin: `/code-review [--comment]`, 5-agent parallel review, 80-threshold confidence scoring
+- commit-commands plugin: `/commit`, `/commit-push-pr`, `/clean_gone` commands
+- feature-dev plugin: 7-phase workflow (discovery → exploration → clarification → architecture → implementation → review → summary), code-explorer/code-architect/code-reviewer agents
+- pr-review-toolkit plugin: 6 agents (comment-analyzer, pr-test-analyzer, silent-failure-hunter, type-design-analyzer, code-reviewer, code-simplifier), `/pr-review-toolkit:review-pr` command
+- ralph-wiggum plugin: Stop hook loop pattern, `/ralph-loop` with `--max-iterations` and `--completion-promise`, `/cancel-ralph`
+- security-guidance plugin: 9 security patterns (GitHub Actions injection, child_process.exec, new Function, eval, dangerouslySetInnerHTML, document.write, innerHTML, pickle, os.system), PreToolUse hook on Edit/Write/MultiEdit
+- hookify plugin: markdown rule format (name/enabled/event/pattern/action frontmatter), multi-condition rules, operators (regex_match/contains/equals/not_contains/starts_with/ends_with), field reference (command/file_path/new_text/old_text/content/user_prompt)
+- plugin-dev toolkit: 7 skills (hook-development, mcp-integration, plugin-structure, plugin-settings, command-dev, agent-dev, skill-dev), `/plugin-dev:create-plugin` 8-phase workflow, validation utilities
+- Project-level slash commands: `.claude/commands/` directory for repository-specific automation
+- Scripts for issue management: `gh.sh` wrapper, `comment-on-duplicates.sh`, `edit-issue-labels.sh`
+- TypeScript scripts: `issue-lifecycle.ts`, `lifecycle-comment.ts`, `sweep.ts`, `auto-close-duplicates.ts`
+- Confidence scoring patterns used across plugins (0-100 scale, 80+ threshold for actionable issues)
+- Multi-agent parallel orchestration patterns in commands
+- Progressive disclosure pattern for skills
+- Security best practices: input validation in hooks, HTTPS for MCP, env vars for credentials, principle of least privilege
+- MCP server types: stdio (local), SSE (hosted/OAuth), HTTP (REST), WebSocket
+- MCP configuration in `.mcp.json` vs `plugin.json`
+- Environment variable expansion in hook commands: `${CLAUDE_PLUGIN_ROOT}`, user vars
+- `OTEL_LOG_USER_PROMPTS`, `OTEL_LOG_TOOL_DETAILS`, `OTEL_LOG_TOOL_CONTENT` tracing env vars
+- Perforce integration: `CLAUDE_CODE_PERFORCE_MODE` env var
+- `CLAUDE_CODE_SUBPROCESS_ENV_SCRUB` for subprocess sandboxing on Linux
+- `--exclude-dynamic-system-prompt-sections` flag for cross-user prompt caching
+- `CLAUDE_CODE_CERT_STORE=bundled` for enterprise TLS proxy support
+- Version history from CHANGELOG.md covering versions 2.1.98 and 2.1.101+

@@ -1,0 +1,76 @@
+- Writing Nix package expressions (derivations) from scratch
+- Understanding and using `stdenv.mkDerivation` with all build phases
+- Language-specific builders: `buildRustPackage`, `buildGoModule`, `buildPythonPackage`, `buildNpmPackage`, `mkYarnPackage`, `buildDotnetPackage`, `mkDerivation` for C/C++
+- Phase customization: `preBuild`, `postInstall`, `configurePhase`, `buildPhase`, `installPhase`, `fixupPhase`, `checkPhase`, `installCheckPhase`
+- Source fetchers: `fetchurl`, `fetchgit`, `fetchFromGitHub`, `fetchFromGitLab`, `fetchPypi`, `fetchCrate`, `fetchzip`, `fetchpatch`
+- Hash computation and `sha256`/`hash` attributes in fetchers
+- `callPackage` dependency injection pattern
+- `makeOverridable`, `overrideAttrs`, `.override`, `.overrideDerivation`
+- Writing and composing overlays (`final: prev: { ... }`)
+- `lib.composeExtensions`, `lib.composeManyExtensions`
+- Package scopes with `makeScope`, `newScope`, `overrideScope`
+- The `pkgs/by-name/` directory layout and naming conventions
+- The `pkgs/top-level/all-packages.nix` structure and callPackage conventions
+- Language-specific package sets: `python3Packages`, `perlPackages`, `haskellPackages`, `rubyGems`, `ocamlPackages`, `nodePackages`
+- `python3.withPackages`, `haskellPackages.ghcWithPackages` environment builders
+- `mkShell` and `mkShellNoCC` for development environments
+- `nativeBuildInputs` vs `buildInputs` vs `propagatedBuildInputs` distinction
+- Setup hooks: `autoreconfHook`, `cmake`, `meson`, `pkg-config`, `makeWrapper`, `wrapGAppsHook`
+- `wrapProgram` and `makeWrapper` usage for runtime path injection
+- `lib.attrsets` functions: `mapAttrs`, `filterAttrs`, `genAttrs`, `recursiveUpdate`, `attrByPath`, `optionalAttrs`, `nameValuePair`, `listToAttrs`, `catAttrs`, `foldAttrs`
+- `lib.lists` functions: `map`, `filter`, `foldl'`, `foldr`, `flatten`, `unique`, `intersect`, `partition`, `optional`, `optionals`, `concatMap`, `any`, `all`, `findFirst`, `imap0`, `range`
+- `lib.strings` functions: `concatStrings`, `concatStringsSep`, `splitString`, `hasPrefix`, `hasSuffix`, `hasInfix`, `removePrefix`, `escapeShellArg`, `makeBinPath`, `makeLibraryPath`, `sanitizeDerivationName`
+- `lib.versions` for version comparison: `versionOlder`, `versionAtLeast`, `versions.major/minor/patch`
+- `lib.trivial`: `id`, `const`, `pipe`, `flip`, `warn`, `throw`
+- `lib.debug`: `traceVal`, `traceSeq`, `traceValSeq`, `traceSeqN`
+- `lib.asserts`: `assertMsg`, `assertOneOf`
+- `lib.filesystem` and `lib.fileset` for source filtering and `cleanSource`
+- `lib.path` for path type operations
+- `lib.systems` for platform/system string parsing (e.g., `"x86_64-linux"`)
+- `lib.generators`: `toJSON`, `toYAML`, `toINI`, `toTOML`, `toPretty`
+- `lib.cli.toGNUCommandLine` for building CLI argument strings
+- `lib.licenses`: license attribute set (MIT, GPL2, GPL3, LGPL, Apache, etc.)
+- `lib.meta`: `hiPrio`, `lowPrio`, `setPrio`, meta attribute conventions
+- NixOS module system: options declarations, config implementation, imports
+- `lib.mkOption`, `lib.mkEnableOption`, `lib.mkPackageOption`
+- `lib.types`: str, int, bool, path, package, listOf, attrsOf, submodule, enum, nullOr, either, oneOf, port, lines
+- Module merging: `lib.mkIf`, `lib.mkMerge`, `lib.mkDefault`, `lib.mkForce`, `lib.mkOverride`, `lib.mkAfter`, `lib.mkBefore`
+- `lib.evalModules` for programmatic module evaluation
+- NixOS module categories: services, programs, hardware, security, virtualisation, networking
+- `systemd.services`, `systemd.timers`, `systemd.sockets` module options
+- `environment.systemPackages`, `environment.variables`, `environment.shellAliases`
+- `users.users`, `users.groups` configuration
+- `networking.firewall`, `networking.interfaces`, `networking.hostName`
+- `nixpkgs.config`, `nixpkgs.overlays` in NixOS configuration
+- `nixpkgs.lib.nixosSystem` for building NixOS system configurations
+- `specialArgs` and `extraSpecialArgs` for passing custom arguments to modules
+- Cross-compilation: `pkgsCross`, `buildPackages`, `targetPackages`, `stdenv.hostPlatform`, `stdenv.buildPlatform`
+- `pkgsStatic`, `pkgsMusl` for static/musl builds
+- `pkgsCross.aarch64-multiplatform`, `pkgsCross.raspberryPi`, etc.
+- The `splice.nix` mechanism for build/host/target separation
+- `stdenv` bootstrapping stages (linux bootstrap, darwin SDK)
+- `cc-wrapper` and compiler flag injection
+- `bintools-wrapper` for binary tool configuration
+- Linux kernel packages: `linuxPackages`, `linuxPackages_latest`, `linuxPackages_hardened`, `linuxPackages_custom`
+- `config.allowUnfree`, `config.allowBroken`, `config.allowUnfreePredicate`
+- `config.permittedInsecurePackages` for pinned insecure packages
+- `config.cudaSupport`, `config.rocmSupport` for GPU compute
+- Flakes usage: `nixpkgs.legacyPackages`, `nixpkgs.lib`, `follows` input overrides
+- Docker image building with `dockerTools.buildImage`, `dockerTools.buildLayeredImage`
+- OCI image building with `oci-tools`
+- `pkgs/build-support/testers`: `runTests`, `testVersion`, `hasPkgConfigModules`, `shellcheck`
+- `trivial-builders`: `runCommand`, `runCommandCC`, `writeText`, `writeScript`, `writeShellScript`, `symlinkJoin`, `linkFarm`
+- `nixos/tests` NixOS integration test framework (Python-based, QEMU VMs)
+- NixOS test machine API: `machine.start()`, `machine.wait_for_unit()`, `machine.succeed()`, `machine.fail()`
+- Hydra CI integration and release channels (nixpkgs-unstable, stable releases)
+- Package maintainer conventions: `maintainers/maintainer-list.nix`, `meta.maintainers`
+- `meta.platforms`, `meta.broken`, `meta.longDescription`, `meta.changelog`
+- Patch management: `patches` attribute, `fetchpatch`, `applyPatches`
+- `passthru` attributes for test suites and additional metadata
+- `finalAttrs` pattern in `mkDerivation` for self-referencing packages
+- `lib.fixedPoints`: `fix`, `extends`, `composeExtensions` for overlay theory
+- `lib.customisation`: `makeScope`, `newScope`, `callPackageWith`, `makeOverridable`
+- Nix expression debugging: `builtins.trace`, `lib.traceVal`, `nix-instantiate --eval`
+- `nix-shell -A <attr>` for entering package build environments
+- `nix-build -A <attr>` for building specific packages
+- `nixos-rebuild switch/test/build-vm` workflow

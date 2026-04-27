@@ -24,7 +24,7 @@ py_library(
         ["**/*.py"],
         exclude = ["__main__.py", "**/__pycache__/**"],
     ) + [":_engine_rlocation"],
-    data = glob(["templates/**/*.j2"]),
+    data = glob(["templates/**/*.j2"]) + glob(["**/*.tcss"]),
     imports = [".."],
     deps = [
         "@pypi//typer",

@@ -1,0 +1,82 @@
+- `marked.parse(src, options)` — primary API for Markdown-to-HTML compilation
+- `marked.parseInline(src, options)` — inline-only parsing without block wrappers
+- `new Marked(extensions)` — creating isolated marked instances that don't share global state
+- `marked.use(extension)` — extending marked with custom behavior
+- `marked.setOptions(options)` / `marked.options(options)` — setting global defaults
+- `marked.walkTokens(tokens, callback)` — token tree traversal
+- `marked.lexer(src, options)` / `_Lexer.lex()` — direct tokenization
+- `marked.parser(tokens, options)` / `_Parser.parse()` — direct rendering
+- `MarkedOptions` interface — `async`, `breaks`, `gfm`, `pedantic`, `silent`, `renderer`, `tokenizer`, `hooks`, `walkTokens`, `extensions`
+- `MarkedExtension` interface — configuration object passed to `marked.use()`
+- `async: true` mode — Promise-based parsing with async `walkTokens`
+- `breaks` option — GFM line break behavior
+- `gfm` option — GitHub Flavored Markdown spec compliance
+- `pedantic` option — strict markdown.pl compatibility
+- `silent` option — error handling as HTML instead of throw
+- Custom renderer overrides via `marked.use({ renderer: { heading(), code(), ... } })`
+- Renderer fallback chains — returning `false` to fall through to previous renderer
+- Custom tokenizer overrides via `marked.use({ tokenizer: { codespan(), fences(), ... } })`
+- Tokenizer fallback chains — returning `false` to fall through to previous tokenizer
+- Custom extensions via `extensions[]` array — adding entirely new token types
+- `TokenizerExtension` — `name`, `level`, `start()`, `tokenizer()`, `childTokens`
+- `RendererExtension` — `name`, `renderer()`
+- `TokenizerAndRendererExtension` — combined tokenizer and renderer in one object
+- Block-level extensions (`level: 'block'`) — containers, paragraphs, tables
+- Inline-level extensions (`level: 'inline'`) — spans, formatting, links
+- `start(src)` function — hinting the lexer where custom tokens may begin
+- `childTokens` — declaring which token properties should be visited by `walkTokens`
+- `this.lexer.blockTokens(text, tokens)` — inside tokenizer: parse nested block tokens
+- `this.lexer.inline(text, tokens)` — inside tokenizer: queue text for inline processing
+- `this.lexer.inlineTokens(text, tokens)` — inside tokenizer: immediately parse inline tokens
+- `this.parser.parse(tokens)` — inside renderer: render nested block tokens
+- `this.parser.parseInline(tokens)` — inside renderer: render nested inline tokens
+- Lifecycle hooks via `marked.use({ hooks: { ... } })`
+- `preprocess(markdown)` hook — transform raw Markdown before lexing
+- `postprocess(html)` hook — transform HTML after parsing
+- `processAllTokens(tokens)` hook — modify the full token list before walkTokens
+- `emStrongMask(src)` hook — mask content to prevent em/strong misinterpretation
+- `provideLexer()` hook — supply a custom lexer function
+- `provideParser()` hook — supply a custom parser function
+- `_Lexer` class — block-level tokenization; `lex()`, `blockTokens()`, `inlineTokens()`
+- `_Tokenizer` class — individual token-matching methods with regex rules
+- `_Parser` class — token dispatch loop calling renderer methods
+- `_Renderer` class — HTML output methods for all built-in token types
+- `_TextRenderer` class — plain-text rendering (strips HTML tags)
+- `_Hooks` class — lifecycle hook base class with default pass-through implementations
+- Block-level renderer methods: `space`, `code`, `blockquote`, `html`, `heading`, `hr`, `list`, `listitem`, `checkbox`, `paragraph`, `table`, `tablerow`, `tablecell`
+- Inline-level renderer methods: `strong`, `em`, `codespan`, `br`, `del`, `link`, `image`, `text`
+- Block-level tokenizer methods: `space`, `code`, `fences`, `heading`, `hr`, `blockquote`, `list`, `html`, `def`, `table`, `lheading`, `paragraph`, `text`
+- Inline-level tokenizer methods: `escape`, `tag`, `link`, `reflink`, `emStrong`, `codespan`, `br`, `del`, `autolink`, `url`, `inlineText`
+- `Tokens` namespace — all token type interfaces (`Tokens.Heading`, `Tokens.Code`, `Tokens.List`, `Tokens.Table`, etc.)
+- `TokensList` type — `Token[]` with attached `links` map
+- `Token` union type — all known token types plus `Tokens.Generic`
+- `Links` type — reference link dictionary from the token list
+- `rules.ts` — regex rule sets for `block.normal`, `block.gfm`, `block.pedantic`, `inline.normal`, `inline.gfm`, `inline.breaks`, `inline.pedantic`
+- `helpers.ts` — `cleanUrl()`, `escapeHtmlEntities()`
+- `defaults.ts` — `_getDefaults()`, `_defaults`, `changeDefaults()`
+- Zero production dependencies — marked ships with no runtime dependencies
+- ESM and UMD dual-output bundles via esbuild
+- TypeScript type declarations bundled via dts-bundle-generator
+- `npm run build` — builds JS bundles, type declarations, and man page
+- `npm test` — full test suite including CommonMark/GFM spec compliance
+- `npm run bench` — performance benchmarks vs. markdown-it and commonmark
+- `npm run test:redos` — ReDoS vulnerability scan with recheck
+- Semantic-release automated versioning and publishing
+- Worker thread usage for ReDoS mitigation
+- Browser `<script>` tag usage via CDN UMD bundle
+- CLI usage: `marked -o output.html input.md`, pipe via stdin
+- CLI extensions pattern — importing `marked/bin/marked` after customizing
+- `marked-highlight` — code syntax highlighting extension
+- `marked-gfm-heading-id` — heading `id` attributes
+- `marked-footnote` — GFM footnote syntax
+- `marked-mangle` — email address obfuscation
+- `marked-base-url` — relative URL prefixing
+- `marked-katex-extension` — LaTeX math rendering
+- `marked-emoji` — emoji support
+- `marked-smartypants` — typographic punctuation
+- `marked-xhtml` — XHTML-compliant void elements
+- `marked-extension-template` — template for creating new extensions
+- Security warning: marked does NOT sanitize HTML output; use DOMPurify or sanitize-html on output
+- Inline queue pattern — block tokenization defers inline processing to after all blocks are tokenized
+- Fallback/chain pattern — extension stacks wrap previous handlers; `false` triggers fallback
+- Generic type parameters `<ParserOutput, RendererOutput>` — enables non-string output types

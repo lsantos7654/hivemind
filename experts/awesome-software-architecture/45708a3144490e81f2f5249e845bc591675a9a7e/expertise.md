@@ -1,0 +1,145 @@
+- Software architecture fundamentals and general architectural concepts
+- Clean Architecture pattern: principles, layering, dependency rules, use cases
+- Onion Architecture: concentric layers, Jeffrey Palermo's model
+- Hexagonal Architecture: Ports & Adapters, Alistair Cockburn's model
+- Vertical Slice Architecture: feature-based organization, Jimmy Bogard's approach
+- Event-Driven Architecture: pub/sub, event brokers, async communication
+- Service Oriented Architecture (SOA): loose coupling, service contracts
+- Actor Model Architecture: actor-based concurrency, message passing
+- Akka.NET: distributed actor framework for .NET
+- Microsoft Orleans: virtual actor model, cross-platform distributed apps
+- Proto.Actor: ultra-fast distributed actors for Go/C#/Java
+- Microservices architecture: service decomposition, communication patterns
+- Microservices communication: synchronous vs asynchronous, inter-service calls
+- Microservices observability: distributed tracing, logging, monitoring, correlation IDs
+- Microservices resiliency: high availability, idempotency, fault tolerance
+- Microservices tools: Dapr, MassTransit, NServiceBus, Wolverine, Aspire, Tye, SteelToe, CAP
+- Modular Monolith architecture: module boundaries, decoupled monoliths
+- Domain-Driven Design (DDD): full coverage of tactical and strategic patterns
+- DDD Aggregates: aggregate roots, invariants, consistency boundaries
+- DDD Bounded Contexts: context mapping, anti-corruption layers
+- DDD Value Objects: immutability, equality by value
+- DDD Domain Events: event publishing, event handlers
+- DDD Integration Events: cross-bounded-context communication
+- DDD Application Services: orchestration, use case implementation
+- DDD Domain Services: domain logic that doesn't belong to entities
+- DDD Rich Domain Model vs Anemic Domain Model
+- DDD Strategic Design Patterns: context maps, shared kernel, open host service
+- DDD Tactical Design Patterns: entities, aggregates, repositories, factories
+- CQRS pattern: command/query separation, read/write model segregation
+- Event Sourcing: append-only log, event replay, projections
+- Saga pattern: distributed transaction coordination, choreography vs orchestration
+- Eventual Consistency: consistency models, convergence
+- Distributed Transactions: two-phase commit, compensation
+- Distributed Locking: leader election, lock coordination
+- Outbox Pattern: reliable event publishing with transactional guarantees
+- Inbox Pattern: exactly-once processing for incoming messages
+- Circuit Breaker pattern: fault isolation, retry policies
+- Bulkhead pattern: resource isolation, failure containment
+- Strangler Fig pattern: incremental legacy system migration
+- Ambassador pattern: proxy for cross-cutting concerns
+- Anti-Corruption Layer pattern: protecting domain models from external influence
+- Sidecar pattern: co-deployed helper containers
+- Backends for Frontends (BFF): API tailored per frontend type
+- Gateway Aggregation pattern: composing multiple backend calls
+- Gateway pattern: single entry point for clients
+- Architectural Design Principles: SOLID, DRY, KISS, YAGNI
+- Single Responsibility Principle (SRP)
+- Open/Closed Principle (OCP)
+- Liskov Substitution Principle (LSP)
+- Interface Segregation Principle (ISP)
+- Dependency Inversion Principle (DIP)
+- Inversion of Control (IoC) and Dependency Injection
+- Command Query Separation (CQS)
+- CAP Theorem: consistency, availability, partition tolerance tradeoffs
+- GRASP patterns: responsibility assignment in OOP
+- Cohesion and Coupling: metrics and best practices
+- Encapsulation: information hiding principles
+- Fail-Fast principle
+- Persistence Ignorance principle
+- Favor Composition over Inheritance
+- Cross-Cutting Concerns: logging, caching, validation, security
+- Design Patterns (Gang of Four): all 23 patterns
+- Repository Pattern: data access abstraction
+- Specification Pattern: encapsulating query criteria
+- Factory Pattern: object creation abstraction
+- Strategy Pattern: interchangeable algorithms
+- Observer Pattern: event notification
+- Decorator Pattern: behavior composition
+- Adapter Pattern: interface bridging
+- Chain of Responsibility Pattern
+- Command Pattern: encapsulating requests
+- Builder Pattern: step-by-step object construction
+- Singleton Pattern (and anti-pattern considerations)
+- State Pattern: state machine implementation
+- Mediator Pattern: communication decoupling
+- Service Locator Pattern (and anti-pattern considerations)
+- Transaction Script Pattern: procedural business logic
+- REPR Pattern: Request-Endpoint-Response
+- Query Object Pattern
+- Command Message Pattern
+- Cloud design patterns and best practices
+- Cloud Native architecture and tooling
+- Serverless architecture
+- Platform as a Service (PaaS): Heroku, Netlify, OpenShift, Rancher
+- Infrastructure as a Service (IaS): Ansible, Terraform, Pulumi, Nomad
+- Microsoft Azure Cloud services and architecture
+- Azure Kubernetes Service (AKS)
+- Azure API Management
+- Azure Functions / Serverless
+- Azure Service Bus, Event Grid, Event Hub
+- Azure CosmosDB and Azure NoSQL
+- Azure Active Directory, Key Vault
+- Azure Resource Manager (ARM)
+- Messaging systems: Kafka, RabbitMQ, NATS, ZeroMQ, Azure Service Bus
+- Messaging patterns: pub/sub, point-to-point, request/reply
+- Change Data Capture (CDC)
+- Async API documentation
+- Reverse Proxy and Load Balancing: Nginx, Traefik, HAProxy, Envoy, YARP
+- Service Discovery and Registry: Consul, Eureka
+- Service Mesh: Istio, Linkerd, Maesh, Consul Connect
+- DevOps: CI/CD pipelines, GitHub Actions, Azure DevOps, Jenkins
+- Kubernetes: deployments, ingress controllers, Helm, Kustomize, Argo CD
+- Kubernetes operators and deployment strategies
+- Docker and container orchestration
+- Object-Oriented Design principles and practices
+- Functional Programming concepts
+- Concurrency patterns and async programming
+- Systems Design: consistent hashing, large-scale system design
+- Scaling strategies: horizontal, vertical, sharding
+- Caching strategies: cache-aside, write-through, Redis
+- Database design: relational, NoSQL, sharding, replication
+- PostgreSQL, MongoDB, CosmosDB, DocumentDB
+- RESTful API design principles
+- gRPC: protocol buffers, streaming, .NET gRPC
+- Anti-Patterns: Big Ball of Mud, God Object, Leaky Abstractions, Code Smells, Static Cling
+- Clean Code principles and practices
+- Code review practices and guidelines
+- Refactoring techniques and strategies
+- 12-Factor App methodology
+- Design Best Practices: thin controllers, IDs (UUID, ULID)
+- Abstraction principles
+- Algorithm resources
+- AI/ML architecture: LLMs, RAG, embeddings, vector databases
+- Retrieval-Augmented Generation (RAG) patterns and tools
+- Model Context Protocol (MCP)
+- Semantic Kernel and .NET AI
+- LangChain and agent frameworks
+- AI agents and Agent-to-Agent (A2A) protocols
+- Hugging Face, Ollama, OpenAI, Phi models
+- Prompt engineering techniques
+- Embedding and vector store patterns
+- ML.NET resources
+- Code assistants and AI-powered development tools
+- Micro-Frontend architecture
+- Modeling techniques: Event Storming, Event Modeling, Domain Storytelling
+- Architecture diagramming: C4 model, UML diagrams, ER diagrams
+- Architecture documentation: ADRs, C4, arc42
+- Type-Driven Design
+- Data-Driven Design
+- Open Source contribution guidance
+- Back Pressure patterns
+- Object-Oriented Design
+- MkDocs documentation site configuration and contribution workflow
+- Release notes generation from git diff (C# .NET tool)
+- GitHub Actions workflows for documentation sites

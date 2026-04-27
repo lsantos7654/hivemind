@@ -1,0 +1,89 @@
+- Azure REST API URL structure and naming conventions (`azure/Guidelines.md` §Uniform Resource Locators)
+- HTTP method semantics: GET, PUT, PATCH, POST, DELETE and when to use each
+- HTTP status codes for all standard operations (200, 201, 202, 204, 400, 403, 404, 409, 412, 414)
+- Azure prescriptive notation system (✅ DO, ☑ YOU SHOULD, ✔ YOU MAY, ⚠ YOU SHOULD NOT, 🚫 DO NOT)
+- Graph prescriptive notation system (✔ MUST, 🚫 MUST NOT, ☑ SHOULD, ⚠ SHOULD NOT)
+- JSON field naming conventions: camelCase, no null values in responses, case sensitivity
+- JSON Merge Patch (RFC 7396) as the required PATCH body format
+- PUT semantics: wholesale create/replace, v1 client resets unknown fields
+- PATCH semantics: create/update, Create fields checked for conflict on retry
+- Polymorphic type modeling with `kind` discriminator field
+- Extensible enums: `modelAsString: true` pattern, when to use them, breaking change rules
+- API versioning: `api-version` query parameter, `YYYY-MM-DD` format, preview suffix
+- Preview vs GA API version lifecycle and retirement rules (90-day rule)
+- Breaking change policy: what is/isn't a breaking change, Azure Breaking Change Review Board
+- `azure-deprecating` response header format and when to use it
+- Long-running operations (LRO): PUT LRO, DELETE LRO, POST action LRO, PUT batch LRO
+- LRO status monitor resource schema (`id`, `kind`, `status`, `error`, `result`)
+- LRO polling pattern: `operation-location` header, `retry-after` header
+- LRO Operation-Id header for idempotency and client-controlled status monitor IDs
+- Collection response schema: `value` array, `nextLink` absolute URL, pagination rules
+- Query parameters: `filter`, `orderby`, `skip`, `top`, `maxpagesize`, `select`, `expand`
+- Filter expression syntax: operators `eq`, `ne`, `gt`, `ge`, `lt`, `le`, `and`, `or`, `not`
+- Sorting with `orderby`: ascending/descending, null ordering, pagination consistency
+- Error response schema: `ErrorResponse`, `ErrorDetail`, `InnerError` object structures
+- `x-ms-error-code` response header: API contract implications, string code values
+- Conditional requests: ETag, `If-Match`, `If-None-Match`, `If-Modified-Since`, `If-Unmodified-Since`
+- ETag computation strategies: hash-based vs version-based, strong vs weak ETags
+- Optimistic concurrency with ETags
+- `304 Not Modified` for GET with `If-None-Match`
+- `412 Precondition Failed` for failed ETag conditions
+- Repeatability headers: `Repeatability-Request-ID`, `Repeatability-First-Sent`, `Repeatability-Result`
+- Making POST operations idempotent/retriable via repeatability headers
+- Required standard headers: `x-ms-request-id`, `x-ms-client-request-id`, `content-type`, `content-length`
+- `x-ms-request-id` vs `x-ms-client-request-id` distinction and requirements
+- Bring Your Own Storage (BYOS) pattern: RBAC, SAS tokens, input/output directory schema
+- Single file access vs folder (prefix/delimiter) access in BYOS
+- Downstream error handling: propagating storage errors via `innererror`
+- Distributed tracing: `User-Agent`, `x-ms-useragent`, `traceparent`, `tracecontext` headers
+- String offset/length encoding: UTF-8, UTF-16, CodePoint triple-encoding requirement
+- Idempotency requirements: all HTTP methods must be idempotent
+- Resource schema consistency: same JSON schema for GET/PUT/PATCH request and response
+- Field mutability classification: Create-only, Update, Read-only fields
+- Required vs optional fields and breaking change implications
+- Flat hierarchy preference: shallow nesting, simple fields
+- Action operations: `:action` URL suffix pattern, POST method requirement
+- Performing actions on resources vs collections
+- Avoiding actions for CRUD operations
+- REST principles: resource modeling, CRUD operations, naming clarity
+- Service design philosophy: hero scenarios, API-first design, developer empathy
+- Management plane vs data plane distinction
+- Azure Breaking Change Review Board process and when to engage
+- Azure HTTP/REST Stewardship Board review requirements
+- Microsoft Graph REST API Guidelines overview (`graph/GuidelinesGraph.md`)
+- Graph OData conventions and schema definitions
+- Graph naming conventions: `lowerCamelCase`, no redundant words, no brand names
+- Graph `displayName` property convention
+- Graph `id` property as string type requirement
+- Graph date/time property suffixes: `DateTime`, `Date`, `Time`
+- Graph collection patterns: plural nouns, singleton scoping
+- Graph delta query / change tracking pattern (`graph/patterns/change-tracking.md`)
+- Graph evolvable enum pattern (`graph/patterns/evolvable-enums.md`)
+- Graph dictionary (open type) pattern (`graph/patterns/dictionary.md`)
+- Graph facet pattern (`graph/patterns/facets.md`)
+- Graph navigation property pattern (`graph/patterns/navigation-property.md`)
+- Graph long-running operations pattern (`graph/patterns/long-running-operations.md`)
+- Graph subtypes and inheritance pattern (`graph/patterns/subtypes.md`)
+- Graph namespace conventions (`graph/patterns/namespace.md`)
+- Graph upsert pattern (`graph/patterns/upsert.md`)
+- Graph viewpoint (caller-relative) pattern (`graph/patterns/viewpoint.md`)
+- Graph subset pattern (`graph/patterns/subsets.md`)
+- Graph flat-bag modeling (`graph/patterns/flat-bag.md`)
+- Graph alternate key pattern (`graph/patterns/alternate-key.md`)
+- Graph filter-as-segment (`graph/articles/filter-as-segment.md`)
+- Graph nullable property conventions (`graph/articles/nullable.md`)
+- Graph error response conventions (`graph/articles/errorResponses.md`)
+- Graph core type limitations (`graph/articles/coreTypes.md`)
+- Graph deprecation conventions (`graph/articles/deprecation.md`)
+- Graph URL patterns: `/v1.0/` and `/beta/` versioning segments
+- Graph `$filter`, `$select`, `$expand`, `$orderby` with `$` prefix (unlike Azure)
+- Differences between Azure REST guidelines and Graph guidelines
+- OpenAPI/Swagger description requirements for Azure services
+- AutoRest extension conventions for Azure OpenAPI specifications
+- Common naming anti-patterns to avoid in API design
+- `DO NOT` rules: no version in path, no `x-` prefix for custom headers, no null in responses
+- `YOU SHOULD NOT` rules: no `count` property in collections, no `$` prefix in Azure query params
+- cspell and markdownlint configuration for the guidelines documents
+- Contribution workflow: issue creation, fork, vNext branch, PR process
+- Documentation styleguide: GitHub Markdown conventions, JSON formatting, HTTP example formatting
+- Historical change tracking: which guidelines were added/updated and when

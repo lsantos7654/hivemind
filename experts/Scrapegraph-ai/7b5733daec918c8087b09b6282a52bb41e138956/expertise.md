@@ -1,0 +1,89 @@
+- SmartScraperGraph: single-URL LLM scraping pipeline configuration and usage
+- SmartScraperMultiGraph: multi-URL parallel scraping with answer merging
+- SmartScraperLiteGraph / SmartScraperMultiLiteGraph: lightweight variants without chunking
+- SmartScraperMultiConcatGraph: multi-URL content concatenation before LLM
+- SearchGraph: DuckDuckGo/Serper internet search + per-URL scraping + answer merging
+- SearchLinkGraph: finding and following relevant links on a page
+- OmniSearchGraph: internet search with multimodal (text + image) scraping
+- CodeGeneratorGraph: generating extract_data(html) BeautifulSoup functions
+- ScriptCreatorGraph / ScriptCreatorMultiGraph: reusable scraping script generation
+- DepthSearchGraph: multi-level link-following crawl with depth-k configuration
+- OmniScraperGraph: multimodal scraping combining text and image understanding
+- ScreenshotScraperGraph: browser screenshot capture and OCR text extraction
+- SpeechGraph: scraping with text-to-speech audio output
+- JSONScraperGraph / JSONScraperMultiGraph: structured JSON source scraping
+- CSVScraperGraph / CSVScraperMultiGraph: CSV data source scraping
+- XMLScraperGraph / XMLScraperMultiGraph: XML data source scraping
+- DocumentScraperGraph / DocumentScraperMultiGraph: generic document (PDF, HTML) scraping
+- MarkdownifyGraph: HTML to Markdown conversion without LLM
+- AbstractGraph: base class lifecycle (_create_llm, _create_graph, run, set_common_params, run_safe_async)
+- BaseGraph: DAG execution engine, node traversal, ConditionalNode branching
+- BaseNode: ABC contract, input key expression parsing (&/| logic), state passing
+- FetchNode: URL/file fetching, Playwright integration, BrowserBase, Scrape.do, PyPDF, timeout config
+- FetchNodeLevelK: depth-aware link-following fetcher
+- FetchScreenNode: browser screenshot capture
+- ParseNode: HTML-to-Markdown chunking with token-aware splitting
+- ParseNodeDepthK: depth-aware document parsing
+- GenerateAnswerNode: LLM answer generation, chunked/non-chunked templates, schema binding
+- GenerateAnswerNodeKLevel: multi-level answer generation for depth search
+- GenerateAnswerCSVNode: CSV-specific LLM answer generation
+- GenerateAnswerFromImageNode: image-to-text-based answer generation
+- GenerateAnswerOmniNode: multimodal answer generation
+- GenerateCodeNode: iterative code generation with syntax/semantic/execution correction
+- GenerateScraperNode: scraper script generation node
+- RAGNode: Qdrant vector store integration, in-memory and persistent modes
+- ReasoningNode: structured step-by-step reasoning before answer generation
+- ConditionalNode: boolean branching in graph, true/false node routing
+- GraphIteratorNode: sub-graph spawning over URL lists
+- MergeAnswersNode: LLM-based merging of multiple scraped answers
+- ConcatAnswersNode: simple concatenation of answers
+- MergeGeneratedScriptsNode: merging generated code scripts
+- SearchInternetNode: DuckDuckGo/Serper search, max_results configuration
+- SearchLinkNode: relevant link extraction from page content
+- SearchLinksWithContext: context-aware link search
+- HtmlAnalyzerNode: HTML structure analysis
+- GetProbableTagsNode: identifying relevant HTML tags for extraction
+- DescriptionNode: natural-language page description generation
+- PromptRefinerNode: user prompt refinement for improved extraction
+- MarkdownifyNode: HTML to Markdown conversion node
+- ImageToTextNode: image description generation
+- TextToSpeechNode: text-to-speech audio generation
+- RobotsNode: robots.txt compliance checking
+- LLM provider configuration: OpenAI, Azure OpenAI, Anthropic, Google Gemini, Google Vertex AI, AWS Bedrock, Ollama, Mistral AI, Groq, NVIDIA NIM, DeepSeek, xAI (Grok), MiniMax, Fireworks, TogetherAI, Ernie, CLoD, OneAPI, HuggingFace
+- Custom model instances: using model_instance + model_tokens for arbitrary LangChain models
+- Rate limiting: InMemoryRateLimiter integration via config["llm"]["rate_limit"]
+- models_tokens.py: token limit lookup table for all supported models
+- Pydantic schema integration: structured output with BaseModel subclasses
+- Config dict structure: all config keys and their effects on pipeline behavior
+- html_mode: bypassing HTML-to-Markdown conversion
+- reasoning mode: adding ReasoningNode for multi-step thinking
+- reattempt mode: ConditionalNode retry logic for empty/NA answers
+- ChromiumLoader: Playwright-based headless browser loader, retry, storage_state, proxy
+- BrowserBase integration: managed browser service configuration
+- Scrape.do integration: API-based scraping proxy configuration
+- Proxy rotation: Proxy dataclass, search_proxy_servers(), free-proxy pool
+- HTML cleanup: cleanup_html(), reduce_html() with BeautifulSoup tag stripping
+- HTML to Markdown: convert_to_md() via html2text
+- Token counting: num_tokens_calculus(), multi-backend tokenizer support
+- Text chunking: split_text_into_chunks() with semchunk semantic awareness
+- Custom LLM callbacks: CustomLLMCallbackManager for per-node cost/token tracking
+- Execution info: get_execution_info(), prettify_exec_info() output formatting
+- Data export: export_to_json(), export_to_csv(), export_to_xml()
+- Schema transformation: transform_schema() for JSON Schema to Pydantic conversion
+- Burr framework integration: BurrBridge, burr_kwargs configuration
+- Telemetry: log_graph_execution() anonymous usage tracking
+- GraphBuilder: dynamic graph construction from natural language prompts
+- Dynamic imports: dynamic_import(), srcfile_import() utilities
+- Screenshot scraping: take_screenshot(), crop_image(), surya-OCR detect_text()
+- Code error analysis: syntax_focused_analysis(), semantic_focused_analysis(), execution_focused_analysis()
+- Code error correction: LLM-based iterative code correction utilities
+- Prompt templates: TEMPLATE_CHUNKS, TEMPLATE_NO_CHUNKS, TEMPLATE_MERGE variants per node type
+- State passing pattern: dict-based state threading through all nodes
+- Input key expression syntax: & (AND), | (OR), parentheses grouping
+- Custom graph construction: BaseGraph + custom BaseNode subclasses
+- append_node(): dynamically extending existing pipelines
+- Async execution: run_safe_async() for async contexts
+- Testing infrastructure: pytest setup, integration tests, fixture inputs
+- Build system: hatchling, uv, Makefile targets, pre-commit hooks
+- Docker deployment: Dockerfile and docker-compose.yml patterns
+- Code quality: ruff, black, isort, mypy, pylint configuration

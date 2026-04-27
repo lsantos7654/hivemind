@@ -1,0 +1,119 @@
+- `homeManagerConfiguration` function signature, parameters, and return value
+- Flake-based Home Manager setup (`flake.nix` patterns, `inputs.home-manager.follows`)
+- NixOS module integration (`home-manager.nixosModules.home-manager`, `home-manager.users.*`)
+- nix-darwin module integration (`home-manager.darwinModules.home-manager`)
+- flake-parts integration (`home-manager.flakeModules.home-manager`)
+- Non-flake (legacy) Home Manager usage (`default.nix`, channels)
+- `home.username` and `home.homeDirectory` required options
+- `home.stateVersion` semantics and upgrade path
+- `home.packages` — adding packages to the user environment
+- `home.sessionVariables` — environment variable management
+- `home.sessionPath` — PATH additions
+- `home.activation.*` — writing custom activation scripts
+- `lib.hm.dag.entryAfter`, `entryBefore`, `entryBetween`, `entryAnywhere` — activation ordering
+- `lib.hm.dag.topoSort` — topological sort for DAG evaluation
+- `home.file.*` — managed file and symlink creation
+- `home.file.<name>.source` — linking to a file
+- `home.file.<name>.text` — generating text file content
+- `home.file.<name>.executable` — making files executable
+- `home.file.<name>.force` — overwriting existing files
+- `xdg.configFile.*` — writing files into `~/.config/`
+- `xdg.dataFile.*` — writing files into `~/.local/share/`
+- `xdg.configHome`, `xdg.dataHome`, `xdg.cacheHome`, `xdg.stateHome`
+- `xdg.mimeApps` — default applications per MIME type
+- `xdg.userDirs` — XDG user directory configuration
+- `xdg.portal` — desktop portal configuration
+- `programs.bash` — Bash configuration (aliases, initExtra, historySize, etc.)
+- `programs.zsh` — Zsh configuration (oh-my-zsh, plugins, initContent, etc.)
+- `programs.fish` — Fish shell configuration
+- `programs.nushell` — Nushell configuration
+- `programs.git` — git config, signing, delta, aliases, ignores, extraConfig
+- `programs.ssh` — `~/.ssh/config` generation, `matchBlocks`, identity files
+- `programs.gpg` — GPG config, public keys, trust database
+- `programs.neovim` — init.lua/vimrc generation, plugin management, language servers
+- `programs.vim` — vimrc generation
+- `programs.emacs` — Emacs config generation, init.el, packages
+- `programs.vscode` — settings.json, extensions, keybindings, user snippets
+- `programs.tmux` — tmux.conf, plugin manager (TPM), key bindings
+- `programs.alacritty` — terminal emulator configuration
+- `programs.kitty` — Kitty terminal configuration
+- `programs.wezterm` — WezTerm Lua config
+- `programs.foot` — foot terminal configuration
+- `programs.firefox` — profiles, extensions, policies, user.js
+- `programs.chromium` — extensions, command-line flags
+- `programs.direnv` — `.envrc` support, nix-direnv integration
+- `programs.fzf` — fuzzy finder keybindings, theme, shell integration
+- `programs.starship` — cross-shell prompt configuration
+- `programs.htop`, `programs.bottom` — system monitor configuration
+- `programs.mpv` — media player config and scripts
+- `programs.password-managers.*` — pass, bitwarden, 1password, keepassxc
+- `programs.rbw` — Bitwarden CLI wrapper
+- `programs.gpg` — GnuPG config, public key management
+- `programs.notmuch` — notmuch mail config
+- `programs.aerc` — aerc email client
+- `programs.neomutt` — neomutt email client
+- `programs.thunderbird` — Thunderbird profiles and extensions
+- All 350+ `programs.*` module options and patterns
+- `services.gpg-agent` — GPG agent with SSH support, pinentry
+- `services.ssh-agent` — SSH agent daemon
+- `services.syncthing` — Syncthing file synchronization service
+- `services.emacs` — Emacs server daemon
+- `services.dunst` — Desktop notification daemon
+- `services.polybar` — Status bar service
+- `services.i3` — i3 window manager service
+- `services.sway` — Sway Wayland compositor service
+- `services.hyprland` — Hyprland Wayland compositor
+- `services.home-manager.autoUpgrade` — automatic HM upgrades via systemd
+- `services.home-manager.autoExpire` — generation cleanup
+- All 160+ `services.*` module options and patterns
+- `systemd.user.services.*` — user systemd service unit definitions
+- `systemd.user.timers.*` — user systemd timer definitions
+- `systemd.user.sockets.*` — user systemd socket definitions
+- `systemd.user.targets.*` — user systemd target definitions
+- `systemd.user.tmpfiles.rules` — systemd-tmpfiles integration
+- `launchd.agents.*` and `launchd.daemons.*` — macOS launchd plist management
+- `accounts.email.*` — unified email account configuration
+- `accounts.calendar.*` — caldav and calendar client configuration
+- `accounts.contacts.*` — carddav and contacts client configuration
+- mbsync, msmtp, notmuch, khal, vdirsyncer integration via account modules
+- `dconf.settings` — GNOME dconf database key-value configuration
+- `lib.hm.gvariant.*` — GVariant type encoding for dconf values
+- `gtk.theme`, `gtk.iconTheme`, `gtk.font`, `gtk.gtk3`, `gtk.gtk4` — GTK theming
+- `qt.platformTheme`, `qt.style` — Qt theming
+- `fonts.fontconfig` — fontconfig configuration and custom fonts
+- `home.pointerCursor` — cursor theme configuration
+- `nixpkgs.config` and `nixpkgs.overlays` — per-user nixpkgs configuration
+- `nix.settings`, `nix.registry`, `nix.channels` — user Nix configuration
+- `pam.sessionVariables` — PAM environment variables
+- `targets.genericLinux.enable` — non-NixOS Linux support
+- `targets.darwin.*` — macOS-specific options
+- `specialisation.*` — named configuration variants
+- `home.language.*` — locale and i18n configuration
+- `i18n.inputMethod.*` — input method engine configuration (fcitx5, ibus, etc.)
+- `xfconf.settings` — Xfce settings database configuration
+- `lib.hm.generators.toINI`, `toTOML`, `toKeyValue`, `toJSON`, `toYAML` — config file generators
+- `lib.hm.types.dagOf`, `selectorFunction` — custom module types
+- `lib.hm.strings.*` — string utilities
+- `lib.hm.shell.*` — shell variable/export utilities
+- `lib.hm.assertions.*` — extended assertion utilities
+- `lib.hm.booleans.*` — boolean logic utilities
+- Module authoring patterns (options, config, imports, mkIf, mkEnableOption, mkPackageOption)
+- `lib.mkRenamedOptionModule`, `lib.mkRemovedOptionModule` — deprecation handling
+- DAG-based activation script ordering and the `writeBoundary` entry
+- The `activationPackage` derivation and how activation works
+- `home-manager switch` — applying configuration
+- `home-manager build` — building without applying
+- `home-manager generations` — listing, switching, and removing generations
+- `home-manager rollback` — reverting to the previous generation
+- `home-manager news` — displaying news entries
+- `home-manager expire-generations` — cleaning up old generations
+- Shell completions (bash, zsh, fish) for the home-manager CLI
+- Release versioning (YY.MM format, stateVersion compatibility)
+- The news system and how breaking changes are communicated
+- flake templates (`templates.standalone`, `templates.nixos`, `templates.nix-darwin`)
+- Test framework (nmt) and how module tests are structured
+- `tests/modules/` patterns for writing module tests
+- Integration tests in `tests/integration/`
+- `lib.hm` extension and how it augments `nixpkgs.lib`
+- xsession and Wayland session management
+- X resources configuration (`xresources.*`)

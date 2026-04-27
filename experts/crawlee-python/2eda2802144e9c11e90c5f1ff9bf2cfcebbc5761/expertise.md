@@ -1,0 +1,84 @@
+- `BasicCrawler` class — constructor parameters, request lifecycle, run/run_one methods
+- `BeautifulSoupCrawler` — HTML parsing with BS4, `context.soup`, parser options
+- `ParselCrawler` — XPath/CSS parsing with Parsel, `context.selector`
+- `HttpCrawler` — raw HTTP response access, `context.http_response`
+- `PlaywrightCrawler` — headless browser automation, `context.page`, browser/page options
+- `PlaywrightPreNavCrawlingContext` and `PlaywrightPostNavCrawlingContext` — pre/post navigation hooks
+- `AdaptivePlaywrightCrawler` — ML-based automatic HTTP vs browser rendering selection
+- `AdaptivePlaywrightCrawlerStatisticState` — statistics tracking for the adaptive crawler
+- `RenderingTypePredictor` / `DefaultRenderingTypePredictor` — rendering type prediction API
+- `ContextPipeline` — async generator middleware chain, `compose()` method
+- `BasicCrawlingContext` — all context attributes: `request`, `session`, `proxy_info`, `log`, `crawler`
+- `context.push_data()` — writing to Dataset from handlers
+- `context.add_requests()` — enqueuing new URLs from handlers
+- `context.enqueue_links()` — automatically enqueuing page links
+- `context.send_request()` — making additional HTTP requests from handlers
+- `context.use_state()` — persistent state across requests within a crawl
+- `context.get_key_value_store()` — accessing KeyValueStore from handlers
+- `Router` — `default_handler` and `handler(label=...)` decorators, routing by label
+- `Request` model — `from_url()`, `unique_key`, `user_data`, `label`, `method`, `headers`, `payload`, `loaded_url`
+- `RequestState` enum — UNPROCESSED, BEFORE_NAV, AFTER_NAV, REQUEST_HANDLER, DONE, ERROR_HANDLER, ERROR, SKIPPED
+- `UserData` and `CrawleeRequestData` — request metadata internals
+- `Dataset` — `open()`, `push_data()`, `get_data()`, `iterate_items()`, `export_to()`, `write_to()`, `drop()`
+- `KeyValueStore` — `open()`, `set_value()`, `get_value()`, `iterate_keys()`, `drop()`
+- `RequestQueue` — `open()`, `add_request()`, `add_requests()`, `fetch_next_request()`, `mark_request_as_handled()`, `reclaim_request()`, `get_info()`
+- `StorageInstanceManager` — instance caching and lifecycle
+- `FileSystemStorageClient` — default local filesystem backend
+- `MemoryStorageClient` — in-process storage for testing
+- `SqlStorageClient` — SQLAlchemy-backed SQLite/PostgreSQL backend
+- `RedisStorageClient` — Redis-backed storage backend
+- `ProxyConfiguration` — `proxy_urls`, `new_url_function`, tiered proxies, `ProxyInfo`
+- `SessionPool` — session rotation, session retirement, `max_pool_size`, `max_session_uses`
+- `Session` — cookies, headers, error counter, retire threshold
+- `AutoscaledPool` — dynamic concurrency based on CPU/memory
+- `Snapshotter` — CPU/memory/event-loop sampling
+- `SystemStatus` — overload detection and concurrency scaling signals
+- `ConcurrencySettings` — `min_concurrency`, `max_concurrency`, `desired_concurrency`, `max_tasks_per_minute`
+- `HttpClient` ABC — `crawl()` and `send_request()` methods
+- `ImpitHttpClient` — default HTTP client with TLS fingerprint impersonation
+- `HttpxHttpClient` — httpx-based async HTTP client
+- `CurlImpersonateHttpClient` — curl-cffi based HTTP client for TLS impersonation
+- `HttpResponse` protocol — `status_code`, `headers`, `read()`, `read_stream()`
+- `HttpCrawlingResult` — wraps `HttpResponse`
+- `BrowserPool` — manages multiple Playwright browser instances
+- `PlaywrightBrowserPlugin` — launches and configures Playwright with fingerprinting
+- `FingerprintGenerator` / `DefaultFingerprintGenerator` — browser fingerprint generation
+- `HeaderGenerator` — realistic HTTP header generation
+- `HeaderGeneratorOptions` — header generator configuration
+- `RequestList` — static in-memory request list
+- `RequestManagerTandem` — combines RequestList and RequestQueue
+- `SitemapRequestLoader` — loads URLs from XML sitemaps
+- `EventManager` and `LocalEventManager` — crawl lifecycle events
+- `Configuration` — all settings, environment variable mapping (`CRAWLEE_*` prefix)
+- `ServiceLocator` — global singleton, `get_configuration()`, `set_configuration()`, `get_storage_client()`, `set_storage_client()`
+- `ServiceConflictError` — double-initialization guard
+- Error hierarchy — `SessionError`, `ProxyError`, `HttpStatusCodeError`, `HttpClientStatusCodeError`, `RequestHandlerError`, `ContextPipelineInitializationError`, `ContextPipelineFinalizationError`, `ContextPipelineInterruptedError`, `RequestCollisionError`
+- `HttpHeaders` — immutable, case-insensitive header mapping
+- `EnqueueStrategy` — `'all'`, `'same-domain'`, `'same-hostname'`, `'same-origin'`
+- `Glob` — URL glob pattern for include/exclude filtering
+- `Statistics` and `StatisticsState` — request/error metrics tracking
+- `ErrorSnapshotter` — captures and stores error context to KVS
+- `ErrorTracker` — groups and summarizes errors by type/message
+- `CrawlerInstrumentor` — OpenTelemetry spans for crawler pipeline steps
+- `crawlee create` CLI command — project scaffolding with cookiecutter templates
+- Project template structure — available crawler types, HTTP clients, package managers
+- `pyproject.toml` — optional extras, dependency groups, all `poe` tasks
+- `uv` and `poethepoet` — build and task runner commands
+- `ruff` lint/format configuration — line length 120, single quotes, Google docstrings
+- `ty` type checker — Astral's type checker targeting Python 3.10
+- `pytest` configuration — `asyncio_mode='auto'`, `run_alone` marker, xdist parallelism
+- `robots.txt` handling — `respect_robots_txt_file` option, `RobotsTxtFile` utility
+- `use_state()` for shared crawler state persistence across requests
+- Error handler (`@crawler.error_handler`) and failed request handler (`@crawler.failed_request_handler`)
+- Pre-navigation and post-navigation hooks in PlaywrightCrawler
+- `block_requests()` and `infinite_scroll()` utilities in PlaywrightCrawler
+- Deduplication via `unique_key` in Request model
+- Crawl depth tracking via `crawl_depth` in `CrawleeRequestData`
+- Session binding via `session_id` in `CrawleeRequestData`
+- Storage backend switching via `service_locator.set_storage_client()`
+- Apify platform integration and deployment
+- `max_crawl_depth`, `abort_on_error`, `keep_alive`, `retry_on_blocked` crawler options
+- `statistics_log_format` — table vs inline statistics display
+- `status_message_callback` — custom status message override
+- `additional_http_error_status_codes` and `ignore_http_error_status_codes`
+- `RequestHandlerRunResult` — used in AdaptivePlaywrightCrawler for side-effect tracking

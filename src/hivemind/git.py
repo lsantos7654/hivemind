@@ -16,7 +16,7 @@ from hivemind.config import (
     STAGING_DIR,
     ensure_repos_link,
 )
-from hivemind.constants import AGENT_FILENAME
+from hivemind.constants import DESCRIPTION_FILENAME, EXPERTISE_FILENAME
 from hivemind.models import StagingResult
 
 __all__ = [
@@ -160,7 +160,7 @@ async def stage_for_analysis(
     old_commit: str | None,
     repo_dir: Path,
 ) -> StagingResult:
-    """Create staging directory, preserve agent.md, and checkout new commit."""
+    """Create staging directory, preserve description.md + expertise.md, and checkout new commit."""
     tmpdir = str(create_staging_dir(name))
     staged_path = Path(tmpdir) / "expert"
     staged_path.mkdir()
@@ -168,9 +168,10 @@ async def stage_for_analysis(
     tmp_commit_dir.mkdir()
 
     if old_commit:
-        old_agent = expert_dir / old_commit / AGENT_FILENAME
-        if old_agent.is_file():
-            shutil.copy2(old_agent, tmp_commit_dir / AGENT_FILENAME)
+        for fname in (DESCRIPTION_FILENAME, EXPERTISE_FILENAME):
+            old_file = expert_dir / old_commit / fname
+            if old_file.is_file():
+                shutil.copy2(old_file, tmp_commit_dir / fname)
 
     proc = await asyncio.create_subprocess_exec(
         "git",

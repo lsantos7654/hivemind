@@ -1,0 +1,64 @@
+- `curl_cffi` package public API: `get`, `post`, `put`, `patch`, `delete`, `head`, `options`, `request`, `trace`, `query` module-level functions
+- `Session` class: constructor parameters, thread safety, thread-local curl handles, `use_thread_local_curl`, eventlet/gevent integration
+- `AsyncSession` class: curl handle pool (`max_clients`, `asyncio.LifoQueue`), `loop` and `async_curl` parameters
+- `BaseSession` shared parameters: `headers`, `cookies`, `auth`, `proxies`, `proxy`, `proxy_auth`, `base_url`, `params`, `verify`, `timeout`, `trust_env`, `allow_redirects`, `max_redirects`, `retry`, `impersonate`, `ja3`, `akamai`, `perk`, `extra_fp`, `default_headers`, `default_encoding`, `curl_options`, `curl_infos`, `http_version`, `debug`, `interface`, `cert`, `response_class`, `discard_cookies`, `raise_for_status`
+- Request-level parameters: all `RequestParams` and `StreamRequestParams` TypedDict fields
+- Browser impersonation: `BrowserTypeLiteral` string values, `BrowserType` enum, `normalize_browser_type()`, `REAL_TARGET_MAP`, default version aliases (`DEFAULT_CHROME`, `DEFAULT_SAFARI`, etc.)
+- Custom fingerprints: `ja3` string format, `akamai` HTTP/2 string format, `ExtraFingerprints` dataclass fields and their curl option mappings
+- TLS configuration: `ExtraFingerprints.tls_min_version`, `tls_grease`, `tls_permute_extensions`, `tls_cert_compression`, `tls_signature_algorithms`, `tls_delegated_credential`, `tls_record_size_limit`
+- HTTP/2 settings: `http2_stream_weight`, `http2_stream_exclusive`, `http2_no_priority`
+- HTTP/3 settings: `http3_sig_hash_algs`, `http3_tls_extension_order`, UDP SOCKS5 proxy
+- TLS extension toggling: `toggle_extension()`, ECH, ALPS, status_request, signed_certificate_timestamps, session_ticket, ALPN
+- TLS lookup tables: `TLS_CIPHER_NAME_MAP`, `TLS_EXTENSION_NAME_MAP`, `TLS_EC_CURVES_MAP`, `TLS_VERSION_MAP`
+- `Response` class: all attributes (`url`, `status_code`, `ok`, `headers`, `cookies`, `content`, `text`, `encoding`, `charset`, `elapsed`, `http_version`, `redirect_count`, `download_size`, etc.), `json()`, `raise_for_status()`, `iter_content()`, `iter_lines()`, async variants, `markdown()`
+- `Request` class: `url`, `headers`, `method`, `body`
+- Streaming responses: `stream=True`, `Session.stream()` context manager, `response.iter_content()`, `response.iter_lines()`, `content_callback`
+- Async streaming: `AsyncSession.stream()`, `response.aiter_content()`, `response.aiter_lines()`, `response.acontent()`
+- WebSocket sync API: `WebSocket` class, `run_forever()`, `connect()`, `send()`, `send_str()`, `send_bytes()`, `recv()`, `close()`, callback hooks (`on_message`, `on_error`, `on_open`, `on_close`)
+- WebSocket async API: `AsyncWebSocket`, `AsyncSession.ws_connect()`, `AsyncWebSocketContext`, `send()`, `recv()`, `recv_str()`, `recv_bytes()`, async iteration
+- WebSocket configuration: `recv_queue_size`, `send_queue_size`, `max_send_batch_size`, `coalesce_frames`, `ws_retry`, `recv_time_slice`, `send_time_slice`, `max_message_size`, `drain_on_error`, `block_on_recv_queue_full`
+- `WebSocketRetryStrategy`: `retry`, `delay`, `count`, `codes`
+- `WsCloseCode` enum values (OK, GOING_AWAY, PROTOCOL_ERROR, etc.)
+- `WebSocketError`, `WebSocketClosed`, `WebSocketTimeout` exceptions
+- Low-level `Curl` class: `setopt()`, `getinfo()`, `impersonate()`, `perform()`, `reset()`, `close()`, `duphandle()`, `ws_recv()`, `ws_send()`, `ws_close()`, `upkeep()`
+- CFFI type mapping in `setopt()`: long, char*, void*, int64_t*, WRITEDATA/HEADERDATA/READDATA auto-callback installation
+- `CurlMime` class: `addpart()`, `from_list()`, `attach()`, `close()`
+- `AsyncCurl` class: `add_handle()`, `remove_handle()`, `socket_action()`, `process_data()`, asyncio event loop integration, Windows ProactorEventLoop workaround
+- `CurlOpt` enum: all `CURLOPT_*` constants and their numeric values
+- `CurlInfo` enum: all `CURLINFO_*` constants
+- `CurlECode` enum: all curl error codes
+- `CurlHttpVersion` enum: V1_0, V1_1, V2_0, V2TLS, V2_PRIOR_KNOWLEDGE, V3, V3ONLY
+- `CurlFollow` enum: values for redirect following behavior
+- `CurlSslVersion` enum: TLS version constants
+- `CurlWsFlag` enum: WebSocket frame type flags
+- `CurlMOpt` enum: curl_multi options
+- Exception hierarchy: `CurlError`, `RequestException`, `HTTPError`, `ConnectionError`, `DNSError`, `SSLError`, `CertificateVerifyError`, `ProxyError`, `Timeout`, `TooManyRedirects`, `InvalidURL`, `InvalidSchema`, `ImpersonateError`, `SessionClosed`, `InterfaceError`, `IncompleteRead`
+- `RetryStrategy` dataclass: `count`, `delay`, `jitter`, `backoff` ("linear"/"exponential")
+- `Cookies` class: setting, getting, iterating cookies; `CurlMorsel.from_curl_format()`
+- `Headers` class: case-insensitive multi-value header dict, `get_list()`
+- `ProxySpec` TypedDict: `all`, `http`, `https`, `ws`, `wss` keys
+- HTTP version literals: `"v1"`, `"v2"`, `"v2tls"`, `"v2_prior_knowledge"`, `"v3"`, `"v3only"`
+- URL handling: `quote` parameter, `SAFE_CHARS`, `quote_path_and_params()`, `base_url` resolution
+- `set_curl_options()` function in `requests/utils.py`: the central option-setting function called for every request
+- `CurlCffiWarning`, `config_warnings(on)`, `is_pro()`
+- `curl-cffi` CLI: subcommands (`get`/`post`/etc., `run`, `doctor`), request item syntax (HTTPie-style), `--impersonate`, `--http3`, `--verbose`, `--print`, output formatting
+- `run` subcommand: `.http`/`.rest` HTTP-in-Editor format, `.har` HAR replay
+- `doctor` subcommand: diagnostic info dump
+- Build system: CFFI `ffibuilder`, `scripts/build.py`, `make preprocess`, `make build`, `make test`, `make gen-const`
+- `libcurl-impersonate` version, download mechanism, `libs.json` architecture matrix
+- `ffi/shim.c` / `ffi/cdef.c`: the C glue layer and declaration file
+- `setup.py` abi3 wheel tagging, `bdist_wheel_abi3`
+- `cibuildwheel` configuration: supported platforms, free-threaded wheels, `delvewheel` on Windows
+- `const.py` generation from curl headers via `scripts/generate_consts.py`
+- CA certificate resolution: `SSL_CERT_FILE`, `CURL_CA_BUNDLE`, `REQUESTS_CA_BUNDLE` env vars, `certifi` fallback
+- `orjson` optional JSON acceleration
+- `readability-lxml` + `markdownify` optional `Response.markdown()` feature
+- Windows ProactorEventLoop compatibility via `_asyncio_selector.py`
+- `response_class` parameter for custom `Response` subclasses
+- `curl_infos` parameter for extracting custom `CurlInfo` values into `response.infos`
+- `perk` parameter (pro tier fingerprint option)
+- Scrapy integration patterns, requests/httpx adapter compatibility
+- `__version__.py`: `__version__`, `__curl_version__`, `__title__`, `__description__`
+- Free-threading (PEP 703) support on Python 3.14t
+- Android / Termux beta support
+- Homebrew installation (`brew tap lexiforest/curl_cffi`)

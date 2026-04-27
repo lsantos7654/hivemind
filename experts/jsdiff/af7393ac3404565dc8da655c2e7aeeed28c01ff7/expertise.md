@@ -1,0 +1,63 @@
+- Core Myers O(ND) diff algorithm implementation in `src/diff/base.ts`
+- The `Diff<TokenT, ValueT, InputValueT>` generic base class and its overridable methods (`castInput`, `tokenize`, `removeEmpty`, `equals`, `join`, `postProcess`)
+- `diffChars` — character-level diff, Unicode code point tokenization
+- `diffWords` — word-level diff with whitespace normalization and `Intl.Segmenter` support for multilingual text
+- `diffWordsWithSpace` — word-level diff treating whitespace as a distinct token
+- `diffLines` — line-level diff with `ignoreWhitespace`, `ignoreNewlineAtEof`, `stripTrailingCr`, `newlineIsToken` options
+- `diffTrimmedLines` — backwards-compatible alias for `diffLines` with `ignoreWhitespace: true`
+- `diffSentences` — sentence-boundary tokenization
+- `diffCss` — CSS token diff
+- `diffJson` — JSON object diff with alphabetically sorted key serialization and `stringifyReplacer`/`undefinedReplacement` options
+- `diffArrays` — typed array diff with custom `comparator` support
+- The `ChangeObject<ValueT>` / `Change` / `ArrayChange<T>` type system
+- Universal diff options: `callback` (async mode), `maxEditLength`, `timeout`, `oneChangePerToken`
+- Async/non-blocking diff mode using `setTimeout` and the callback option
+- Abortable diff mode returning `undefined` on timeout or exceeded maxEditLength
+- TypeScript overload signatures for async/sync × abortable/non-abortable call modes
+- Abortable vs. non-abortable TypeScript option types (`DiffCharsOptionsAbortable`, `DiffCharsOptionsNonabortable`, etc.)
+- `structuredPatch` — producing `StructuredPatch` objects from two strings
+- `StructuredPatch` and `StructuredPatchHunk` type structures
+- `createTwoFilesPatch` — unified diff string with two-file headers
+- `createPatch` — unified diff string with single-file header
+- `formatPatch` — serialize a `StructuredPatch` or array to unified diff string
+- `INCLUDE_HEADERS`, `FILE_HEADERS_ONLY`, `OMIT_HEADERS` header option constants
+- `HeaderOptions` interface (`includeIndex`, `includeUnderline`, `includeFileHeaders`)
+- `parsePatch` — parsing unified diff strings into `StructuredPatch[]`
+- `applyPatch` — applying unified diff patches with `fuzzFactor`, `autoConvertLineEndings`, `compareLine` options
+- `applyPatches` — async multi-file patch application via `loadFile`/`patched`/`complete` callbacks
+- `ApplyPatchOptions` and `ApplyPatchesOptions` interfaces
+- `reversePatch` — inverting a structured patch
+- `convertChangesToDMP` — converting change objects to Google diff-match-patch `[op, value][]` format
+- `convertChangesToXML` — converting change objects to XML markup with `<ins>` and `<del>` tags
+- `canonicalize` — the internal JSON serialization function exported from `src/diff/json.ts`
+- CRLF/LF line ending normalization in `src/patch/line-endings.ts`
+- The `distanceIterator` in `src/util/distance-iterator.ts` and its role in fuzzy patch application
+- Unicode-aware whitespace utilities in `src/util/string.ts` (`leadingWs`, `trailingWs`, `leadingAndTrailingWs`, `longestCommonPrefix`, `longestCommonSuffix`, `maximumOverlap`, `replacePrefix`, `replaceSuffix`, `removePrefix`, `removeSuffix`, `segment`)
+- Whitespace deduplication in `WordDiff.postProcess` and the `dedupeWhitespaceInChangeObjects` function
+- The `Intl.Segmenter` integration path in `WordDiff.tokenize` and the `segment()` helper
+- Internal linked-list change tracking via `DraftChangeObject.previousComponent`
+- The `buildValues` method that converts linked list paths to change object arrays
+- The `extractCommon` method for identifying matching token runs
+- The `useLongestToken` getter and its use in `buildValues`
+- Diagonal pruning optimizations in `base.ts` (`minDiagonalToConsider`, `maxDiagonalToConsider`)
+- The `execEditLength` inner function and the synchronous vs. asynchronous execution loop
+- Dual CJS/ESM build outputs (`libcjs/`, `libesm/`) and UMD bundle (`dist/diff.js`)
+- The `package.json` exports map for condition-based resolution
+- Build toolchain: TypeScript, Rollup, uglify-js, Babel, nyc/Istanbul, Mocha, Chai, tsd, attw
+- 100% code coverage requirement and nyc configuration
+- tsd type-level tests in `test-d/` and their validation with `yarn run-tsd`
+- `@arethetypeswrong/cli` (attw) exports map validation
+- The `karma.conf.js` browser test runner setup
+- `generateOptions` utility in `src/util/params.ts`
+- The `runtime.js` Babel register hook for test instrumentation
+- The `removeEmpty` override in `ArrayDiff` that allows falsy array values
+- The `join` override in `ArrayDiff` that returns the array directly (instead of `join('')`)
+- Backwards compatibility behavior (`diffTrimmedLines`, `ignoreWhitespace` on `diffWords`)
+- Custom `Diff` subclass patterns and extension points
+- Integration with Google's diff-match-patch library via `convertChangesToDMP`
+- Structured patch `context` option controlling how many context lines surround each hunk
+- The `"\ No newline at end of file"` handling in patch creation and application
+- EOFNL (end-of-file newline) insertion/removal logic in `applyPatch`
+- Multi-file patch parsing and application via `applyPatches`
+- Error conditions: `applyPatch` returning `false`, `newlineIsToken` with patch functions throwing
+- Performance characteristics: O(ND) algorithm with diagonal pruning reducing append/truncate cases to O(n+d)

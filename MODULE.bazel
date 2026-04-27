@@ -59,5 +59,6 @@ use_repo(ext,
     "bun_macos_x86_64",
     "bun_linux_arm64",
     "bun_linux_x86_64",
+    "opencode_node_modules",
     "opencode_src",
 )

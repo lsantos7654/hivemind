@@ -1,0 +1,60 @@
+- `flake-parts.lib.mkFlake` function signature, arguments, and usage patterns
+- `flake-parts.lib.evalFlakeModule` lower-level evaluation API
+- The `perSystem` option: type, module arguments, evaluation semantics
+- The `systems` option and how it drives output attribute enumeration
+- Transposition mechanism: how `perSystem.packages` becomes `flake.packages.<system>`
+- `withSystem` module argument: accessing perSystem from top-level modules
+- `moduleWithSystem` module argument: bridging NixOS modules to perSystem context
+- `self'` and `inputs'` module arguments in perSystem scope
+- `pkgs` auto-provision from nixpkgs input in perSystem
+- `perInput` option: customizing system-specific input attribute access
+- `allSystems` internal option and `getSystem` module argument
+- The `flake` top-level option: freeform flake outputs and declared sub-options
+- `modules/flake.nix`: freeform type with unique merge error messages
+- `modules/perSystem.nix`: full implementation details, error stubs
+- `modules/transposition.nix`: transposition logic, `adHoc` option, `perInputAttributeError`
+- `modules/withSystem.nix`: allModuleArgs, withSystem implementation
+- `modules/moduleWithSystem.nix`: lazy argument reflection
+- `modules/nixpkgs.nix`: auto-pkgs, handling missing nixpkgs input
+- `modules/packages.nix`: packages option type and transposition
+- `modules/devShells.nix`: devShells option type and transposition
+- `modules/checks.nix`: checks option type and transposition
+- `modules/apps.nix`: apps type (appType, programType, meta), transposition
+- `modules/formatter.nix`: formatter option, system-filtered output
+- `modules/overlays.nix`: overlays type constraints, uniq ordering note
+- `modules/legacyPackages.nix`: legacyPackages as raw unmergeable type
+- `modules/nixosModules.nix`: deferredModule with class=nixos wiring
+- `modules/nixosConfigurations.nix`: raw type for machine configs
+- `modules/debug.nix`: debug option, allSystems, currentSystem exposure
+- `extras/easyOverlay.nix`: overlayAttrs option, overlay evaluation, final/prev wiring
+- `extras/flakeModules.nix`: flake.flakeModules, flake.flakeModule alias, deferredModule wrapping
+- `extras/modules.nix`: flake.modules.<class>.<name>, class annotation
+- `extras/partitions.nix`: partitions, partitionedAttrs, extraInputsFlake, extraInputs, pure mode flake loading via flake-compat
+- `extras/bundlers.nix`: bundlers option type (functionTo package)
+- `lib.nix` full API: mkFlake, evalFlakeModule, mkPerSystemOption, mkPerSystemType, mkTransposedPerSystemModule, importApply, importAndPublish, memoizeStr, defaultModule, attrsWith, mkAliasOptionModule, deferredModuleWith
+- `lib/memoize/memoize.nix`: trie-based string memoization, bytes.dat key set
+- Deprecated APIs: mkSubmoduleOptions, mkDeferredModuleType, mkDeferredModuleOption
+- `all-modules.nix`: the complete list of always-included core modules
+- Template structures: default, multi-module, unfree, package templates
+- Example flakes: shell-environments, project-commands
+- nixpkgs-lib version requirements (minimum 23.05, class argument in evalModules)
+- Module class system: flake class, perSystem class, nixos class
+- Error messages and troubleshooting: infinite recursion avoidance, self/inputs passing, perSystem scope errors
+- `evalModules` with `class = "flake"` and `class = "perSystem"`
+- Dev flake architecture: partitioned checks/devShells/herculesCI
+- `flake-compat` vendoring in `vendor/` for pure mode partition loading
+- `bors.toml` merge bot configuration
+- Contributing style: camelCase functions, nixpkgs-fmt, @-patterns
+- ChangeLog: notable changes since 2022
+- specialArgs passing to evalFlakeModule
+- `moduleLocation` special arg and its derivation
+- `_module.args.pkgs` priority and overriding
+- `disabledModules` support for flakeModules
+- `extendModules` usage in debug and easyOverlay
+- `partitionStack` special arg for recursive partition prevention
+- `getSystemIgnoreWarning` and when to use it
+- `mkLegacyDeferredModuleType` internal function
+- `isFlake` polyfill for detecting flake values
+- Real-world flake-parts usage patterns (nixd, hyperswitch, argo-workflows, emanote)
+- Integration with ecosystem modules (treefmt-nix, devenv, pre-commit-hooks-nix, hercules-ci-effects)
+- Dogfooding pattern: importAndPublish, modules.flake consumer pattern

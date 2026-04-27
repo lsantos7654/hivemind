@@ -1,0 +1,67 @@
+- nix.dev site purpose, goals, and target audience
+- Diataxis documentation framework (tutorials, guides, reference, concepts) as applied in this repo
+- MyST Markdown authoring: directives, roles, cross-references, colon fences, admonitions
+- Enabled MyST extensions: colon_fence, linkify, tasklist, attrs_block, header-anchors
+- sphinx-book-theme configuration and customization
+- Sphinx configuration in `source/conf.py`: extensions, theme options, MyST settings, linkcheck
+- Custom Sphinx extension `extractable_code_block.py`: how it works, directive syntax, file extraction
+- Extractable code block CI testing: `run_code_block_tests.sh`, test file naming conventions
+- Content authoring patterns: toctree, hidden toctrees, section index files
+- Code block copy button configuration (prompt stripping for `$`, `#`, `nix-repl>`)
+- Intersphinx mappings to Nix, Nixpkgs, NixOS manuals
+- Sphinx-design components: tab-sets, grids, cards, badges
+- Writing tutorials for Nix beginners (first-steps series)
+- Writing how-to guides and recipes for Nix users
+- Writing reference documentation for Nix ecosystem
+- Writing concept/explanation documentation
+- Nix language tutorial content and structure
+- NixOS module system documentation
+- NixOS-specific tutorials (VMs, Raspberry Pi, remote provisioning, distributed builds)
+- Packaging existing software with Nix (tutorial content)
+- callPackage pattern documentation
+- Working with local files in Nix
+- Cross-compilation documentation
+- Nix flakes explanation and documentation
+- direnv integration with Nix (guides/recipes/direnv.md)
+- Dependency management with Nix
+- Sharing dependencies across projects
+- Binary cache configuration (add-binary-cache.md)
+- GitHub Actions CI integration with Nix
+- Post-build hooks in Nix
+- Python environments with Nix
+- Nix reproducible scripts
+- Nixpkgs pinning strategies
+- Ad-hoc shell environments with nix-shell
+- Declarative shell environments (shell.nix)
+- Nix best practices documented in guides/best-practices.md
+- Nix troubleshooting guide
+- Nix ecosystem FAQ
+- Nix glossary terms
+- Nix-based build system: `default.nix`, `shell.nix`, Nix derivation structure
+- Nix build commands: `nix-build`, `nix-build --arg withManuals true`
+- Development workflow: `nix-shell`, `devmode`, live-reload server
+- Makefile targets: html, dummy, linkcheck, latex, latexpdf, epub, clean
+- Multi-version Nix manual management: `nix/inputs.nix`, `nix/releases.nix`
+- Version pinning with npins: `npins/sources.json`, `nix/sources.json`
+- Updating Nix release versions: `nix/nix-versions.json`, update scripts
+- Updating Nixpkgs release versions: `nix/update-nixpkgs-releases.nix`
+- Netlify deployment configuration: `netlify.toml`, redirect rules, proxy configuration
+- Netlify PR preview deployments
+- GitHub Actions workflows: build-and-deploy.yml, test.yml, vale.yml, editorconfig.yml
+- Cachix binary cache integration (`nix-dev` cache)
+- Vale style linter configuration: `.vale.ini`, `vale/Style/`
+- EditorConfig formatting rules
+- Adding redirect rules to `_redirects` and `netlify.toml`
+- Testing redirects locally with `netlify dev`
+- Site license (CC-BY-SA 4.0)
+- Contribution workflow (CONTRIBUTING.md)
+- Maintainer documentation and monthly update logs
+- Static assets management (`source/_static/css/`, `source/_static/img/`)
+- Custom Jinja2 Sphinx templates (`source/_templates/`)
+- Sphinx sitemap generation
+- Custom 404 page (sphinx-notfound-page)
+- Linkcheck configuration and ignored URL patterns
+- robots.txt and SEO configuration
+- Image optimization (imgbot configuration)
+- Git blame ignore revisions (`.git-blame-ignore-revs`)
+- direnv `.envrc` configuration for automatic nix-shell loading

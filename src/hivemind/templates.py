@@ -44,8 +44,14 @@ def hivemind_md_base(teams_path: str) -> str:
 def team_lead_template(
     team_name: str,
     description: str,
-    expert_sections: str,
+    expert_sections: dict[str, str],
 ) -> str:
+    """Render a team lead body.
+
+    ``expert_sections`` maps expert name → section body (the prose under
+    ``## expert-<name>``, no heading). The Jinja template emits the
+    headings and roster list itself, so callers pass clean content.
+    """
     return render(
         "team_lead.md.j2",
         team_name=team_name,
@@ -78,8 +84,20 @@ def team_lead_notes_template(team_name: str) -> str:
 # --- Expert Agent ---
 
 
-def agent_md_template(name: str, commit: str) -> str:
-    return render("agent.md.j2", name=name, commit=commit)
+def render_agent(name: str, commit: str, description: str, expertise: str) -> str:
+    """Render the deploy-time agent body for an expert.
+
+    Inputs are the AI-generated semantic blobs (description paragraph and
+    expertise bullets); the template provides the prompt-engineered
+    scaffolding (workflow steps, anti-hallucination rules, constraints).
+    """
+    return render(
+        "agent.md.j2",
+        name=name,
+        commit=commit,
+        description=description,
+        expertise=expertise,
+    )
 
 
 # --- AI Prompts ---
@@ -97,7 +115,6 @@ def create_expert_prompt(
         commit=commit,
         repo_dir=repo_dir,
         commit_dir=commit_dir,
-        agent_template=agent_md_template(name, commit),
     )
 
 
@@ -113,22 +130,6 @@ def update_expert_prompt(
         commit=commit,
         repo_dir=repo_dir,
         commit_dir=commit_dir,
-    )
-
-
-def regenerate_agent_prompt(
-    name: str,
-    commit: str,
-    repo_dir: Path,
-    commit_dir: Path,
-) -> str:
-    return render(
-        "prompts/regenerate_agent.md.j2",
-        name=name,
-        commit=commit,
-        repo_dir=repo_dir,
-        commit_dir=commit_dir,
-        agent_template=agent_md_template(name, commit),
     )
 
 

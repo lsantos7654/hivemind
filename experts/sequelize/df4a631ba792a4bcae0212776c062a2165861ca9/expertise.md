@@ -1,0 +1,44 @@
+- **Core ORM Architecture**: Sequelize class implementation, model definition system, abstract dialect architecture, connection management, transaction handling, query execution pipeline
+- **Database Dialect System**: Abstract dialect interfaces, PostgreSQL/MySQL/MariaDB/SQLite/SQL Server/DB2/Oracle/Snowflake implementations, query generator patterns, database-specific optimizations
+- **Model System**: Model class hierarchy, attribute definitions, data type system, validation framework, lifecycle hooks, instance and static methods, inheritance patterns
+- **Association Management**: BelongsTo/HasOne/HasMany/BelongsToMany relationships, association configuration, eager/lazy loading, nested includes, through tables, self-referencing associations
+- **Query Building**: Query interface, finder methods, complex WHERE conditions, JOIN operations, subqueries, aggregate functions, raw SQL integration, parameter binding
+- **Data Types**: Abstract data type system, database-specific type mappings, custom data types, validation rules, serialization/deserialization, type conversion
+- **Transaction System**: Managed/unmanaged transactions, isolation levels, nested transactions, deadlock handling, connection reuse, transaction scopes
+- **Connection Pooling**: Connection manager architecture, pool configuration, connection lifecycle, read/write splitting, replica management, connection health checking
+- **Migration System**: Schema versioning, migration files, DDL operations, database synchronization, index management, constraint handling
+- **CLI Tools**: Sequelize CLI architecture, command implementations, code generation, project scaffolding, migration management, seeding utilities
+- **Testing Infrastructure**: Test frameworks, database setup, fixture management, mock strategies, integration testing patterns, continuous integration
+- **Performance Optimization**: Query optimization, N+1 prevention, caching strategies, batch operations, connection optimization, memory management
+- **TypeScript Support**: Type definitions, generic types, model typing, association typing, query result typing, decorator patterns
+- **Error Handling**: Error hierarchy, validation errors, connection errors, constraint violations, transaction rollbacks, error propagation
+- **Configuration Systems**: Database connection options, dialect options, model options, global configuration, environment-specific settings
+- **Logging and Debugging**: Debug logging, SQL query logging, performance benchmarking, error tracking, diagnostic tools
+- **Extension Points**: Plugin architecture, custom dialects, custom data types, hook systems, middleware patterns, custom query generators
+- **Security Features**: SQL injection prevention, parameter sanitization, connection security, credential management, audit logging
+- **Internationalization**: Timezone handling, locale support, date formatting, string collation, character set management
+- **Development Workflow**: Development setup, testing procedures, contribution guidelines, release processes, documentation generation
+- **Monorepo Management**: Lerna configuration, package interdependencies, build coordination, testing strategies, release orchestration
+- **Build System**: ESBuild compilation, TypeScript processing, declaration generation, module formats, development tooling
+- **Code Quality**: ESLint configuration, Prettier formatting, type checking, test coverage, CI/CD pipelines, code review processes
+- **Performance Benchmarking**: Database performance testing, query optimization techniques, connection pool tuning, memory profiling
+- **Database Administration**: Schema management, index optimization, constraint management, database migrations, backup strategies
+- **Framework Integration**: Express.js integration, NestJS patterns, Koa.js usage, middleware development, API design patterns
+- **Community Ecosystem**: Plugin development, third-party extensions, community resources, documentation contributions, support channels
+- **Legacy Support**: Version compatibility, migration paths, deprecation handling, backward compatibility, upgrade strategies
+- **Enterprise Features**: High availability, scaling strategies, monitoring integration, enterprise security, compliance considerations
+- **Development Tools**: IDE integration, debugging tools, profiling utilities, development databases, testing utilities
+- **API Design**: RESTful patterns, GraphQL integration, API versioning, response formatting, error handling, documentation generation
+- **Database Migrations**: Version control, rollback strategies, data migrations, schema transformations, deployment automation
+- **Continuous Integration**: GitHub Actions workflows, multi-database testing, automated releases, quality gates, security scanning
+- **Documentation**: API documentation, usage examples, migration guides, best practices, troubleshooting guides
+- **Performance Monitoring**: Query analysis, slow query detection, connection monitoring, resource usage tracking, performance alerts
+- **Deployment Strategies**: Container deployment, cloud configurations, environment management, configuration management, service discovery
+- **Backup and Recovery**: Database backup strategies, point-in-time recovery, disaster recovery planning, data archival, compliance requirements
+- **Security Best Practices**: Authentication patterns, authorization frameworks, data encryption, secure connections, audit trails
+- **Scalability Patterns**: Horizontal scaling, sharding strategies, read replicas, caching layers, load balancing techniques
+- **Monitoring and Observability**: Application metrics, database metrics, logging strategies, alerting systems, performance dashboards
+- **Development Methodologies**: Test-driven development, behavior-driven development, domain-driven design, microservices patterns
+- **Code Architecture**: Clean architecture principles, dependency injection, repository patterns, service layer design, domain modeling
+- **Data Modeling**: Entity relationship design, normalization strategies, denormalization techniques, schema evolution, data integrity
+- **Query Optimization**: Index strategies, query plan analysis, performance tuning, caching mechanisms, query refactoring techniques

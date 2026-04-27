@@ -1,0 +1,75 @@
+- `typer.Typer` class: instantiation, all constructor parameters, `rich_markup_mode`, `pretty_exceptions_*`, `invoke_without_command`, `no_args_is_help`, `chain`, `result_callback`, `context_settings`
+- `@app.command()` decorator: registering functions as CLI commands, all parameters (`name`, `help`, `epilog`, `short_help`, `hidden`, `deprecated`, `no_args_is_help`, `cls`, `rich_help_panel`)
+- `@app.callback()` decorator: group-level callbacks, context injection
+- `app.add_typer()`: building nested subcommand trees, naming sub-apps
+- `typer.Option()`: all parameters including `default`, `param_decls`, `help`, `envvar`, `prompt`, `confirmation_prompt`, `hide_input`, `show_default`, `is_eager`, `callback`, `autocompletion`, `min`, `max`, `clamp`, `parser`, `click_type`, `rich_help_panel`, `count`, `allow_from_autoenv`, `hidden`, `show_choices`, `show_envvar`, `case_sensitive`, `default_factory`, `formats`, `mode`, `encoding`, `lazy`, `atomic`, `exists`, `file_okay`, `dir_okay`, `writable`, `readable`, `resolve_path`, `allow_dash`, `path_type`
+- `typer.Argument()`: all parameters same as Option minus prompt/confirmation/hide_input/count/allow_from_autoenv
+- `Annotated` style parameter declarations: `Annotated[str, typer.Option()]`, `Annotated[int, typer.Argument()]`, `Annotated[str, typer.Option(), Doc("help")]`
+- `typing.Annotated` vs default-value style: rules, differences, error messages from `utils.py`
+- `typer.run()`: single-function shortcut, how it creates a Typer app internally
+- `typer.launch()`: opening URLs and files/directories
+- `typer.echo()`, `typer.secho()`, `typer.style()`, `typer.unstyle()`: output functions (re-exported from click)
+- `typer.confirm()`, `typer.prompt()`: interactive prompts
+- `typer.progressbar()`: progress bar usage patterns
+- `typer.get_app_dir()`: platform-appropriate config directory
+- `typer.open_file()`, `typer.get_text_stream()`, `typer.get_binary_stream()`: file/stream utilities
+- `typer.Exit` and `typer.Abort`: controlling exit codes, clean exits vs aborts
+- `typer.BadParameter`: raising parameter validation errors
+- `typer.Context` (`models.py:26`): accessing Click context in callbacks, `ctx.invoked_subcommand`, `ctx.find_root()`
+- `typer.CallbackParam` (`models.py:156`): accessing Click parameter in callbacks
+- `typer.FileText`, `typer.FileTextWrite`, `typer.FileBinaryRead`, `typer.FileBinaryWrite` (`models.py`): file type classes and their default modes
+- `TyperPath` (`models.py:643`): custom `click.Path` subclass, why shell_complete returns `[]`
+- `TyperChoice` (`_types.py`): enum value (not name) normalization, why it differs from Click 8.2.0
+- Type system: all supported Python types and their Click mappings (`main.py:get_click_type()`)
+- `Optional[T]` handling: required vs optional parameters
+- `List[T]` / `list[T]` parameters: multiple values, `nargs=-1`
+- `Tuple` parameter types: fixed-arity tuples
+- `Literal["a", "b"]` types: automatically become Choice parameters
+- `Enum` subclasses: values used (not names), `TyperChoice` behavior, `case_sensitive`
+- `datetime.datetime` parameters: `formats` list, default format strings
+- `UUID` parameters: parsed to `uuid.UUID`
+- Custom type parsers: `parser=Callable[[str], Any]` vs `click_type=click.ParamType`
+- Shell completion: `--install-completion`, `--show-completion`, supported shells (bash/zsh/fish/powershell)
+- Custom autocompletion: `autocompletion=` callback signature, returning strings vs `(value, help)` tuples, `CompletionItem`
+- `_completion_shared.py`: `Shells` enum, `install()`, `get_completion_script()`, `_get_shell_name()`
+- `_completion_classes.py`: completion class registration, `completion_init()`
+- `completion.py`: `get_completion_inspect_parameters()`, `install_callback`, `show_callback`, `_click_patched` global
+- `rich_utils.py`: all style constants (`STYLE_OPTION`, `STYLE_SWITCH`, `STYLE_METAVAR`, `STYLE_HELPTEXT`, etc.), `rich_format_help()`, `rich_format_error()`, `rich_abort_error()`, `MAX_WIDTH`, `COLOR_SYSTEM`, `FORCE_TERMINAL`
+- Rich markup modes: `"rich"`, `"markdown"`, `None` — effect on docstrings and help text
+- Rich help panels: `rich_help_panel=` on `Option`/`Argument`/`command()`, grouping behavior
+- Pretty exceptions: `pretty_exceptions_enable`, `pretty_exceptions_show_locals`, `pretty_exceptions_short`, `DeveloperExceptionConfig` (`models.py:630`), `except_hook` in `main.py`
+- `TYPER_USE_RICH` environment variable: disabling Rich entirely, effect on `HAS_RICH` and `DEFAULT_MARKUP_MODE`
+- `TYPER_RICH_MARKUP_MODE` environment variable: runtime markup override
+- `TERMINAL_WIDTH` environment variable: controlling output width
+- `core.py`: `TyperCommand`, `TyperGroup`, `TyperOption`, `TyperArgument` — Click subclasses
+- `TyperGroup`: `suggest_commands` (did-you-mean), `list_commands`, `get_command`
+- `TyperCommand.format_help()` and `TyperCommand.format_usage()`: Rich integration hooks
+- `MarkupMode` type alias: `Literal["markdown", "rich", None]`
+- `DEFAULT_MARKUP_MODE` and `HAS_RICH` globals in `core.py`
+- `main.py:get_command()`: converting `Typer` → `click.BaseCommand`
+- `main.py:get_group()` vs `get_command()`: when a group vs command is created
+- `DefaultPlaceholder` and `Default()` sentinel (`models.py:165`): distinguishing unset from `None`
+- `CommandInfo` and `TyperInfo` data models
+- `ParameterInfo`, `OptionInfo`, `ArgumentInfo` class hierarchy
+- `ParamMeta` (`models.py:615`): internal parameter metadata container
+- `utils.py:get_params_from_function()`: function introspection, `Annotated` extraction
+- `utils.py` error classes: `AnnotatedParamWithDefaultValueError`, `MixedAnnotatedAndDefaultStyleError`, `MultipleTyperAnnotationsError`, `DefaultFactoryAndDefaultValueError`
+- `default_factory=` parameter: lazy default values, incompatibility with explicit default
+- `_typing.py`: `get_args`, `get_origin`, `get_type_hints`, `is_union`, `is_literal_type`, `literal_values`, `Annotated`, `Literal` compatibility shims
+- `from __future__ import annotations` compatibility: deferred evaluation, `eval_str=True` in `inspect.signature`
+- `typer.testing.CliRunner` (`testing.py`): `invoke(app, args, input, env, catch_exceptions, color)`, how it calls `get_command()`
+- `typer` CLI tool (`cli.py`): `typer run`, `typer utils`, `TyperCLIGroup.maybe_add_run()`, `get_typer_from_module()`, `default_app_names`, `default_func_names`
+- `typer` CLI: running plain Python files without Typer (`typer myscript.py run`)
+- `typer` CLI: `--app` and `--func` flags for selecting specific objects
+- `typer.colors` module: color constants re-exported from Click
+- `typer.__main__`: `python -m typer` entry point
+- `typer.__version__`: `"0.24.1"` at commit `f47d887`
+- `annotated-doc` integration: `Doc("")` extraction, `from annotated_doc import Doc`
+- `pyproject.toml`: PDM build, dependency groups, ruff rules, mypy config, coverage config
+- `uv.lock`: reproducible installs with uv
+- Testing patterns: pytest, `pytest-xdist` parallel runs, `coverage run`, tutorial test structure
+- Build: `pdm build`, `uv build`, source-includes for sdist
+- ruff banned imports: `rich` direct imports, `shellingham.detect_shell` direct use, `typer.rich_utils` at module level
+- `typer-slim` sub-package: Typer without Rich/shellingham
+- `typer-cli` sub-package: just the CLI entry point
+- Deprecation: `is_flag`, `flag_value` deprecated on `OptionInfo`; `shell_complete=` deprecated on parameters

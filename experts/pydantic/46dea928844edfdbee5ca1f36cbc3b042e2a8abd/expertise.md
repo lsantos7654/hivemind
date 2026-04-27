@@ -1,0 +1,110 @@
+- BaseModel class definition, metaclass, and model construction (`pydantic/main.py`, `pydantic/_internal/_model_construction.py`)
+- Model lifecycle: `__init__`, `model_post_init`, `__init_subclass__`, `model_rebuild`, `__pydantic_on_complete__`
+- `model_validate`, `model_validate_json`, `model_validate_strings` — all validation entry points
+- `model_dump`, `model_dump_json` — all serialization entry points with include/exclude/by_alias/exclude_unset/exclude_defaults/exclude_none options
+- `model_construct` — building models without validation
+- `model_copy` — copying models with field updates
+- `model_json_schema` — JSON Schema generation from models
+- `model_rebuild` — rebuilding schemas for forward references and circular types
+- `model_fields`, `model_computed_fields`, `model_extra`, `model_fields_set` properties
+- `__pydantic_fields__`, `__pydantic_validator__`, `__pydantic_serializer__`, `__pydantic_core_schema__`
+- `__pydantic_complete__`, `__pydantic_generic_metadata__`, `__pydantic_decorators__`
+- Field definition with `Field()` — all parameters: default, default_factory, alias, validation_alias, serialization_alias, title, description, examples, gt, ge, lt, le, min_length, max_length, pattern, strict, frozen, exclude, deprecated, discriminator, json_schema_extra
+- `FieldInfo` internals — from_annotation, from_field, metadata collection
+- `PrivateAttr` — private model attributes not included in validation or serialization
+- `computed_field` decorator — computed properties included in model output
+- `ConfigDict` — all configuration keys: strict, frozen, extra, populate_by_name, from_attributes, arbitrary_types_allowed, validate_assignment, validate_default, alias_generator, revalidate_instances, defer_build, hide_input_in_errors, json_schema_extra, plugin_settings, use_enum_values, etc.
+- `with_config` decorator for TypedDicts and other types
+- `@field_validator` — before/after/wrap/plain modes, `@classmethod` requirement, multiple field targeting, `check_fields` parameter
+- `@model_validator` — before/after/wrap modes, `Self` return type for after mode
+- `AfterValidator`, `BeforeValidator`, `PlainValidator`, `WrapValidator` in `Annotated` types
+- `SkipValidation` — bypass validation for a type
+- `ValidateAs` — validate as a different type
+- `InstanceOf` — require an instance of a specific class
+- `ModelWrapValidatorHandler` — type for wrap mode model validators
+- `@field_serializer` — mode (plain vs wrap), return_type, when_used, field targeting
+- `@model_serializer` — mode (plain vs wrap), return_type, when_used
+- `PlainSerializer`, `WrapSerializer`, `SerializeAsAny` in `Annotated` types
+- `TypeAdapter` — validate/serialize arbitrary Python types without BaseModel
+- `TypeAdapter.validate_python`, `validate_json`, `validate_strings`
+- `TypeAdapter.dump_python`, `dump_json`, `json_schema`, `json_schemas`
+- `TypeAdapter.get_default_value`
+- `@validate_call` decorator — argument validation, config parameter, validate_return
+- `RootModel` — single root field models, `root` attribute
+- `create_model()` — dynamic model creation at runtime
+- Pydantic dataclasses (`pydantic.dataclasses.dataclass`) vs standard dataclasses
+- `rebuild_dataclass()` for forward reference resolution in dataclasses
+- `AliasPath` — deep path aliases for nested data extraction
+- `AliasChoices` — multiple alias choices for a single field
+- `AliasGenerator` — function-based alias generation for all fields
+- Alias priority system — alias_priority, validation_alias vs serialization_alias vs alias
+- `alias_generators.py` — `to_camel`, `to_pascal`, `to_snake`, `to_lower_camel`, `to_snake_case`
+- JSON Schema generation — `GenerateJsonSchema` class, all type handlers, customization hooks
+- `model_json_schema()` and `TypeAdapter.json_schema()` — by_alias, ref_template, schema_generator, mode
+- `WithJsonSchema` — force a specific JSON Schema for an annotated type
+- `PydanticJsonSchemaWarning` — warnings about JSON Schema generation issues
+- Multiple JSON Schema generation — `TypeAdapter.json_schemas()` with `$defs` deduplication
+- `GetCoreSchemaHandler` — protocol for `__get_pydantic_core_schema__` implementations
+- `GetJsonSchemaHandler` — protocol for `__get_pydantic_json_schema__` implementations
+- `__get_pydantic_core_schema__` custom type protocol — classmethod, source_type, handler
+- `__get_pydantic_json_schema__` custom type protocol — override JSON Schema for custom types
+- `pydantic_core.core_schema` — all schema types used in custom type integration
+- Built-in types: `StrictStr`, `StrictInt`, `StrictFloat`, `StrictBool`, `StrictBytes`
+- Constrained numeric types: `PositiveInt`, `NegativeInt`, `NonNegativeInt`, `NonPositiveInt`, `PositiveFloat`, `NegativeFloat`, `NonNegativeFloat`, `FiniteFloat`
+- `constr`, `conbytes`, `conint`, `confloat`, `condecimal`, `conlist`, `conset`, `confrozenset`, `condate`
+- `SecretStr`, `SecretBytes` — types that hide values in repr
+- `Json` — parse JSON strings into Python objects
+- `Base64Bytes`, `Base64Str`, `Base64UrlBytes`, `Base64UrlStr` — base64 encoding/decoding types
+- `UUID1`, `UUID3`, `UUID4`, `UUID5`, `UUID6`, `UUID7`, `UUID8` — version-specific UUID types
+- `FilePath`, `DirectoryPath`, `NewPath` — path types with existence validation
+- `PaymentCardNumber`, `ByteSize` — specialized types
+- `PastDate`, `FutureDate`, `PastDatetime`, `FutureDatetime`, `AwareDatetime`, `NaiveDatetime` — temporal types
+- `ImportString` — import an object from a dotted Python path string
+- `SocketPath`, `EncodedStr`, `EncodedBytes`, `EncoderProtocol` — specialized types
+- Network types: `AnyUrl`, `AnyHttpUrl`, `HttpUrl`, `FtpUrl`, `FileUrl`, `WebsocketUrl`, `AnyWebsocketUrl`
+- `UrlConstraints` — configure URL validation constraints
+- `EmailStr`, `NameEmail` — email validation (requires `email-validator`)
+- `IPvAnyAddress`, `IPvAnyInterface`, `IPvAnyNetwork` — IP address types
+- DSN types: `PostgresDsn`, `CockroachDsn`, `AmqpDsn`, `RedisDsn`, `MongoDsn`, `KafkaDsn`, `NatsDsn`
+- `MultiHostUrl` — URLs with multiple hosts (e.g., for MongoDB replica sets)
+- `ValidationError` — error structure, `.errors()`, `.error_count()`, `.json()`, error `type`/`loc`/`msg`/`input`/`url`/`ctx`
+- `PydanticUserError` — developer errors with error codes
+- `PydanticUndefinedAnnotation` — forward reference errors
+- `PydanticErrorCodes` — all defined developer error codes
+- Generic models with `Generic[T]` — type parameter substitution, `model_parametrized_name`
+- Forward references — `model_rebuild()`, `update_forward_refs()` (deprecated), `from __future__ import annotations`
+- `defer_build=True` — lazy schema building for forward reference resolution
+- Strict mode — type coercion disabled, exact type matching required
+- Union types — smart union, left-to-right union modes, `union_mode` field parameter
+- Discriminated unions — `discriminator` field parameter, `Discriminator` class
+- Discriminated union tag types — literal values, callable discriminators
+- `PydanticPluginProtocol` — plugin entry point protocol
+- `ValidatePythonHandlerProtocol`, `ValidateJsonHandlerProtocol`, `ValidateStringsHandlerProtocol`
+- `SchemaTypePath`, `SchemaKind` — plugin metadata types
+- Plugin lifecycle callbacks: `on_enter`, `on_success`, `on_error`, `on_exception`
+- Plugin discovery via Python entry points (`pydantic` group)
+- `pydantic.mypy` plugin — mypy integration, `plugin` config in mypy config
+- Mypy plugin configuration — `init_forbid_extra`, `init_typed`, `warn_required_dynamic_aliases`, `warn_untyped_fields`
+- V1 to V2 migration — `_migration.py`, `getattr_migration`, V1 compat wrappers
+- `pydantic.v1` namespace — complete V1 API for incremental migration
+- Deprecated V1 APIs: `@validator`, `@root_validator`, `BaseConfig`, `Extra`, `dict()`, `json()`, `parse_obj()`, `schema()`, `construct()`
+- `PydanticDeprecatedSince20`, `PydanticDeprecatedSince26`, etc. — deprecation warning classes
+- `PydanticExperimentalWarning` — experimental feature warnings
+- Experimental pipeline API (`pydantic.experimental.pipeline`) — `validate_as`, `transform`, chainable transformations
+- `_internal._generate_schema.GenerateSchema` — Python type to CoreSchema conversion
+- `_internal._model_construction.ModelMetaclass` — model class creation machinery
+- `_internal._config.ConfigWrapper` — internal config representation
+- `_internal._fields` — field collection and processing
+- `_internal._generics` — generic model support
+- `_internal._decorators` — decorator processing and introspection
+- `pydantic-core` integration — `SchemaValidator`, `SchemaSerializer`, `CoreSchema`, `core_schema.*`
+- `pydantic_core.PydanticUndefined` — sentinel for missing values
+- `pydantic_core.ValidationError` — the actual exception class
+- `pydantic_core.to_jsonable_python` — utility for JSON serialization
+- Serialization options: `mode` ('json' vs 'python'), `round_trip`, `serialize_as_any`, `warnings`, `fallback`
+- `from_attributes` — ORM mode for validating from object attributes
+- `model_config` class attribute — ConfigDict instance on model classes
+- `__init_subclass__` with ConfigDict kwargs — alternative config syntax
+- Dataclass configuration — `config` parameter on `@pydantic.dataclasses.dataclass`
+- `annotated_handlers.py` — `GetCoreSchemaHandler`, `GetJsonSchemaHandler` protocols used in custom types
+- `annotated_types` integration — `Gt`, `Ge`, `Lt`, `Le`, `Len`, `MultipleOf`, `Timezone`, `Predicate` etc.
