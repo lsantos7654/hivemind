@@ -492,6 +492,119 @@ def notify_instance_reload() -> bool:
 
 
 # ---------------------------------------------------------------------------
+# Session HTTP API
+#
+# Thin wrappers around the running engine's REST endpoints, used by the
+# cross-session MCP tools (list_sessions, send_to_session, send_to_main,
+# fork_session, continue_expert). All require a running engine; raise
+# RuntimeError when detached so callers can surface a clear error to the
+# model instead of silently returning empty.
+# ---------------------------------------------------------------------------
+
+SESSION_HTTP_TIMEOUT = 10.0
+
+
+def _server_url() -> str:
+    from hivemind.runtime import current_context
+
+    ctx = current_context()
+    if ctx.server_url is None:
+        raise RuntimeError("no opencode server is running — start one with `hivemind` first")
+    return ctx.server_url
+
+
+def session_list(roots: bool | None = None, limit: int | None = None) -> list[dict[str, Any]]:
+    """GET /session — list sessions, optionally filtered to root sessions."""
+    params: dict[str, str] = {}
+    if roots is not None:
+        params["roots"] = "true" if roots else "false"
+    if limit is not None:
+        params["limit"] = str(limit)
+    resp = httpx.get(
+        f"{_server_url()}/session",
+        params=params,
+        timeout=SESSION_HTTP_TIMEOUT,
+    )
+    resp.raise_for_status()
+    data: list[dict[str, Any]] = resp.json()
+    return data
+
+
+def session_get(session_id: str) -> dict[str, Any]:
+    """GET /session/:id — return session info including parentID."""
+    resp = httpx.get(
+        f"{_server_url()}/session/{session_id}",
+        timeout=SESSION_HTTP_TIMEOUT,
+    )
+    resp.raise_for_status()
+    data: dict[str, Any] = resp.json()
+    return data
+
+
+def session_inbox(session_id: str, text: str) -> dict[str, Any]:
+    """POST /session/:id/inbox — queue-on-busy message delivery.
+
+    Provided by ``//third_party/patches/0007-...inbox...patch``. Returns
+    ``{sessionID, queued, depth}`` once the engine has decided whether
+    to deliver immediately or queue for the next idle. The prompt's
+    full turn runs asynchronously regardless.
+    """
+    body = {"parts": [{"type": "text", "text": text}]}
+    resp = httpx.post(
+        f"{_server_url()}/session/{session_id}/inbox",
+        json=body,
+        timeout=SESSION_HTTP_TIMEOUT,
+    )
+    resp.raise_for_status()
+    data: dict[str, Any] = resp.json()
+    return data
+
+
+def session_fork(
+    session_id: str,
+    *,
+    message_id: str | None = None,
+    parent_id: str | None = None,
+) -> dict[str, Any]:
+    """POST /session/:id/fork — deep-copy messages into a new session.
+
+    With ``parent_id`` (provided by
+    ``//third_party/patches/0008-...fork-parent...patch``), the new
+    session attaches as a subagent of that ID instead of the upstream
+    sibling default (``parent_id = null``).
+    """
+    body: dict[str, Any] = {}
+    if message_id is not None:
+        body["messageID"] = message_id
+    if parent_id is not None:
+        body["parentID"] = parent_id
+    resp = httpx.post(
+        f"{_server_url()}/session/{session_id}/fork",
+        json=body,
+        timeout=SESSION_HTTP_TIMEOUT,
+    )
+    resp.raise_for_status()
+    data: dict[str, Any] = resp.json()
+    return data
+
+
+def session_root(session_id: str) -> dict[str, Any]:
+    """Walk parentID upward from ``session_id`` until null and return the root."""
+    seen: set[str] = set()
+    current = session_get(session_id)
+    while True:
+        sid = current["id"]
+        if sid in seen:
+            msg = f"parent_id cycle detected at {sid}"
+            raise RuntimeError(msg)
+        seen.add(sid)
+        parent = current.get("parentID")
+        if not parent:
+            return current
+        current = session_get(parent)
+
+
+# ---------------------------------------------------------------------------
 # Directory initialisation
 # ---------------------------------------------------------------------------
 

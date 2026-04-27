@@ -18,6 +18,23 @@ Add new observations to `short_memory.md`. When it exceeds ~400 lines, move
 the oldest or least-relevant entries into `long_memory.md` (or break out a
 new topic file, indexed in `MEMORY.md`) and prune `short_memory.md` back down.
 
+### Mandatory: write before every reply
+**This is not optional.** The very last action you take on every turn —
+after all research, before producing your final reply — MUST be a single
+`Write` call that appends to `{{ memory_path }}/short_memory.md`. The
+entry should capture:
+
+1. The question or task you were given.
+2. The key findings, decisions, or pointers worth remembering.
+3. Any corrections, confirmations, or new conventions surfaced this turn.
+
+If you skip this step, the next consultation starts blind — every
+follow-up question will repeat work you've already done. The session
+itself persists in opencode's database (the orchestrator can resume it
+via `task_id`), but your reasoning trail is only durable if you write it
+down. Treat this rule with the same priority as a tool's required
+arguments: there is no path through the turn that omits it.
+
 ### What to save
 - Facts, decisions, or context that would help a future session resume where
   this one left off.

@@ -1,0 +1,88 @@
+From b7f485e9060981d6ddb13e9900032b344f7d6d04 Mon Sep 17 00:00:00 2001
+From: Lucas Santos <lsantos7654@gmail.com>
+Date: Mon, 27 Apr 2026 00:44:03 -0400
+Subject: [PATCH 8/8] Session.fork accepts optional parentID
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Upstream Session.fork creates a sibling session with parent_id = null.
+Hivemind's cross-session MCP `fork_session` tool needs forks to be
+real subagents of the caller (so they show up under main's subagent
+tree) — this exposes the existing createNext parentID parameter on the
+fork path.
+
+Mechanism:
+  - Adds optional parentID to Session.Interface.fork's input shape, the
+    inner Effect.fn fork's params, and the public fn() schema.
+  - createNext already accepts parentID; the fork just forwards it.
+  - The POST /session/:sessionID/fork route's body validator
+    (`Session.fork.schema.omit({ sessionID: true })`) picks the new
+    field up automatically, so callers just include `parentID` in the
+    body when they want a subagent fork.
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+---
+ packages/opencode/src/session/index.ts | 26 ++++++++++++++++++++++----
+ 1 file changed, 22 insertions(+), 4 deletions(-)
+
+diff --git a/packages/opencode/src/session/index.ts b/packages/opencode/src/session/index.ts
+index 2e68f22..e7f26d7 100644
+--- a/packages/opencode/src/session/index.ts
++++ b/packages/opencode/src/session/index.ts
+@@ -316,7 +316,11 @@ export namespace Session {
+       permission?: Permission.Ruleset
+       workspaceID?: WorkspaceID
+     }) => Effect.Effect<Info>
+-    readonly fork: (input: { sessionID: SessionID; messageID?: MessageID }) => Effect.Effect<Info>
++    readonly fork: (input: {
++      sessionID: SessionID
++      messageID?: MessageID
++      parentID?: SessionID
++    }) => Effect.Effect<Info>
+     readonly touch: (sessionID: SessionID) => Effect.Effect<void>
+     readonly get: (id: SessionID) => Effect.Effect<Info>
+     readonly share: (id: SessionID) => Effect.Effect<{ url: string }>
+@@ -527,7 +531,11 @@ export namespace Session {
+         })
+       })
+
+-      const fork = Effect.fn("Session.fork")(function* (input: { sessionID: SessionID; messageID?: MessageID }) {
++      const fork = Effect.fn("Session.fork")(function* (input: {
++        sessionID: SessionID
++        messageID?: MessageID
++        parentID?: SessionID
++      }) {
+         const directory = yield* InstanceState.directory
+         const original = yield* get(input.sessionID)
+         const title = getForkedTitle(original.title)
+@@ -535,6 +543,11 @@ export namespace Session {
+           directory,
+           workspaceID: original.workspaceID,
+           title,
++          // Hivemind: when a caller provides parentID, the fork becomes a
++          // real subagent of that session instead of the upstream sibling
++          // default (parent_id = null). Used by the cross-session MCP tools
++          // so a fork shows up under main's subagent tree.
++          parentID: input.parentID,
+         })
+         const msgs = yield* messages({ sessionID: input.sessionID })
+         const idMap = new Map<string, MessageID>()
+@@ -699,8 +712,13 @@ export namespace Session {
+     (input) => runPromise((svc) => svc.create(input)),
+   )
+
+-  export const fork = fn(z.object({ sessionID: SessionID.zod, messageID: MessageID.zod.optional() }), (input) =>
+-    runPromise((svc) => svc.fork(input)),
++  export const fork = fn(
++    z.object({
++      sessionID: SessionID.zod,
++      messageID: MessageID.zod.optional(),
++      parentID: SessionID.zod.optional(),
++    }),
++    (input) => runPromise((svc) => svc.fork(input)),
+   )
+
+   export const get = fn(SessionID.zod, (id) => runPromise((svc) => svc.get(id)))
+--
+2.50.1

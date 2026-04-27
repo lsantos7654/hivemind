@@ -23,3 +23,14 @@ py_test(
         "@pypi//pytest",
     ],
 )
+
+py_test(
+    name = "test_cross_session",
+    srcs = ["test_cross_session.py", "conftest.py"],
+    main = "test_cross_session.py",
+    imports = [".."],
+    deps = [
+        "//src/hivemind:lib",
+        "@pypi//pytest",
+    ],
+)

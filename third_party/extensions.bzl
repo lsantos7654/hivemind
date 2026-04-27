@@ -104,7 +104,6 @@ def _ext_impl(ctx):
 # code patches.
 _OPENCODE_DEP_PATCHES = [
 ]
-
 # Patches that modify only source files (no dep manifest changes). Applied
 # only in @opencode_src, after dep_patches, after install. Editing one
 # invalidates only the build repo (~3s rebuild). Resolved relative to
@@ -116,6 +115,8 @@ _OPENCODE_CODE_PATCHES = [
     "0004-Non-destructive-agent-reload-endpoint.patch",
     "0005-Hardened-opencode-config-defaults.patch",
     "0006-Bake-bash.sudo-deny-into-Permission.fromConfig.patch",
+    "0007-Per-session-inbox-with-deferred-delivery.patch",
+    "0008-Session.fork-accepts-optional-parentID.patch",
 ]
 external_engines = module_extension(
     implementation = _ext_impl,

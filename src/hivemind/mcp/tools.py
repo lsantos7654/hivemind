@@ -204,6 +204,101 @@ TOOLS: list[Tool] = [
             "required": ["query"],
         },
     ),
+    # --- Cross-session messaging ---
+    Tool(
+        name="list_sessions",
+        description=(
+            "List opencode sessions in the running engine. Returns id, parentID, title, "
+            "and updated timestamp for each. Useful before send_to_session / fork_session."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "roots": {
+                    "type": "boolean",
+                    "description": "Only return root sessions (no parentID). Default: false.",
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Maximum number of sessions to return. Default: 20.",
+                },
+            },
+            "required": [],
+        },
+    ),
+    Tool(
+        name="send_to_session",
+        description=(
+            "Append a message to another session's inbox. Delivered immediately if that "
+            "session is idle, queued and delivered on next idle if it's busy. Never throws "
+            "BusyError — useful for pinging a session that's mid-turn."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "session_id": {"type": "string", "description": "Target session ID (ses_...)"},
+                "message": {"type": "string", "description": "Message text to append"},
+            },
+            "required": ["session_id", "message"],
+        },
+    ),
+    Tool(
+        name="send_to_main",
+        description=(
+            "Append a message to the user-facing root session (the most recently updated "
+            "session with no parent). Use from inside a subagent to surface a finding to "
+            "the user without waiting for the Task call to finish."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "message": {"type": "string", "description": "Message text to append"},
+            },
+            "required": ["message"],
+        },
+    ),
+    Tool(
+        name="fork_session",
+        description=(
+            "Fork an existing session (deep-copies its message history) and immediately "
+            "send a follow-up prompt to the fork. Returns the new session's ID. "
+            "Pass parent_id to make the fork a subagent of a chosen session (default: "
+            "upstream sibling — parent_id=null)."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "session_id": {"type": "string", "description": "Source session to fork"},
+                "prompt": {"type": "string", "description": "Initial prompt for the fork"},
+                "parent_id": {
+                    "type": "string",
+                    "description": "Attach the fork as a subagent of this session (optional).",
+                },
+                "message_id": {
+                    "type": "string",
+                    "description": "Truncate the fork's history at this message ID (optional).",
+                },
+            },
+            "required": ["session_id", "prompt"],
+        },
+    ),
+    Tool(
+        name="continue_expert",
+        description=(
+            "Resume a conversation with an existing expert subagent by name. Looks up the "
+            "most recently updated session whose title matches '@<name> subagent' and "
+            "delivers the message via that session's inbox. Returns an error if no "
+            "matching session exists — call Task(<name>, ...) first to spawn one."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "description": "Expert agent name (e.g. expert-opencode)"},
+                "message": {"type": "string", "description": "Follow-up message"},
+            },
+            "required": ["name", "message"],
+        },
+    ),
     # --- System ---
     Tool(
         name="redeploy",
@@ -371,6 +466,105 @@ async def _handle_search_knowledge(query: str) -> list[TextContent]:
 
 
 # ---------------------------------------------------------------------------
+# Handlers — cross-session messaging
+# ---------------------------------------------------------------------------
+
+
+def _slim_session(session: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": session.get("id"),
+        "parentID": session.get("parentID"),
+        "title": session.get("title"),
+        "updated": session.get("time", {}).get("updated"),
+    }
+
+
+async def _handle_list_sessions(roots: bool, limit: int) -> list[TextContent]:
+    from hivemind import opencode
+
+    try:
+        sessions = opencode.session_list(roots=roots if roots else None, limit=limit)
+    except RuntimeError as exc:
+        return _text(f"Error: {exc}")
+    return _json_text([_slim_session(s) for s in sessions])
+
+
+async def _handle_send_to_session(session_id: str, message: str) -> list[TextContent]:
+    from hivemind import opencode
+
+    try:
+        result = opencode.session_inbox(session_id, message)
+    except RuntimeError as exc:
+        return _text(f"Error: {exc}")
+    state = "queued" if result.get("queued") else "delivered"
+    return _text(f"Message {state} to {session_id} (queue depth: {result.get('depth', 0)}).")
+
+
+async def _handle_send_to_main(message: str) -> list[TextContent]:
+    from hivemind import opencode
+
+    try:
+        roots = opencode.session_list(roots=True, limit=1)
+    except RuntimeError as exc:
+        return _text(f"Error: {exc}")
+    if not roots:
+        return _text("Error: no root session is currently active in this engine.")
+    target = roots[0]["id"]
+    result = opencode.session_inbox(target, message)
+    state = "queued" if result.get("queued") else "delivered"
+    return _text(f"Message {state} to main session {target} (queue depth: {result.get('depth', 0)}).")
+
+
+async def _handle_fork_session(
+    session_id: str,
+    prompt: str,
+    parent_id: str,
+    message_id: str,
+) -> list[TextContent]:
+    from hivemind import opencode
+
+    try:
+        forked = opencode.session_fork(
+            session_id,
+            message_id=message_id or None,
+            parent_id=parent_id or None,
+        )
+    except RuntimeError as exc:
+        return _text(f"Error: {exc}")
+    new_id = forked["id"]
+    opencode.session_inbox(new_id, prompt)
+    return _json_text(
+        {
+            "forked_from": session_id,
+            "new_session_id": new_id,
+            "parent_id": forked.get("parentID"),
+            "title": forked.get("title"),
+            "prompt_delivered": True,
+        }
+    )
+
+
+async def _handle_continue_expert(name: str, message: str) -> list[TextContent]:
+    from hivemind import opencode
+
+    try:
+        sessions = opencode.session_list(limit=50)
+    except RuntimeError as exc:
+        return _text(f"Error: {exc}")
+    needle = f"@{name} subagent"
+    matching = [s for s in sessions if needle in (s.get("title") or "")]
+    if not matching:
+        return _text(
+            f"Error: no live session for expert '{name}'. Use Task(subagent_type='{name}', ...) to spawn one first."
+        )
+    # session_list already returns most-recently-updated first.
+    target = matching[0]
+    result = opencode.session_inbox(target["id"], message)
+    state = "queued" if result.get("queued") else "delivered"
+    return _text(f"Message {state} to {name} session {target['id']} (queue depth: {result.get('depth', 0)}).")
+
+
+# ---------------------------------------------------------------------------
 # Handlers — system
 # ---------------------------------------------------------------------------
 
@@ -408,6 +602,11 @@ TOOL_HANDLERS: dict[str, ToolHandler] = {
     "remove_expert_from_team": _handle_remove_expert_from_team,
     "get_knowledge": _handle_get_knowledge,
     "search_knowledge": _handle_search_knowledge,
+    "list_sessions": _handle_list_sessions,
+    "send_to_session": _handle_send_to_session,
+    "send_to_main": _handle_send_to_main,
+    "fork_session": _handle_fork_session,
+    "continue_expert": _handle_continue_expert,
     "redeploy": _handle_redeploy,
 }
 
@@ -431,6 +630,21 @@ def _extract_args(name: str, args: dict[str, Any]) -> tuple[Any, ...]:
         return (args["expert"], args.get("doc", "summary"))
     if name == "search_knowledge":
         return (args["query"],)
+    if name == "list_sessions":
+        return (bool(args.get("roots", False)), int(args.get("limit", 20)))
+    if name == "send_to_session":
+        return (args["session_id"], args["message"])
+    if name == "send_to_main":
+        return (args["message"],)
+    if name == "fork_session":
+        return (
+            args["session_id"],
+            args["prompt"],
+            args.get("parent_id", ""),
+            args.get("message_id", ""),
+        )
+    if name == "continue_expert":
+        return (args["name"], args["message"])
     return ()
 
 

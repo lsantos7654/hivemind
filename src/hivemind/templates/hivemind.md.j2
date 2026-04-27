@@ -88,6 +88,25 @@ session.
   (summary, code_structure, build_system, apis_and_interfaces, agent)
 - `search_knowledge(query)` — grep across all enabled experts' docs
 
+**Cross-session messaging:**
+- `list_sessions(roots?, limit?)` — list opencode sessions (id, parentID,
+  title, updated). Use to find a target before send/fork.
+- `send_to_session(session_id, message)` — append a message to another
+  session's inbox. Delivered immediately if idle, queued and delivered
+  on next idle if busy. Never throws BusyError.
+- `send_to_main(message)` — same as above but auto-targets the most
+  recently updated root session. Use from inside a subagent to surface
+  a finding to the user without waiting for the Task call to finish.
+- `fork_session(session_id, prompt, parent_id?, message_id?)` — deep-copy
+  an existing session and immediately send a follow-up prompt. Pass
+  `parent_id` to make the fork a real subagent of a chosen session
+  (default: upstream sibling, parent_id=null).
+- `continue_expert(name, message)` — resume a conversation with an
+  existing expert subagent by name. Resolves to the most recently
+  updated session whose title matches `@<name> subagent` and delivers
+  via inbox. Returns an error if no live session exists — call
+  `Task(subagent_type='<name>', ...)` first to spawn one.
+
 **System:**
 - `redeploy` — regenerate every enabled agent file from the current catalog
 
@@ -157,8 +176,20 @@ research only — they cannot spawn other agents.
    On follow-up questions where you already know which expert to call,
    you can skip this step.
 
-3. **Spawn experts** — when spawning each expert, you MUST include these
-   instructions in your prompt every time, even on follow-ups:
+3. **Follow-up with an existing expert: prefer `continue_expert`.** If
+   you've already spawned an expert this session and have a follow-up,
+   do NOT call `Task` again — that creates a fresh session that has to
+   re-do all the discovery work. Instead call
+   `continue_expert(name, message)` (MCP), which resumes the most
+   recently updated session for that expert. The expert's full
+   conversation history is preserved in opencode's database. The
+   alternate path is `Task(..., task_id=<prior_session_id>)`, where
+   `<prior_session_id>` is the value the prior Task call printed at the
+   top of its output (`task_id: ses_xxx`).
+
+4. **Spawn experts (first call only)** — when spawning each expert, you
+   MUST include these instructions in your prompt every time, even on
+   follow-ups:
    - The specific question to answer
    - **If consulting as part of a team:**
      - That they are being consulted as part of the `{team}` team
@@ -174,12 +205,19 @@ research only — they cannot spawn other agents.
      (`~/.config/opencode/hivemind/memory/{name}/`) or be folded into the
      expert's knowledge docs via `refresh_agent`.
 
-4. **Experts update their notes (team consultations only)** — each
+5. **Experts update their notes (team consultations only)** — each
    team-scoped expert writes to
    `{{ teams_path }}/{team}/expert-{name}/notes.md` with what was asked
    and what they found. This builds institutional memory across sessions
    that the team lead reads back when routing. If a team expert does not
    update its notes, remind it to do so.
+
+6. **Every expert writes its own memory at end-of-turn.** Independently
+   of team notes, every spawned expert appends to its own
+   `~/.config/opencode/hivemind/memory/<name>/short_memory.md` as the
+   last action of every reply. This is enforced by the system prompt
+   directive in the agent's body. Do not need to remind them — but if
+   you spot an expert that skipped this, flag it.
 
 ### When you don't know which team or expert to use
 
