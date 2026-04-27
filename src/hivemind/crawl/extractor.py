@@ -1,56 +1,63 @@
-"""Content extraction and crawl orchestration.
+"""Crawl orchestration and per-page extraction.
 
-For each URL, tries the raw .md endpoint first (source markdown). If
-the site doesn't serve one, falls back to fetching HTML and extracting
-clean markdown via trafilatura.
+Top-level flow:
 
-Pure Python, no browser, no Docker.
+    probe_site(url)                    → SiteProfile
+    optional browser_session()         → AsyncWebCrawler (only if needed)
+    discover_urls(url, profile, …)     → list[str]
+    extract_page(url, profile, …)      per URL, dispatched on profile
+
+Per-URL extraction tries source markdown when published, falls back to
+httpx + trafilatura on static HTML, and finally renders via the shared
+browser when the page is JS-only.
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
+from contextlib import AsyncExitStack
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 import httpx
 import trafilatura
 
+from hivemind.crawl.browser import browser_extract, browser_session
 from hivemind.crawl.discovery import discover_urls
+from hivemind.crawl.probe import SiteProfile, probe_site
 from hivemind.crawl.urls import CrawlResult, url_to_filename
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+    from crawl4ai import AsyncWebCrawler
+
+    from hivemind.crawl.discovery import LeafProgress
+
 logger = logging.getLogger(__name__)
 
-# Max concurrent HTTP requests to avoid hammering doc sites.
-_CONCURRENCY = 10
+# httpx fan-out for the static channels.
+_HTTP_CONCURRENCY = 10
+# Browser concurrency — Chromium tabs are ~80MB each; keep this low.
+_BROWSER_CONCURRENCY = 3
 
 
 def _md_url(url: str) -> str:
-    """Derive the raw markdown URL for a page.
-
-    /plugin-development       → /plugin-development.md
-    /plugin-development/      → /plugin-development/index.md
-    """
+    """Raw markdown URL for a doc page (Hugo / mkdocs publish these)."""
     if url.endswith("/"):
         return url + "index.md"
     return url + ".md"
 
 
 def _looks_like_markdown(text: str) -> bool:
-    """Quick check that a response body is markdown, not HTML."""
     stripped = text.lstrip()
     if not stripped:
         return False
-    # HTML documents start with < (doctype, html tag, etc.)
     return not stripped.startswith("<")
 
 
 def _extract_from_html(html: str, url: str) -> str | None:
-    """Extract clean markdown from HTML using trafilatura."""
     return trafilatura.extract(
         html,
         url=url,
@@ -63,45 +70,79 @@ def _extract_from_html(html: str, url: str) -> str | None:
     )
 
 
-async def _fetch_and_extract(
-    client: httpx.AsyncClient,
-    semaphore: asyncio.Semaphore,
+async def _try_md_endpoint(client: httpx.AsyncClient, url: str) -> str | None:
+    try:
+        response = await client.get(_md_url(url))
+    except httpx.HTTPError:
+        return None
+    if response.status_code == 200 and _looks_like_markdown(response.text):
+        return response.text
+    return None
+
+
+async def _try_html_extraction(client: httpx.AsyncClient, url: str) -> str | None:
+    try:
+        response = await client.get(url)
+        response.raise_for_status()
+    except (httpx.HTTPError, httpx.InvalidURL) as e:
+        logger.warning("HTML fetch failed for %s: %s", url, e)
+        return None
+    return _extract_from_html(response.text, url)
+
+
+async def extract_page(
     url: str,
+    profile: SiteProfile,
+    client: httpx.AsyncClient,
+    browser: AsyncWebCrawler | None,
+    http_sem: asyncio.Semaphore,
+    browser_sem: asyncio.Semaphore,
+) -> str | None:
+    """Get markdown for a single URL using the strategy in ``profile``.
+
+    Each strategy can fall through to the next when its primary channel
+    yields nothing — keeps coverage high even when the per-page
+    behavior diverges from what the seed-based probe predicted.
+    """
+    strategy = profile.extraction_strategy
+
+    if strategy == "md":
+        async with http_sem:
+            md = await _try_md_endpoint(client, url)
+        if md:
+            return md
+        # `.md` works for the seed but may 404 elsewhere — fall back.
+        async with http_sem:
+            return await _try_html_extraction(client, url)
+
+    if strategy == "http":
+        async with http_sem:
+            return await _try_html_extraction(client, url)
+
+    # browser
+    if browser is None:
+        msg = "browser extraction requested but no browser session provided"
+        raise RuntimeError(msg)
+    async with browser_sem:
+        md = await browser_extract(browser, url)
+    if md:
+        return md
+    # Fallback: a JS site sometimes static-renders specific pages.
+    async with http_sem:
+        return await _try_html_extraction(client, url)
+
+
+async def _process_url(
+    url: str,
+    profile: SiteProfile,
+    client: httpx.AsyncClient,
+    browser: AsyncWebCrawler | None,
+    http_sem: asyncio.Semaphore,
+    browser_sem: asyncio.Semaphore,
     output_path: Path,
     on_page_callback: Callable[[str, bool], None] | None,
 ) -> bool:
-    """Get markdown for a single URL. Returns True on success.
-
-    Tries the raw .md endpoint first. If the site serves source
-    markdown there, we use it directly — it's always higher quality
-    than any extraction. Otherwise, fetches the HTML page and extracts
-    content via trafilatura.
-    """
-    markdown: str | None = None
-
-    async with semaphore:
-        # Try raw .md first
-        try:
-            md_response = await client.get(_md_url(url))
-            if md_response.status_code == 200 and _looks_like_markdown(md_response.text):
-                markdown = md_response.text
-                logger.debug("Raw .md hit for %s", url)
-        except httpx.HTTPError:
-            pass  # .md endpoint doesn't exist, move on
-
-        # Fall back to HTML extraction
-        if not markdown:
-            try:
-                response = await client.get(url)
-                response.raise_for_status()
-            except (httpx.HTTPError, httpx.InvalidURL) as e:
-                logger.warning("Failed to fetch %s: %s", url, e)
-                if on_page_callback:
-                    on_page_callback(url, False)
-                return False
-
-            markdown = _extract_from_html(response.text, url)
-
+    markdown = await extract_page(url, profile, client, browser, http_sem, browser_sem)
     if not markdown:
         logger.warning("No content extracted from %s", url)
         if on_page_callback:
@@ -109,9 +150,7 @@ async def _fetch_and_extract(
         return False
 
     filename = url_to_filename(url)
-    filepath = output_path / f"{filename}.md"
-    filepath.write_text(markdown)
-
+    (output_path / f"{filename}.md").write_text(markdown)
     if on_page_callback:
         on_page_callback(url, True)
     return True
@@ -122,38 +161,76 @@ async def crawl_website(
     max_pages: int | None,
     output_dir: str,
     on_page_callback: Callable[[str, bool], None] | None = None,
+    on_phase_callback: Callable[[str, dict[str, object]], None] | None = None,
+    on_leaf_progress: Callable[[LeafProgress], None] | None = None,
 ) -> CrawlResult:
-    """Discover URLs, fetch content, write markdown to disk.
+    """Probe, discover, extract, write. Returns aggregate statistics.
 
-    For each discovered URL, tries the raw .md endpoint first for
-    source-quality markdown. Falls back to HTML extraction via
-    trafilatura when raw markdown isn't available.
+    The optional ``on_phase_callback`` is invoked after each high-level
+    stage completes, with the phase name and a dict of details. The CLI
+    uses it to render the live trace; library callers can ignore it.
+    Phases: ``"probe"``, ``"discover"``, ``"extract_start"``, ``"done"``.
 
-    Args:
-        url: The starting URL to crawl.
-        max_pages: Maximum number of pages to crawl.
-        output_dir: Directory to save markdown files.
-        on_page_callback: Called after each page with (url, success).
+    The optional ``on_leaf_progress`` is invoked whenever a sitemap leaf
+    transitions state or makes streaming progress. CLI uses this to show
+    a live per-leaf table; library callers can ignore.
 
-    Returns:
-        CrawlResult with statistics.
+    Raises ``BrowserUnavailableError`` when the chosen profile needs the
+    browser but Chromium isn't installed.
     """
-    urls = await discover_urls(url, max_pages=max_pages)
+    profile = await probe_site(url)
+    if on_phase_callback:
+        on_phase_callback("probe", {"profile": profile})
 
-    if not urls:
-        return CrawlResult(total_pages=0, successful_pages=0, failed_pages=0)
+    needs_browser = profile.discovery_strategy == "browser" or profile.extraction_strategy == "browser"
 
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
 
-    semaphore = asyncio.Semaphore(_CONCURRENCY)
+    http_sem = asyncio.Semaphore(_HTTP_CONCURRENCY)
+    browser_sem = asyncio.Semaphore(_BROWSER_CONCURRENCY)
 
-    async with httpx.AsyncClient(follow_redirects=True, timeout=30) as client:
-        tasks = [_fetch_and_extract(client, semaphore, page_url, output_path, on_page_callback) for page_url in urls]
+    async with AsyncExitStack() as stack:
+        browser: AsyncWebCrawler | None = None
+        if needs_browser:
+            # browser_session() raises BrowserUnavailableError if Chromium
+            # isn't installed; let the CLI map it to an actionable message.
+            browser = await stack.enter_async_context(browser_session())
+
+        client = await stack.enter_async_context(
+            httpx.AsyncClient(follow_redirects=True, timeout=30),
+        )
+
+        urls = await discover_urls(
+            url,
+            profile,
+            max_pages,
+            client,
+            browser,
+            on_leaf_progress=on_leaf_progress,
+        )
+        if on_phase_callback:
+            on_phase_callback("discover", {"count": len(urls), "strategy": profile.discovery_strategy})
+
+        if not urls:
+            return CrawlResult(total_pages=0, successful_pages=0, failed_pages=0)
+
+        if on_phase_callback:
+            on_phase_callback(
+                "extract_start",
+                {"count": len(urls), "strategy": profile.extraction_strategy},
+            )
+
+        tasks = [
+            _process_url(u, profile, client, browser, http_sem, browser_sem, output_path, on_page_callback)
+            for u in urls
+        ]
         results = await asyncio.gather(*tasks)
 
     successful = sum(results)
     failed = len(results) - successful
+    if on_phase_callback:
+        on_phase_callback("done", {"successful": successful, "failed": failed})
 
     return CrawlResult(
         total_pages=len(urls),

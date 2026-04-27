@@ -11,6 +11,8 @@
 - [ ] rename commands to skills (confirm this is the same)
 - [ ] port over working crawl infra
 - [ ] add mcp server to reference ongoing sessions from other sessions
+- [ ] add jinja templating and more importantly make the ai generated sections actual input. This way our templates can evolve with time but we don't have to regenerate all of our expert files.
+- [ ] make all external docs also bazel targets
 
 
 - [-] should notes.md | memory.md | short/long_memory.md be part of the agent class?

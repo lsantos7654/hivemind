@@ -12,6 +12,8 @@ from __future__ import annotations
 import asyncio
 import os
 from datetime import UTC
+from typing import Any
+from urllib.parse import urlparse
 
 import typer
 from rich import box
@@ -27,7 +29,9 @@ from hivemind import opencode
 from hivemind.agents import registry
 from hivemind.analysis import expected_analysis_files
 from hivemind.config import (
+    EXTERNAL_DOCS_DIR,
     count_versions,
+    expert_names,
     get_expert_dir,
     get_head_commit,
 )
@@ -496,6 +500,215 @@ def expert_switch_version(
     else:
         old = result.old_commit[:12] if result.old_commit else "none"
         console.print(f"  [success]✓[/success] {name}: switched {old} → {result.new_commit[:12]}")
+
+
+# ---------------------------------------------------------------------------
+# expert crawl command
+# ---------------------------------------------------------------------------
+
+
+def _crawl_render(state: dict[str, Any]) -> Group:
+    """Render the live crawl trace from a mutable state dict.
+
+    Sections rendered (in order, only when populated):
+      Probe        — capability summary + chosen strategies
+      Discover     — sitemap leaf table (status, MB, in-scope hits)
+                     or single-line summary for spider/browser
+      Extract      — progress bar + last 5 completed URLs
+    """
+    spinner = _SPINNER_FRAMES[state["tick"] % len(_SPINNER_FRAMES)]
+    lines: list[str] = []
+
+    profile = state.get("profile")
+    if profile is not None:
+        yn = lambda v, y="works", n="no": f"[success]{y}[/success]" if v else f"[warning]{n}[/warning]"  # noqa: E731
+        lines.append("[bold]Probe[/bold]")
+        lines.append(
+            f"  static extraction: {yn(profile.static_extraction_works)}"
+            f"   static discovery: {yn(profile.static_discovery_works)}"
+        )
+        lines.append(
+            f"  sitemap: [info]{profile.sitemap_status}[/info]   .md source: {yn(profile.has_md_source, 'yes', 'no')}"
+        )
+        lines.append(
+            f"  → discovery=[bold]{profile.discovery_strategy}[/bold]"
+            f", extraction=[bold]{profile.extraction_strategy}[/bold]"
+        )
+        lines.append("")
+
+    leaves = state.get("leaves") or {}
+    if leaves:
+        lines.append(f"[bold]Discover[/bold] (sitemap, {len(leaves)} leaves)")
+        for idx in sorted(leaves):
+            leaf = leaves[idx]
+            mb = leaf.bytes_read / (1024 * 1024)
+            short = leaf.url.split("/")[-1] or leaf.url
+            if leaf.status == "queued":
+                marker = "[dim]·[/dim]"
+                tail = "[dim](queued)[/dim]"
+            elif leaf.status == "streaming":
+                marker = f"[info]{spinner}[/info]"
+                tail = f"[dim]{mb:6.1f} MB streamed[/dim]   [success]{leaf.in_scope_hits}[/success] in-scope"
+            elif leaf.status == "done":
+                marker = "[success]✓[/success]"
+                tail = f"[dim]{mb:6.1f} MB[/dim]   [success]{leaf.in_scope_hits}[/success] in-scope"
+            else:  # failed
+                marker = "[error]✗[/error]"
+                tail = f"[error]failed[/error] {leaf.error or ''}"
+            lines.append(f"  {marker} leaf {idx + 1}/{leaf.total}  [dim]{short}[/dim]   {tail}")
+        total_hits = sum(leaf.in_scope_hits for leaf in leaves.values())
+        lines.append(f"  [bold]Total in-scope so far:[/bold] {total_hits}")
+        lines.append("")
+
+    discover_summary = state.get("discover_summary")
+    if discover_summary and not leaves:
+        lines.append(discover_summary)
+        lines.append("")
+
+    extract_total = state.get("extract_total")
+    if extract_total is not None:
+        ok = state["extract_ok"]
+        fail = state["extract_fail"]
+        done = ok + fail
+        bar_width = 30
+        filled = int(bar_width * done / extract_total) if extract_total else 0
+        bar = "█" * filled + "░" * (bar_width - filled)
+        lines.append(f"[bold]Extract[/bold] ({state['extract_strategy']})  [{bar}] {done}/{extract_total}")
+        lines.extend(f"  [success]✓[/success] [dim]{u}[/dim]" for u in list(state.get("recent", []))[-5:])
+
+    return Group(*(console.render_str(line) for line in lines))
+
+
+@expert_app.command()
+def crawl(
+    url: str = typer.Argument(..., help="Starting URL to crawl"),
+    agent: str = typer.Argument(..., help="Agent name for output directory", autocompletion=_complete_agent),
+    max_pages: int | None = typer.Option(None, "--max-pages", "-n", help="Maximum pages to crawl (default: no limit)"),
+) -> None:
+    """Crawl a website and save documentation for an expert agent.
+
+    Probes the site, picks the appropriate discovery + extraction
+    strategy (sitemap / spider / browser), and saves clean markdown
+    to ~/.cache/hivemind/external_docs/<agent>/.
+
+    JS-rendered docs sites are detected automatically and rendered
+    via Chromium. Run `uv run playwright install chromium` once if
+    the browser binary isn't installed.
+    """
+    expert_dir = get_expert_dir(agent)
+    if not expert_dir.is_dir():
+        console.print(f"[error]Error: Expert '{agent}' not found.[/error]")
+        console.print("\n[info]Available experts:[/info]")
+        experts = sorted(expert_names())
+        if experts:
+            for expert in experts:
+                console.print(f"  - {expert}")
+        else:
+            console.print("  [dim]No experts configured. Use [bold]hivemind expert add <url>[/bold] to add one.[/dim]")
+        raise typer.Exit(1)
+
+    from collections import deque
+
+    from hivemind.crawl import BrowserUnavailableError, LeafProgress, crawl_website
+
+    output_dir = EXTERNAL_DOCS_DIR / agent
+
+    console.print(f"[heading]Crawling Documentation for {agent}[/heading]\n")
+    console.print(f"[info]URL:[/info] {escape(url)}")
+    console.print(f"[info]Output:[/info] {escape(str(output_dir))}")
+    console.print()
+
+    state: dict[str, Any] = {
+        "tick": 0,
+        "profile": None,
+        "leaves": {},
+        "discover_summary": None,
+        "extract_strategy": None,
+        "extract_total": None,
+        "extract_ok": 0,
+        "extract_fail": 0,
+        "recent": deque(maxlen=5),
+    }
+
+    live = Live(_crawl_render(state), console=console, refresh_per_second=4, transient=False)
+
+    def tick() -> None:
+        state["tick"] += 1
+        live.update(_crawl_render(state))
+
+    def on_phase(phase: str, info: dict[str, object]) -> None:
+        if phase == "probe":
+            state["profile"] = info["profile"]
+        elif phase == "discover":
+            if not state["leaves"]:
+                state["discover_summary"] = (
+                    f"[bold]Discover[/bold] ({info['strategy']})  [success]{info['count']}[/success] URLs in scope"
+                )
+        elif phase == "extract_start":
+            state["extract_strategy"] = info["strategy"]
+            state["extract_total"] = info["count"]
+        tick()
+
+    def on_leaf(leaf: LeafProgress) -> None:
+        state["leaves"][leaf.index] = leaf
+        tick()
+
+    def on_page(page_url: str, success: bool) -> None:
+        if success:
+            state["extract_ok"] += 1
+            short = urlparse(page_url).path or page_url
+            state["recent"].append(short)
+        else:
+            state["extract_fail"] += 1
+        tick()
+
+    live.start()
+    try:
+        result = asyncio.run(
+            crawl_website(
+                url=url,
+                max_pages=max_pages,
+                output_dir=str(output_dir),
+                on_page_callback=on_page,
+                on_phase_callback=on_phase,
+                on_leaf_progress=on_leaf,
+            ),
+        )
+    except BrowserUnavailableError as e:
+        live.stop()
+        console.print("\n[error]This site requires browser rendering, but Chromium isn't installed.[/error]")
+        console.print("[info]Run:[/info]  [bold]uv run playwright install chromium[/bold]\n")
+        console.print(f"[dim]Underlying error: {escape(str(e))}[/dim]")
+        raise typer.Exit(1) from None
+    except KeyboardInterrupt:
+        live.stop()
+        console.print(f"\n[warning]Interrupted.[/warning] {state['extract_ok']} pages saved to {output_dir}\n")
+        raise typer.Exit(130) from None
+    except Exception as e:
+        live.stop()
+        console.print(f"\n[error]Crawl failed: {escape(str(e))}[/error]")
+        raise typer.Exit(1) from None
+    finally:
+        live.stop()
+
+    console.print()
+    table = Table(title="Crawl Summary")
+    table.add_column("Metric", style="cyan")
+    table.add_column("Value", justify="right", style="magenta")
+    table.add_row("Total Pages", str(result.total_pages))
+    table.add_row("Successful", str(result.successful_pages))
+    table.add_row("Failed", str(result.failed_pages))
+    table.add_row("Output Directory", str(output_dir))
+    console.print(table)
+    console.print()
+
+    if result.successful_pages > 0:
+        console.print(f"[success]Successfully crawled {result.successful_pages} pages[/success]")
+        console.print(f"\n[info]Documentation saved to:[/info] {output_dir}")
+        console.print("[info]Expert agents can now access these docs[/info]")
+    else:
+        console.print("[error]No pages were successfully crawled[/error]")
+        raise typer.Exit(1)
 
 
 # ---------------------------------------------------------------------------
