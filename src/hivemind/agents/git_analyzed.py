@@ -221,7 +221,6 @@ async def create_git_expert(
     from hivemind.agents import registry
     from hivemind.agents.base import Agent
 
-    registry.load(refresh=True)
     if registry.get(name) is not None:
         return OperationResult(success=False, error=f"Agent '{name}' already exists")
 
@@ -372,7 +371,6 @@ async def update_git_expert(
     """Fetch, analyze, and rotate HEAD for a git-analyzed agent."""
     from hivemind.agents import registry
 
-    registry.load(refresh=True)
     agent = registry.get(name)
     if agent is None or not isinstance(agent.body, GitAnalyzedBody):
         return UpdateResult(success=False, error=f"{name} is not a git-analyzed agent")
@@ -511,7 +509,6 @@ async def switch_version(
     """Switch a git-analyzed agent to a specific commit (analyzes if needed)."""
     from hivemind.agents import registry
 
-    registry.load(refresh=True)
     agent = registry.get(name)
     if agent is None or not isinstance(agent.body, GitAnalyzedBody):
         return UpdateResult(success=False, error=f"{name} is not a git-analyzed agent")

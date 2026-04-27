@@ -1,17 +1,28 @@
 """MCP tool definitions and handlers for hivemind.
 
-The MCP surface is split into **kind-agnostic lifecycle tools** (list, show,
-enable, disable, delete, refresh) and **kind-specific creators** (for
-``create_git_expert`` and ``create_team``). Adding a new agent kind only
-requires adding one new creator tool; the lifecycle tools automatically
-cover it.
+The MCP surface is intentionally **mutation + research only**. Listing,
+inspecting, and status-dashboard tools were dropped because opencode
+already discovers agents natively from ``agents/*.md`` and surfaces them
+in its UI; duplicating that surface required a process-local catalog
+cache that grew stale whenever another process (CLI, TUI, a different
+opencode session) wrote to ``hivemind.json`` / ``config.json``. With
+read-only catalog tools removed, callers either use opencode's native
+discovery or read the JSON files directly.
 
-The post-mutation hot-reload used to be triggered from a dispatcher-level
-``_MUTATION_TOOLS`` list here. That is gone: domain mutations fire the
-shared :mod:`hivemind.hooks` event themselves, and this module just
-registers two MCP-specific listeners at server startup — one for the
-deferred ``/global/dispose`` POST (500 ms delayed to avoid cancelling the
-in-flight tool) and one for ``ToolListChangedNotification``.
+Tools that remain:
+
+* **Lifecycle mutations** — ``enable_agent``, ``disable_agent``,
+  ``delete_agent``, ``refresh_agent``, ``redeploy``.
+* **Kind-specific creators** — ``create_git_expert``, ``create_team``.
+* **Roster mutations** — ``add_expert_to_team``, ``remove_expert_from_team``.
+* **Knowledge research** — ``get_knowledge``, ``search_knowledge``
+  (independent of opencode's agent surface; reads ``experts/<name>/HEAD/``
+  knowledge docs).
+
+Domain mutations fire the shared :mod:`hivemind.hooks` event themselves;
+this module just registers two MCP-specific listeners at server startup
+— one for the ``/global/reload-agents`` POST and one for
+``ToolListChangedNotification``.
 """
 
 from __future__ import annotations
@@ -48,32 +59,7 @@ def _json_text(data: Any) -> list[TextContent]:
 # ---------------------------------------------------------------------------
 
 TOOLS: list[Tool] = [
-    # --- Lifecycle (kind-agnostic) ---
-    Tool(
-        name="list_agents",
-        description="List every agent in the catalog, with kind, enabled state, and summary metadata.",
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "kind": {
-                    "type": "string",
-                    "description": (
-                        "Optional filter: only return agents of this kind (e.g. 'git_analyzed', 'roster_templated')."
-                    ),
-                },
-            },
-            "required": [],
-        },
-    ),
-    Tool(
-        name="show_agent",
-        description="Show detailed information about a specific agent, including body-specific metadata.",
-        inputSchema={
-            "type": "object",
-            "properties": {"name": {"type": "string", "description": "Agent name"}},
-            "required": ["name"],
-        },
-    ),
+    # --- Lifecycle mutations (kind-agnostic) ---
     Tool(
         name="enable_agent",
         description="Enable an agent. Deploys its files (and for git_analyzed, ensures the repo is cloned).",
@@ -220,11 +206,6 @@ TOOLS: list[Tool] = [
     ),
     # --- System ---
     Tool(
-        name="status",
-        description="Show hivemind dashboard: engine info, enabled/disabled counts, teams, and server status.",
-        inputSchema={"type": "object", "properties": {}, "required": []},
-    ),
-    Tool(
         name="redeploy",
         description="Regenerate all agent files for every enabled agent from the current catalog.",
         inputSchema={"type": "object", "properties": {}, "required": []},
@@ -233,64 +214,8 @@ TOOLS: list[Tool] = [
 
 
 # ---------------------------------------------------------------------------
-# Handlers — lifecycle
+# Handlers — lifecycle mutations
 # ---------------------------------------------------------------------------
-
-
-async def _handle_list_agents(kind: str | None) -> list[TextContent]:
-    from hivemind.agents import registry
-
-    registry.load(refresh=True)
-    agents = registry.by_kind(kind) if kind else registry.all_agents()
-    if not agents:
-        return _text("No agents found." + (f" (kind={kind})" if kind else ""))
-
-    results: list[dict[str, Any]] = [
-        {
-            "name": agent.name,
-            "kind": agent.kind,
-            "enabled": agent.enabled,
-            "description": agent.description,
-        }
-        for agent in sorted(agents, key=lambda a: a.name)
-    ]
-    return _json_text(results)
-
-
-async def _handle_show_agent(name: str) -> list[TextContent]:
-    from hivemind.agents import registry
-    from hivemind.config import AGENTS_DIR, count_versions, get_expert_dir, get_head_commit
-    from hivemind.opencode import agent_filename
-
-    registry.load(refresh=True)
-    agent = registry.get(name)
-    if agent is None:
-        return _text(f"Error: agent '{name}' not found")
-
-    status = "enabled" if agent.enabled else "disabled"
-    catalog_body = agent.body.to_catalog()
-
-    extra: dict[str, Any] = {}
-    if agent.kind == "git_analyzed":
-        expert_dir = get_expert_dir(name)
-        head_commit = get_head_commit(expert_dir)
-        extra = {
-            "head": head_commit,
-            "versions": count_versions(expert_dir),
-        }
-
-    deployed_file = AGENTS_DIR / agent_filename(agent.kind, name)  # type: ignore[arg-type]
-    return _json_text(
-        {
-            "name": name,
-            "kind": agent.kind,
-            "status": status,
-            "description": agent.description,
-            "body": catalog_body,
-            "agent_deployed": deployed_file.exists(),
-            **extra,
-        }
-    )
 
 
 async def _handle_enable_agent(name: str) -> list[TextContent]:
@@ -327,7 +252,6 @@ async def _handle_refresh_agent(name: str, skip_analysis: bool) -> list[TextCont
     from hivemind.config import AGENTS_DIR
     from hivemind.deployment import regenerate_librarian
 
-    registry.load(refresh=True)
     agent = registry.get(name)
     if agent is None:
         return _text(f"Error: agent '{name}' not found")
@@ -413,7 +337,6 @@ async def _handle_search_knowledge(query: str) -> list[TextContent]:
     from hivemind.agents import registry
     from hivemind.config import get_expert_dir
 
-    registry.load(refresh=True)
     query_lower = query.lower()
     results: list[dict[str, str | int]] = []
 
@@ -452,55 +375,6 @@ async def _handle_search_knowledge(query: str) -> list[TextContent]:
 # ---------------------------------------------------------------------------
 
 
-async def _handle_status() -> list[TextContent]:
-    from hivemind import opencode
-    from hivemind.agents import registry
-    from hivemind.server import is_server_running, load_server_state
-
-    registry.load(refresh=True)
-
-    server_info: dict[str, Any] = {"running": False}
-    if is_server_running():
-        state = load_server_state()
-        if state:
-            server_info = {
-                "running": True,
-                "port": state.port,
-                "hostname": state.hostname,
-                "pid": state.pid,
-                "started_at": state.started_at.isoformat(),
-            }
-
-    experts = list(registry.by_kind("git_analyzed"))
-    teams = list(registry.by_kind("roster_templated"))
-
-    cfg = opencode._cfg()
-    try:
-        engine_path = opencode._engine_path()
-    except RuntimeError as e:
-        engine_path = f"<unavailable: {e}>"
-    return _json_text(
-        {
-            "engine": engine_path,
-            "model": cfg.model,
-            "server": server_info,
-            "experts": {
-                "enabled": sum(1 for a in experts if a.enabled),
-                "disabled": sum(1 for a in experts if not a.enabled),
-                "names": sorted(a.name for a in experts),
-            },
-            "teams": {
-                a.name: {
-                    "enabled": a.enabled,
-                    "description": a.body.to_catalog().get("description", ""),
-                    "experts": a.body.to_catalog().get("experts", []),
-                }
-                for a in teams
-            },
-        }
-    )
-
-
 async def _handle_redeploy() -> list[TextContent]:
     from hivemind.lifecycle import redeploy_all_agents
 
@@ -524,8 +398,6 @@ async def _handle_redeploy() -> list[TextContent]:
 
 
 TOOL_HANDLERS: dict[str, ToolHandler] = {
-    "list_agents": _handle_list_agents,
-    "show_agent": _handle_show_agent,
     "enable_agent": _handle_enable_agent,
     "disable_agent": _handle_disable_agent,
     "delete_agent": _handle_delete_agent,
@@ -536,17 +408,14 @@ TOOL_HANDLERS: dict[str, ToolHandler] = {
     "remove_expert_from_team": _handle_remove_expert_from_team,
     "get_knowledge": _handle_get_knowledge,
     "search_knowledge": _handle_search_knowledge,
-    "status": _handle_status,
     "redeploy": _handle_redeploy,
 }
 
 
 def _extract_args(name: str, args: dict[str, Any]) -> tuple[Any, ...]:
-    if name in ("status", "redeploy"):
+    if name == "redeploy":
         return ()
-    if name == "list_agents":
-        return (args.get("kind"),)
-    if name in ("show_agent", "enable_agent", "disable_agent"):
+    if name in ("enable_agent", "disable_agent"):
         return (args["name"],)
     if name == "delete_agent":
         return (args["name"], bool(args.get("purge_memory", False)))

@@ -311,7 +311,6 @@ def _complete_agent(incomplete: str) -> list[str]:
 @expert_app.command("list")
 def expert_list() -> None:
     """Show every expert with its status."""
-    registry.load(refresh=True)
     experts = sorted(registry.by_kind("git_analyzed"), key=lambda a: a.name)
     if not experts:
         console.print("No experts found. Use [heading]hivemind expert add <url>[/heading] to add one.")
@@ -343,7 +342,6 @@ def expert_list() -> None:
 @expert_app.command("show")
 def expert_show(name: str = typer.Argument(..., autocompletion=_complete_agent)) -> None:
     """Show detailed information about an expert."""
-    registry.load(refresh=True)
     agent = registry.get(name)
     if agent is None or agent.kind != "git_analyzed":
         console.print(f"[error]Error: expert '{name}' not found[/error]")
@@ -723,7 +721,6 @@ app.add_typer(team_app, name="team")
 @team_app.command("list")
 def team_list() -> None:
     """Show every team with its roster and enabled state."""
-    registry.load(refresh=True)
     teams = sorted(registry.by_kind("roster_templated"), key=lambda a: a.name)
     if not teams:
         console.print("No teams configured.")
@@ -747,7 +744,6 @@ def team_list() -> None:
 @team_app.command("show")
 def team_show(name: str = typer.Argument(..., autocompletion=_complete_agent)) -> None:
     """Show detailed information about a team."""
-    registry.load(refresh=True)
     agent = registry.get(name)
     if agent is None or agent.kind != "roster_templated":
         console.print(f"[error]Error: team '{name}' not found[/error]")
@@ -907,7 +903,6 @@ def status() -> None:
     from hivemind.server import is_server_running, load_server_state
 
     cfg = opencode._cfg()
-    registry.load(refresh=True)
 
     try:
         engine_path = opencode._engine_path()

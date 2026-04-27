@@ -76,7 +76,6 @@ def enable_agent(name: str) -> OperationResult:
     ~900 ms) so the tool response returns well before the post-mutation
     ``/global/dispose`` POST lands.
     """
-    registry.load(refresh=True)
     agent = registry.get(name)
     if agent is None:
         return OperationResult(success=False, error=f"Agent '{name}' not found")
@@ -95,7 +94,6 @@ def enable_agent(name: str) -> OperationResult:
 
 def disable_agent(name: str) -> OperationResult:
     """Flip the agent to disabled, remove its deployed file, regenerate librarian."""
-    registry.load(refresh=True)
     agent = registry.get(name)
     if agent is None:
         return OperationResult(success=False, error=f"Agent '{name}' not found")
@@ -116,7 +114,6 @@ def delete_agent(name: str, *, purge_memory: bool = False) -> OperationResult:
     Memory files under the opencode memory tree are preserved by default;
     pass ``purge_memory=True`` to remove them as well.
     """
-    registry.load(refresh=True)
     agent = registry.get(name)
     if agent is None:
         return OperationResult(success=False, error=f"Agent '{name}' not found")
@@ -144,7 +141,6 @@ async def refresh_agent(
     on_progress: ProgressCallback | None = None,
 ) -> OperationResult:
     """Refresh the agent's body (clone+analyze for git; no-op for others)."""
-    registry.load(refresh=True)
     agent = registry.get(name)
     if agent is None:
         return OperationResult(success=False, error=f"Agent '{name}' not found")
@@ -175,7 +171,6 @@ async def refresh_agent(
 
 def redeploy_all_agents() -> RedeployResult:
     """Redeploy every enabled agent from its current catalog state."""
-    registry.load(refresh=True)
 
     failed: list[str] = []
     teams_failed: list[str] = []
@@ -255,7 +250,6 @@ def bootstrap_workspace(  # noqa: C901 — orchestrates distinct init phases; sp
     emit("orchestrator memory", "ready")
 
     # Deploy every enabled agent
-    registry.load(refresh=True)
     for agent in registry.enabled():
         try:
             ensure_agent_memory(agent.name)

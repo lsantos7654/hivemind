@@ -18,9 +18,11 @@ unlisted or disabled agent is normal; enable it before consulting.**
 - **disabled** — catalog entry preserved but the deployed agent file is
   removed; opencode cannot route to it until you re-enable.
 
-If you try to consult an expert or team lead that does not appear to be
-available, check its state with `show_agent` / `list_agents` and use
-`enable_agent` (MCP) or `hivemind expert enable <name>` /
+If you try to consult an expert or team lead that does not appear in
+opencode's available subagent list, it is likely unlisted or disabled
+in the catalog. Read `hivemind.json` (the full catalog, committed) and
+`config.json` (the per-machine enabled/disabled overlay) to find the
+agent, then call `enable_agent` (MCP) or `hivemind expert enable <name>` /
 `hivemind team enable <name>` (CLI) to activate it. **Do not treat a
 disabled agent as missing or broken — it is a normal state, and enabling
 is the expected next step.**
@@ -52,13 +54,18 @@ non-destructive variant.)
 
 ## MCP Tools
 
-You have direct access to these hivemind tools. Prefer them over shelling
-out to the CLI — they hot-reload opencode's agent cache automatically
-without disrupting the in-flight session.
+The hivemind MCP surface is **mutations + research only** — opencode
+already discovers enabled agents natively from `agents/*.md` and shows
+them in its subagent picker, so listing/inspection tools were removed
+to avoid a stale-cache duplication. For catalog inspection, read
+`hivemind.json` (full catalog) and `config.json` (per-machine overlay)
+directly via the file-read tools.
 
-**Lifecycle (kind-agnostic):**
-- `list_agents(kind?)` — all agents with kind + enabled state
-- `show_agent(name)` — detail for one agent, including body-specific fields
+Prefer the MCP mutations over shelling out to the CLI — they hot-reload
+opencode's agent cache automatically without disrupting the in-flight
+session.
+
+**Lifecycle mutations (kind-agnostic):**
 - `enable_agent(name)` — deploy an agent (clones repo for git_analyzed;
   deploys team lead for roster_templated)
 - `disable_agent(name)` — remove the deployed agent file; preserve data
@@ -76,16 +83,19 @@ without disrupting the in-flight session.
 - `add_expert_to_team(team, expert)` / `remove_expert_from_team(team, expert)` —
   team must be enabled first.
 
-**Knowledge access:**
+**Knowledge research:**
 - `get_knowledge(expert, doc)` — read an expert's knowledge doc directly
   (summary, code_structure, build_system, apis_and_interfaces, agent)
 - `search_knowledge(query)` — grep across all enabled experts' docs
 
 **System:**
-- `status` — dashboard (engine, server, agents, teams)
 - `redeploy` — regenerate every enabled agent file from the current catalog
 
-Changes made via MCP tools take effect immediately (hot-reload).
+For dashboard-style status (engine path, model, server PID, expert
+counts), use the `hivemind status` CLI in a shell.
+
+Mutations take effect immediately (hot-reload via
+`/global/reload-agents`).
 
 ## CLI Commands
 
@@ -134,9 +144,11 @@ research only — they cannot spawn other agents.
 
 ### When you need domain expertise
 
-1. **Check availability.** If you already know the agent name, call
-   `show_agent` to confirm it's enabled. If it's unlisted or disabled,
-   call `enable_agent` first (this is a normal step, not a failure).
+1. **Check availability.** If you already know the agent name, look for
+   it in opencode's subagent picker (the same list available to the Task
+   tool). If it's not listed, the agent is unlisted or disabled — read
+   `hivemind.json` to confirm it's in the catalog, then call
+   `enable_agent` (this is a normal step, not a failure).
 
 2. **Consult the team lead** (first time or when unsure) — spawn
    `team-lead-{team}` to get routing advice. The team lead knows each
@@ -173,8 +185,8 @@ research only — they cannot spawn other agents.
 
 Spawn the **librarian** (`librarian`) — it knows every enabled expert and
 team and will recommend who to consult. (It only catalogs *enabled* agents;
-an expert you need may exist unlisted/disabled in the catalog — check
-`list_agents` if the librarian comes up short.)
+an expert you need may exist unlisted/disabled in the catalog — read
+`hivemind.json` directly if the librarian comes up short.)
 
 ### Key principles
 

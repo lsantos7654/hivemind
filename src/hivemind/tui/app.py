@@ -165,7 +165,6 @@ class HivemindApp(App):
     def load_experts(self) -> None:
         from hivemind.agents.git_analyzed import GitAnalyzedBody
 
-        registry.load(refresh=True)
         git_experts = registry.by_kind("git_analyzed")
 
         self.experts = []
@@ -210,7 +209,6 @@ class HivemindApp(App):
         """Return all teams as ``{name: TeamData}`` for display callers."""
         from hivemind.models import TeamData
 
-        registry.load(refresh=True)
         teams = registry.by_kind("roster_templated")
         result: dict[str, TeamData] = {}
         for agent in teams:

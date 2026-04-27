@@ -357,7 +357,6 @@ async def create_team(
     from hivemind.agents import registry
     from hivemind.agents.base import Agent
 
-    registry.load(refresh=True)
     if registry.get(name) is not None:
         return OperationResult(success=False, error=f"Team '{name}' already exists")
 
@@ -407,7 +406,6 @@ def update_team(
     """
     from hivemind.agents import registry
 
-    registry.load(refresh=True)
     agent = registry.get(name)
     if agent is None or not isinstance(agent.body, RosterTemplatedBody):
         return OperationResult(success=False, error=f"Team '{name}' does not exist")
