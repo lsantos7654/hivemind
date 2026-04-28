@@ -37,6 +37,22 @@ Lint/format/type-check tools (`ruff`, `mypy`, `pre-commit`) are pinned in
 `pyproject.toml` and locked in `uv.lock`, but not exposed as Bazel targets.
 Install them however you prefer (e.g., `brew install ruff mypy pre-commit`).
 
+### Patching opencode
+
+The bundled engine is a patched fork. Patches live in
+`third_party/patches/*.patch` and are applied at build time. To author or
+edit a patch:
+
+```bash
+make dev            # Clone opencode into dev/opencode and apply patches as commits
+# ... edit dev/opencode and commit changes on top ...
+make dev-save       # Regenerate third_party/patches/*.patch from those commits
+make engine         # Rebuild the engine to pick up the new patch set
+make dev-reset      # Wipe dev/opencode and re-clone from scratch
+```
+
+`scripts/dev-opencode.py` drives this workflow.
+
 ## Architecture
 
 Hivemind is an agent catalog manager for opencode. It curates a shared
@@ -57,6 +73,11 @@ files in sync with that catalog.
   `save_config`, `load_hivemind`, `save_hivemind`, `load_json`,
   `save_json`). Filesystem helpers (`expert_names`, `get_expert_dir`,
   `get_head_commit`, `ensure_repos_link`, `ensure_external_docs_link`).
+- **`constants.py`** — Cross-module constants: cache/opencode dirs,
+  analysis-file contracts (`ANALYSIS_DOCS`, `DESCRIPTION_FILENAME`,
+  `EXPERTISE_FILENAME`), template placeholders (`{EXPERTS_DIR}`,
+  `{TEAMS_DIR}`, `{CACHE_DIR}`), subprocess timeouts. Exists to break the
+  old `config.py`↔providers circular import.
 - **`models.py`** — Pydantic models. `AppConfig` (enabled/disabled only;
   `config.json`), `HivemindConfig` (engine settings + agent catalog;
   `hivemind.json`), `CatalogEntry` (discriminated union body:
@@ -96,6 +117,17 @@ files in sync with that catalog.
 - **`analysis.py`** — AI analysis orchestration (`run_async_analysis`,
   `make_cancellation_checker`, `handle_async_cancellation`).
 - **`templates.py`** — Jinja2 rendering (`PackageLoader`).
+
+### `crawl/` package (`src/hivemind/crawl/`)
+
+External-doc ingestion that backs `hivemind crawl <url> <expert>`. URL
+discovery (`discovery.py`), browser automation via crawl4ai/Playwright
+(`browser.py`), trafilatura-based content extraction (`extractor.py`),
+URL normalization (`urls.py`), and reachability probing (`probe.py`).
+Output lands in `~/.cache/hivemind/external_docs/<expert>/` and is
+exposed to the expert as a secondary knowledge source. mypy is relaxed
+for this subpackage (see `pyproject.toml`) because crawl4ai/trafilatura
+lack type stubs.
 
 ### `agents/` package
 

@@ -58,8 +58,17 @@ UPSTREAM_URL = "https://github.com/sst/opencode.git"
 BRANCH = "hivemind"
 
 # A patch is a "dep patch" if its diff touches any path matching one of these
-# basenames. Rest go to code_patches/.
+# basenames OR any file under one of these path prefixes. Rest go to
+# code_patches/.
+#
+# `packages/sdk/js/` is here because the bun bundler reads the SDK at
+# runtime through a node_modules symlink that resolves into the
+# `opencode_node_modules` external repo, NOT `opencode_src`. The two repos
+# get different patch sets — only dep_patches reach node_modules. SDK
+# changes that land only as code_patches are silently ignored at bundle
+# time even though they show up correctly in the source tree.
 _DEP_MANIFEST_BASENAMES = {"package.json", "bun.lock"}
+_DEP_PATH_PREFIXES = ("packages/sdk/js/",)
 
 
 def _opencode_version() -> str:
@@ -93,15 +102,19 @@ def _patch_touched_files(patch_path: Path) -> set[str]:
     return files
 
 
+def _is_dep_path(p: str) -> bool:
+    return Path(p).name in _DEP_MANIFEST_BASENAMES or any(p.startswith(prefix) for prefix in _DEP_PATH_PREFIXES)
+
+
 def _classify_patch(patch_path: Path) -> str:
     """Returns 'dep' or 'code'. Fails if the patch touches both."""
     files = _patch_touched_files(patch_path)
-    dep_files = {f for f in files if Path(f).name in _DEP_MANIFEST_BASENAMES}
+    dep_files = {f for f in files if _is_dep_path(f)}
     code_files = files - dep_files
     if dep_files and code_files:
         sys.exit(
-            f"error: {patch_path.name} touches both dep manifests "
-            f"({sorted(dep_files)}) and source files ({sorted(code_files)}).\n"
+            f"error: {patch_path.name} touches both dep-tier paths "
+            f"({sorted(dep_files)}) and code-tier paths ({sorted(code_files)}).\n"
             f"  Split the commit so dep changes and code changes live in "
             f"separate commits (use `git rebase -i` in dev/opencode), then "
             f"re-run `make dev-save`."

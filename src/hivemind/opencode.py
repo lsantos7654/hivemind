@@ -604,6 +604,44 @@ def session_root(session_id: str) -> dict[str, Any]:
         current = session_get(parent)
 
 
+def live_session_ids() -> set[str]:
+    """GET /global/live-sessions — sessions a TUI is currently attached to.
+
+    Provided by ``//third_party/patches/0009-SSE-liveness-counter.patch``.
+    A session shows up here while at least one TUI process holds an open
+    SSE subscription (``GET /event?sessionID=<id>``); the count
+    increments on stream open and decrements when the abort handler
+    fires. Closing the TUI drops the entry.
+    """
+    resp = httpx.get(
+        f"{_server_url()}/global/live-sessions",
+        timeout=SESSION_HTTP_TIMEOUT,
+    )
+    resp.raise_for_status()
+    data = resp.json()
+    sessions: list[str] = data.get("sessions", [])
+    return set(sessions)
+
+
+def session_query_message(session_id: str, text: str) -> dict[str, Any]:
+    """POST /session/:id/message — synchronous chat that returns the assistant reply.
+
+    Used by the ``query_session_fork`` MCP tool: after forking an
+    existing session, send the question against the fork and wait for
+    the assistant to finish. Timeout is generous (5 minutes) because a
+    full agent turn can be slow.
+    """
+    body = {"parts": [{"type": "text", "text": text}]}
+    resp = httpx.post(
+        f"{_server_url()}/session/{session_id}/message",
+        json=body,
+        timeout=300.0,
+    )
+    resp.raise_for_status()
+    data: dict[str, Any] = resp.json()
+    return data
+
+
 # ---------------------------------------------------------------------------
 # Directory initialisation
 # ---------------------------------------------------------------------------

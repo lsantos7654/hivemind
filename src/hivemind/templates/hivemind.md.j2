@@ -89,8 +89,14 @@ session.
 - `search_knowledge(query)` — grep across all enabled experts' docs
 
 **Cross-session messaging:**
-- `list_sessions(roots?, limit?)` — list opencode sessions (id, parentID,
-  title, updated). Use to find a target before send/fork.
+- `list_sessions(live_only=true, tree=false, roots?, limit?)` — list
+  opencode sessions someone is currently attached to. By default
+  filters to "live" sessions: a session is live iff at least one TUI
+  process has an open SSE subscription on it. Subagents render under
+  their live parent. Pass `live_only=false` to see every session in
+  the engine's database. Pass `tree=true` for a nested
+  `{...session, children:[...]}` shape so parent/child topology is
+  obvious without the model walking parentIDs itself.
 - `send_to_session(session_id, message)` — append a message to another
   session's inbox. Delivered immediately if idle, queued and delivered
   on next idle if busy. Never throws BusyError.
@@ -106,6 +112,14 @@ session.
   updated session whose title matches `@<name> subagent` and delivers
   via inbox. Returns an error if no live session exists — call
   `Task(subagent_type='<name>', ...)` first to spawn one.
+- `query_session_fork(session_id, question, parent_id?, message_id?)` —
+  borrow another session's context to answer a question without
+  disturbing it. Forks the source (deep-copies its history into a new
+  session), synchronously asks the question against the fork, returns
+  the assistant's reply text. The source session itself is untouched
+  — no new messages land in its history. Useful when you need the
+  context a sibling pane has accumulated but don't want to interrupt
+  it.
 
 **System:**
 - `redeploy` — regenerate every enabled agent file from the current catalog

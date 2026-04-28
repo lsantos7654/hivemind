@@ -103,6 +103,7 @@ def _ext_impl(ctx):
 # //third_party/dep_patches/. Empty by default — most patches should be
 # code patches.
 _OPENCODE_DEP_PATCHES = [
+    "0014-SDK-gen-sessionID-query-param-LiveSessionsChanged-ev.patch",
 ]
 # Patches that modify only source files (no dep manifest changes). Applied
 # only in @opencode_src, after dep_patches, after install. Editing one
@@ -117,6 +118,11 @@ _OPENCODE_CODE_PATCHES = [
     "0006-Bake-bash.sudo-deny-into-Permission.fromConfig.patch",
     "0007-Per-session-inbox-with-deferred-delivery.patch",
     "0008-Session.fork-accepts-optional-parentID.patch",
+    "0009-SSE-liveness-counter.patch",
+    "0010-TUI-per-session-SSE-subscription-for-liveness.patch",
+    "0011-LiveSessionsChanged-bus-event.patch",
+    "0012-TUI-footer-live-sessions-indicator.patch",
+    "0013-Fix-_decr-leak-listen-on-c.req.raw.signal-not-stream.patch",
 ]
 external_engines = module_extension(
     implementation = _ext_impl,

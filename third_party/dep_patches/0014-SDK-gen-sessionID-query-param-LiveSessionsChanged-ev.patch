@@ -1,0 +1,119 @@
+From 7a249e643135201651209582ae940d48de5de081 Mon Sep 17 00:00:00 2001
+From: Lucas Santos <lsantos7654@gmail.com>
+Date: Tue, 28 Apr 2026 00:06:22 -0400
+Subject: [PATCH 14/14] SDK gen: sessionID query param + LiveSessionsChanged
+ event type
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Standalone SDK changes lifted out of the original TUI commits so this
+patch can be classified as a dep_patch by the dev-opencode.py
+classifier — the bun bundler reads the SDK at runtime via a
+node_modules symlink that resolves into the @opencode_node_modules
+external repo, which only receives dep_patches. Code patches alone
+leave that copy unmodified, silently dropping the new sessionID arg.
+
+Two changes here:
+  - sdk.gen.ts: extend Event.subscribe's typed parameters with
+    sessionID?: string and add the matching `{in:"query", key:"sessionID"}`
+    arg to buildClientParams so the SDK actually emits the query
+    string. Also adds Global.liveSessions() returning the live set.
+  - types.gen.ts: add EventSessionLiveChanged to the Event union and
+    sessionID?: string to EventSubscribeData.query.
+
+Pairs with patches 0009 (server SSE counter), 0010 (TUI per-session
+event subscription), and 0011 (LiveSessionsChanged bus event). Without
+this dep_patch the matching server-side and TUI-side patches don't
+actually wire up.
+---
+ packages/sdk/js/src/v2/gen/sdk.gen.ts   | 16 ++++++++++++++++
+ packages/sdk/js/src/v2/gen/types.gen.ts | 18 ++++++++++++++++++
+ 2 files changed, 34 insertions(+)
+
+diff --git a/packages/sdk/js/src/v2/gen/sdk.gen.ts b/packages/sdk/js/src/v2/gen/sdk.gen.ts
+index b2e37db..8a9edde 100644
+--- a/packages/sdk/js/src/v2/gen/sdk.gen.ts
++++ b/packages/sdk/js/src/v2/gen/sdk.gen.ts
+@@ -324,6 +324,20 @@ export class Global extends HeyApiClient {
+     })
+   }
+
++  /**
++   * List live sessions
++   *
++   * Hivemind: returns the set of session IDs that have at least one open
++   * SSE subscription on /event?sessionID=<id>. A session is "live" iff a
++   * TUI is currently attached to it.
++   */
++  public liveSessions<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
++    return (options?.client ?? this.client).get<{ 200: { sessions: Array<string> } }, unknown, ThrowOnError>({
++      url: "/global/live-sessions",
++      ...options,
++    })
++  }
++
+   /**
+    * Upgrade opencode
+    *
+@@ -3120,6 +3134,7 @@ export class Event extends HeyApiClient {
+     parameters?: {
+       directory?: string
+       workspace?: string
++      sessionID?: string
+     },
+     options?: Options<never, ThrowOnError>,
+   ) {
+@@ -3130,6 +3145,7 @@ export class Event extends HeyApiClient {
+           args: [
+             { in: "query", key: "directory" },
+             { in: "query", key: "workspace" },
++            { in: "query", key: "sessionID" },
+           ],
+         },
+       ],
+diff --git a/packages/sdk/js/src/v2/gen/types.gen.ts b/packages/sdk/js/src/v2/gen/types.gen.ts
+index 62c62e1..0334800 100644
+--- a/packages/sdk/js/src/v2/gen/types.gen.ts
++++ b/packages/sdk/js/src/v2/gen/types.gen.ts
+@@ -430,6 +430,17 @@ export type EventSessionIdle = {
+   }
+ }
+
++/**
++ * Hivemind: emitted when the per-session SSE subscriber map changes.
++ * Provided by `//third_party/patches/0011-live-sessions-bus-event.patch`.
++ */
++export type EventSessionLiveChanged = {
++  type: "session.live.changed"
++  properties: {
++    sessions: Array<string>
++  }
++}
++
+ export type EventSessionCompacted = {
+   type: "session.compacted"
+   properties: {
+@@ -993,6 +1004,7 @@ export type Event =
+   | EventQuestionRejected
+   | EventSessionStatus
+   | EventSessionIdle
++  | EventSessionLiveChanged
+   | EventSessionCompacted
+   | EventTodoUpdated
+   | EventPtyCreated
+@@ -4480,6 +4492,12 @@ export type EventSubscribeData = {
+   query?: {
+     directory?: string
+     workspace?: string
++    /**
++     * Hivemind: register this stream as a live subscriber for the given
++     * session. Counted into `GET /global/live-sessions`. Without it the
++     * subscription does not contribute to liveness tracking.
++     */
++    sessionID?: string
+   }
+   url: "/event"
+ }
+--
+2.50.1

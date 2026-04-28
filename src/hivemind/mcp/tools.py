@@ -208,19 +208,37 @@ TOOLS: list[Tool] = [
     Tool(
         name="list_sessions",
         description=(
-            "List opencode sessions in the running engine. Returns id, parentID, title, "
-            "and updated timestamp for each. Useful before send_to_session / fork_session."
+            "List opencode sessions someone is currently attached to via a TUI. By default "
+            "returns only 'live' sessions — those with at least one open SSE subscription "
+            "from a TUI. Returns id, parentID, title, updated timestamp, and (in tree mode) "
+            "nested children. Pass live_only=False to see every session in the engine's DB."
         ),
         inputSchema={
             "type": "object",
             "properties": {
+                "live_only": {
+                    "type": "boolean",
+                    "description": (
+                        "Filter to sessions a TUI is currently attached to (default: true). "
+                        "Subagents of a live root are included even though they don't have "
+                        "their own SSE attachment."
+                    ),
+                },
+                "tree": {
+                    "type": "boolean",
+                    "description": (
+                        "Return a nested tree (each node has a 'children' array) instead of "
+                        "a flat list. Sessions with parentID outside the result set become "
+                        "roots in the returned tree. Default: false."
+                    ),
+                },
                 "roots": {
                     "type": "boolean",
                     "description": "Only return root sessions (no parentID). Default: false.",
                 },
                 "limit": {
                     "type": "integer",
-                    "description": "Maximum number of sessions to return. Default: 20.",
+                    "description": "Maximum number of sessions to return. Default: 50.",
                 },
             },
             "required": [],
@@ -297,6 +315,33 @@ TOOLS: list[Tool] = [
                 "message": {"type": "string", "description": "Follow-up message"},
             },
             "required": ["name", "message"],
+        },
+    ),
+    Tool(
+        name="query_session_fork",
+        description=(
+            "Borrow another session's context to answer a question without disturbing it. "
+            "Forks the source session (deep-copies its message history into a new session), "
+            "synchronously sends the question against the fork, and returns the assistant's "
+            "reply text. The source session is untouched — no new messages land in its "
+            "history. The fork stays in the DB for inspection. Useful when you need the "
+            "context another session has accumulated but don't want to interrupt it."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "session_id": {"type": "string", "description": "Source session to borrow from"},
+                "question": {"type": "string", "description": "Question to ask against the fork"},
+                "parent_id": {
+                    "type": "string",
+                    "description": "Attach the fork as a subagent of this session (optional).",
+                },
+                "message_id": {
+                    "type": "string",
+                    "description": "Truncate the fork's history at this message ID (optional).",
+                },
+            },
+            "required": ["session_id", "question"],
         },
     ),
     # --- System ---
@@ -479,14 +524,76 @@ def _slim_session(session: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-async def _handle_list_sessions(roots: bool, limit: int) -> list[TextContent]:
+def _build_session_tree(slim: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Nest sessions under their parents.
+
+    Each input dict has at least ``id`` and ``parentID``. The output is
+    a forest: any session whose ``parentID`` is missing from the input
+    set becomes a root. Children are placed under their parent's
+    ``children`` array, recursively.
+    """
+    by_id: dict[str, dict[str, Any]] = {}
+    for s in slim:
+        if s.get("id"):
+            entry = dict(s)
+            entry["children"] = []
+            by_id[entry["id"]] = entry
+    roots: list[dict[str, Any]] = []
+    for entry in by_id.values():
+        parent_id = entry.get("parentID")
+        if parent_id and parent_id in by_id:
+            by_id[parent_id]["children"].append(entry)
+        else:
+            roots.append(entry)
+    return roots
+
+
+async def _handle_list_sessions(
+    live_only: bool,
+    tree: bool,
+    roots: bool,
+    limit: int,
+) -> list[TextContent]:
     from hivemind import opencode
 
     try:
         sessions = opencode.session_list(roots=roots if roots else None, limit=limit)
     except RuntimeError as exc:
         return _text(f"Error: {exc}")
-    return _json_text([_slim_session(s) for s in sessions])
+
+    if live_only:
+        try:
+            live = opencode.live_session_ids()
+        except RuntimeError as exc:
+            return _text(f"Error: {exc}")
+        # Live filter applies to roots only — subagents render under their
+        # live parent without needing their own SSE attachment.
+        kept_ids: set[str] = set()
+        for s in sessions:
+            sid = s.get("id")
+            parent_id = s.get("parentID")
+            if not sid:
+                continue
+            if sid in live or (parent_id and parent_id in live):
+                kept_ids.add(sid)
+        # Second pass: include any session whose ancestor chain reaches a
+        # live root (covers grandchildren of subagents, etc.).
+        by_id = {s["id"]: s for s in sessions if s.get("id")}
+        changed = True
+        while changed:
+            changed = False
+            for s in sessions:
+                sid = s.get("id")
+                parent_id = s.get("parentID")
+                if sid and sid not in kept_ids and parent_id in kept_ids and parent_id in by_id:
+                    kept_ids.add(sid)
+                    changed = True
+        sessions = [s for s in sessions if s.get("id") in kept_ids]
+
+    slim = [_slim_session(s) for s in sessions]
+    if tree:
+        return _json_text(_build_session_tree(slim))
+    return _json_text(slim)
 
 
 async def _handle_send_to_session(session_id: str, message: str) -> list[TextContent]:
@@ -540,6 +647,43 @@ async def _handle_fork_session(
             "parent_id": forked.get("parentID"),
             "title": forked.get("title"),
             "prompt_delivered": True,
+        }
+    )
+
+
+async def _handle_query_session_fork(
+    session_id: str,
+    question: str,
+    parent_id: str,
+    message_id: str,
+) -> list[TextContent]:
+    from hivemind import opencode
+
+    try:
+        forked = opencode.session_fork(
+            session_id,
+            message_id=message_id or None,
+            parent_id=parent_id or None,
+        )
+    except RuntimeError as exc:
+        return _text(f"Error: {exc}")
+    new_id = forked["id"]
+    try:
+        result = opencode.session_query_message(new_id, question)
+    except RuntimeError as exc:
+        return _text(f"Error: forked but query failed: {exc}")
+    parts = result.get("parts") or []
+    reply = ""
+    for part in reversed(parts):
+        if part.get("type") == "text" and part.get("text"):
+            reply = part["text"]
+            break
+    return _json_text(
+        {
+            "forked_from": session_id,
+            "new_session_id": new_id,
+            "title": forked.get("title"),
+            "reply": reply,
         }
     )
 
@@ -607,45 +751,50 @@ TOOL_HANDLERS: dict[str, ToolHandler] = {
     "send_to_main": _handle_send_to_main,
     "fork_session": _handle_fork_session,
     "continue_expert": _handle_continue_expert,
+    "query_session_fork": _handle_query_session_fork,
     "redeploy": _handle_redeploy,
 }
 
 
+_ARG_EXTRACTORS: dict[str, Callable[[dict[str, Any]], tuple[Any, ...]]] = {
+    "redeploy": lambda a: (),
+    "enable_agent": lambda a: (a["name"],),
+    "disable_agent": lambda a: (a["name"],),
+    "delete_agent": lambda a: (a["name"], bool(a.get("purge_memory", False))),
+    "refresh_agent": lambda a: (a["name"], bool(a.get("skip_analysis", False))),
+    "create_git_expert": lambda a: (a["url"], a.get("ref", "")),
+    "create_team": lambda a: (a["name"], a["description"], a["experts"]),
+    "add_expert_to_team": lambda a: (a["team"], a["expert"]),
+    "remove_expert_from_team": lambda a: (a["team"], a["expert"]),
+    "get_knowledge": lambda a: (a["expert"], a.get("doc", "summary")),
+    "search_knowledge": lambda a: (a["query"],),
+    "list_sessions": lambda a: (
+        bool(a.get("live_only", True)),
+        bool(a.get("tree", False)),
+        bool(a.get("roots", False)),
+        int(a.get("limit", 50)),
+    ),
+    "send_to_session": lambda a: (a["session_id"], a["message"]),
+    "send_to_main": lambda a: (a["message"],),
+    "fork_session": lambda a: (
+        a["session_id"],
+        a["prompt"],
+        a.get("parent_id", ""),
+        a.get("message_id", ""),
+    ),
+    "continue_expert": lambda a: (a["name"], a["message"]),
+    "query_session_fork": lambda a: (
+        a["session_id"],
+        a["question"],
+        a.get("parent_id", ""),
+        a.get("message_id", ""),
+    ),
+}
+
+
 def _extract_args(name: str, args: dict[str, Any]) -> tuple[Any, ...]:
-    if name == "redeploy":
-        return ()
-    if name in ("enable_agent", "disable_agent"):
-        return (args["name"],)
-    if name == "delete_agent":
-        return (args["name"], bool(args.get("purge_memory", False)))
-    if name == "refresh_agent":
-        return (args["name"], bool(args.get("skip_analysis", False)))
-    if name == "create_git_expert":
-        return (args["url"], args.get("ref", ""))
-    if name == "create_team":
-        return (args["name"], args["description"], args["experts"])
-    if name in ("add_expert_to_team", "remove_expert_from_team"):
-        return (args["team"], args["expert"])
-    if name == "get_knowledge":
-        return (args["expert"], args.get("doc", "summary"))
-    if name == "search_knowledge":
-        return (args["query"],)
-    if name == "list_sessions":
-        return (bool(args.get("roots", False)), int(args.get("limit", 20)))
-    if name == "send_to_session":
-        return (args["session_id"], args["message"])
-    if name == "send_to_main":
-        return (args["message"],)
-    if name == "fork_session":
-        return (
-            args["session_id"],
-            args["prompt"],
-            args.get("parent_id", ""),
-            args.get("message_id", ""),
-        )
-    if name == "continue_expert":
-        return (args["name"], args["message"])
-    return ()
+    extractor = _ARG_EXTRACTORS.get(name)
+    return extractor(args) if extractor else ()
 
 
 def register_tools(server: Server) -> None:

@@ -1,0 +1,61 @@
+From 62fe2869de0be8c3d663df74608a85e882b11f88 Mon Sep 17 00:00:00 2001
+From: Lucas Santos <lsantos7654@gmail.com>
+Date: Mon, 27 Apr 2026 23:32:48 -0400
+Subject: [PATCH 13/14] Fix _decr leak: listen on c.req.raw.signal, not
+ stream.onAbort
+
+Patch 0009's stop() handler runs _decr to drop the per-session
+subscriber count when an SSE client disconnects. It was wired only to
+hono-streaming's stream.onAbort and the for-await loop's finally
+block. Empirically, neither fires when the client closes its socket
+mid-write: stream.writeSSE blocks in the kernel send buffer for the
+half-closed connection, the for-await never advances, and
+stream.onAbort doesn't propagate Bun's underlying abort.
+
+Result: live-sessions entries leaked indefinitely. A curl probe with
+--max-time 1 that exits cleanly still left its sessionID in the
+counter map.
+
+Mechanism:
+  - Capture c.req.raw.signal (the request's underlying AbortSignal)
+    before entering streamSSE.
+  - addEventListener("abort", stop, { once: true }) on it inside the
+    callback. Bun toggles this signal as soon as the socket closes,
+    independent of write-buffer state.
+  - Keep stream.onAbort and the finally-block stop() as redundant
+    safety nets for the cases they do fire.
+
+After this fix the per-session counter actually goes back to zero
+when clients disconnect, so /global/live-sessions reflects current
+attachment instead of cumulative history.
+---
+ packages/opencode/src/server/routes/event.ts | 7 +++++++
+ 1 file changed, 7 insertions(+)
+
+diff --git a/packages/opencode/src/server/routes/event.ts b/packages/opencode/src/server/routes/event.ts
+index b9ba0a3..1b1488d 100644
+--- a/packages/opencode/src/server/routes/event.ts
++++ b/packages/opencode/src/server/routes/event.ts
+@@ -74,6 +74,7 @@ export const EventRoutes = () =>
+     }),
+     async (c) => {
+       const sessionID = c.req.query("sessionID")
++      const signal = c.req.raw.signal
+       log.info("event connected", { sessionID })
+       c.header("Cache-Control", "no-cache, no-transform")
+       c.header("X-Accel-Buffering", "no")
+@@ -118,6 +119,12 @@ export const EventRoutes = () =>
+           }
+         })
+
++        // Hivemind: hono-streaming's `stream.onAbort` doesn't fire reliably
++        // when `stream.writeSSE` is blocked in the kernel send buffer
++        // (the for-await loop never advances, so the `finally` block
++        // doesn't run either). Listen directly to the request's underlying
++        // AbortSignal — Bun flips it as soon as the socket closes.
++        signal?.addEventListener("abort", stop, { once: true })
+         stream.onAbort(stop)
+
+         try {
+--
+2.50.1

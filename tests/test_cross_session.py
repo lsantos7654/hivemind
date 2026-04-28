@@ -200,7 +200,16 @@ def test_fork_session_chains_fork_then_inbox(fake_http):
 
 
 def test_extract_args_for_new_tools():
-    assert mcp_tools._extract_args("list_sessions", {"roots": True, "limit": 7}) == (True, 7)
+    assert mcp_tools._extract_args("list_sessions", {"roots": True, "limit": 7}) == (
+        True,
+        False,
+        True,
+        7,
+    )
+    assert mcp_tools._extract_args(
+        "list_sessions",
+        {"live_only": False, "tree": True, "limit": 100},
+    ) == (False, True, False, 100)
     assert mcp_tools._extract_args("send_to_session", {"session_id": "s", "message": "m"}) == ("s", "m")
     assert mcp_tools._extract_args("send_to_main", {"message": "m"}) == ("m",)
     assert mcp_tools._extract_args(
@@ -208,3 +217,128 @@ def test_extract_args_for_new_tools():
         {"session_id": "src", "prompt": "go", "parent_id": "p"},
     ) == ("src", "go", "p", "")
     assert mcp_tools._extract_args("continue_expert", {"name": "x", "message": "y"}) == ("x", "y")
+    assert mcp_tools._extract_args(
+        "query_session_fork",
+        {"session_id": "src", "question": "q", "parent_id": "p"},
+    ) == ("src", "q", "p", "")
+
+
+# ---------------------------------------------------------------------------
+# Liveness + tree
+# ---------------------------------------------------------------------------
+
+
+def test_live_session_ids_returns_set(fake_http):
+    fake_http.script("/global/live-sessions", {"sessions": ["ses_a", "ses_b"]})
+    result = opencode.live_session_ids()
+    assert result == {"ses_a", "ses_b"}
+
+
+def test_list_sessions_live_only_filters_out_unattached(fake_http):
+    fake_http.script(
+        "/global/live-sessions",
+        {"sessions": ["ses_live"]},
+    )
+    fake_http.script(
+        "/session",
+        [
+            {"id": "ses_live", "title": "active", "parentID": None, "time": {"updated": 200}},
+            {"id": "ses_dead", "title": "stale", "parentID": None, "time": {"updated": 100}},
+        ],
+    )
+    out = run(mcp_tools._handle_list_sessions(True, False, False, 50))
+    payload = out[0].text
+    assert "ses_live" in payload
+    assert "ses_dead" not in payload
+
+
+def test_list_sessions_includes_subagents_under_live_parent(fake_http):
+    fake_http.script("/global/live-sessions", {"sessions": ["ses_root"]})
+    fake_http.script(
+        "/session",
+        [
+            {"id": "ses_root", "title": "root", "parentID": None, "time": {"updated": 100}},
+            {"id": "ses_child", "title": "@expert-x subagent", "parentID": "ses_root", "time": {"updated": 110}},
+            {"id": "ses_grandchild", "title": "deeper", "parentID": "ses_child", "time": {"updated": 120}},
+            {"id": "ses_orphan", "title": "stale orphan", "parentID": None, "time": {"updated": 50}},
+        ],
+    )
+    out = run(mcp_tools._handle_list_sessions(True, False, False, 50))
+    payload = out[0].text
+    assert "ses_root" in payload
+    assert "ses_child" in payload
+    assert "ses_grandchild" in payload
+    assert "ses_orphan" not in payload
+
+
+def test_list_sessions_tree_nests_children(fake_http):
+    fake_http.script("/global/live-sessions", {"sessions": ["ses_root"]})
+    fake_http.script(
+        "/session",
+        [
+            {"id": "ses_root", "title": "root", "parentID": None, "time": {"updated": 100}},
+            {"id": "ses_child", "title": "child", "parentID": "ses_root", "time": {"updated": 110}},
+        ],
+    )
+    out = run(mcp_tools._handle_list_sessions(True, True, False, 50))
+    import json as _json
+
+    parsed = _json.loads(out[0].text)
+    assert isinstance(parsed, list)
+    assert len(parsed) == 1
+    assert parsed[0]["id"] == "ses_root"
+    assert len(parsed[0]["children"]) == 1
+    assert parsed[0]["children"][0]["id"] == "ses_child"
+
+
+def test_list_sessions_live_only_false_skips_filter(fake_http):
+    fake_http.script(
+        "/session",
+        [
+            {"id": "ses_a", "title": "a", "parentID": None, "time": {"updated": 1}},
+            {"id": "ses_b", "title": "b", "parentID": None, "time": {"updated": 2}},
+        ],
+    )
+    out = run(mcp_tools._handle_list_sessions(False, False, False, 50))
+    assert "ses_a" in out[0].text
+    assert "ses_b" in out[0].text
+    # No /global/live-sessions call should be made when live_only=False.
+    assert all("/global/live-sessions" not in url for url, _ in fake_http.gets)
+
+
+# ---------------------------------------------------------------------------
+# query_session_fork
+# ---------------------------------------------------------------------------
+
+
+def test_query_session_fork_forks_then_queries(fake_http):
+    fake_http.script("/fork", {"id": "ses_fork", "parentID": None, "title": "(fork #1)"})
+    fake_http.script(
+        "/message",
+        {
+            "info": {"id": "msg_1", "role": "assistant"},
+            "parts": [
+                {"type": "tool", "name": "Read"},
+                {"type": "text", "text": "the answer is 42"},
+            ],
+        },
+    )
+    out = run(mcp_tools._handle_query_session_fork("ses_src", "what's the answer?", "", ""))
+    import json as _json
+
+    parsed = _json.loads(out[0].text)
+    assert parsed["new_session_id"] == "ses_fork"
+    assert parsed["forked_from"] == "ses_src"
+    assert parsed["reply"] == "the answer is 42"
+    fork_call = next(p for p in fake_http.posts if "/fork" in p[0])
+    assert fork_call[1] == {}
+    msg_call = next(p for p in fake_http.posts if "/session/ses_fork/message" in p[0])
+    assert msg_call[1] == {"parts": [{"type": "text", "text": "what's the answer?"}]}
+
+
+def test_query_session_fork_propagates_parent_id(fake_http):
+    fake_http.script("/fork", {"id": "ses_fork", "parentID": "ses_main"})
+    fake_http.script("/message", {"parts": [{"type": "text", "text": "ok"}]})
+    run(mcp_tools._handle_query_session_fork("ses_src", "q", "ses_main", ""))
+    fork_call = next(p for p in fake_http.posts if "/fork" in p[0])
+    assert fork_call[1] == {"parentID": "ses_main"}
