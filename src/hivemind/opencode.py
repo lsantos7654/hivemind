@@ -495,10 +495,9 @@ def notify_instance_reload() -> bool:
 # Session HTTP API
 #
 # Thin wrappers around the running engine's REST endpoints, used by the
-# cross-session MCP tools (list_sessions, send_to_session, send_to_main,
-# fork_session, continue_expert). All require a running engine; raise
-# RuntimeError when detached so callers can surface a clear error to the
-# model instead of silently returning empty.
+# cross-session MCP tools (list_sessions, send_message). All require a
+# running engine; raise RuntimeError when detached so callers can surface
+# a clear error to the model instead of silently returning empty.
 # ---------------------------------------------------------------------------
 
 SESSION_HTTP_TIMEOUT = 10.0
@@ -530,17 +529,6 @@ def session_list(roots: bool | None = None, limit: int | None = None) -> list[di
     return data
 
 
-def session_get(session_id: str) -> dict[str, Any]:
-    """GET /session/:id — return session info including parentID."""
-    resp = httpx.get(
-        f"{_server_url()}/session/{session_id}",
-        timeout=SESSION_HTTP_TIMEOUT,
-    )
-    resp.raise_for_status()
-    data: dict[str, Any] = resp.json()
-    return data
-
-
 def session_inbox(session_id: str, text: str) -> dict[str, Any]:
     """POST /session/:id/inbox — queue-on-busy message delivery.
 
@@ -560,50 +548,6 @@ def session_inbox(session_id: str, text: str) -> dict[str, Any]:
     return data
 
 
-def session_fork(
-    session_id: str,
-    *,
-    message_id: str | None = None,
-    parent_id: str | None = None,
-) -> dict[str, Any]:
-    """POST /session/:id/fork — deep-copy messages into a new session.
-
-    With ``parent_id`` (provided by
-    ``//third_party/patches/0008-...fork-parent...patch``), the new
-    session attaches as a subagent of that ID instead of the upstream
-    sibling default (``parent_id = null``).
-    """
-    body: dict[str, Any] = {}
-    if message_id is not None:
-        body["messageID"] = message_id
-    if parent_id is not None:
-        body["parentID"] = parent_id
-    resp = httpx.post(
-        f"{_server_url()}/session/{session_id}/fork",
-        json=body,
-        timeout=SESSION_HTTP_TIMEOUT,
-    )
-    resp.raise_for_status()
-    data: dict[str, Any] = resp.json()
-    return data
-
-
-def session_root(session_id: str) -> dict[str, Any]:
-    """Walk parentID upward from ``session_id`` until null and return the root."""
-    seen: set[str] = set()
-    current = session_get(session_id)
-    while True:
-        sid = current["id"]
-        if sid in seen:
-            msg = f"parent_id cycle detected at {sid}"
-            raise RuntimeError(msg)
-        seen.add(sid)
-        parent = current.get("parentID")
-        if not parent:
-            return current
-        current = session_get(parent)
-
-
 def live_session_ids() -> set[str]:
     """GET /global/live-sessions — sessions a TUI is currently attached to.
 
@@ -621,25 +565,6 @@ def live_session_ids() -> set[str]:
     data = resp.json()
     sessions: list[str] = data.get("sessions", [])
     return set(sessions)
-
-
-def session_query_message(session_id: str, text: str) -> dict[str, Any]:
-    """POST /session/:id/message — synchronous chat that returns the assistant reply.
-
-    Used by the ``query_session_fork`` MCP tool: after forking an
-    existing session, send the question against the fork and wait for
-    the assistant to finish. Timeout is generous (5 minutes) because a
-    full agent turn can be slow.
-    """
-    body = {"parts": [{"type": "text", "text": text}]}
-    resp = httpx.post(
-        f"{_server_url()}/session/{session_id}/message",
-        json=body,
-        timeout=300.0,
-    )
-    resp.raise_for_status()
-    data: dict[str, Any] = resp.json()
-    return data
 
 
 # ---------------------------------------------------------------------------

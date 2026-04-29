@@ -11,6 +11,3 @@ Ordered top-to-bottom by what's most actionable. Drop or refile items that no lo
 - [ ] **Background agents via opencode `/plugins`** — depends on the plugin API surface.
 - [ ] **Jinja templates with editable AI-generated sections** — let templates evolve without re-analysing every expert.
 - [ ] **opencode file watcher on `agents/**/*.md`** — patch to enable `OPENCODE_EXPERIMENTAL_FILEWATCHER` scoped to agents/. Largely obviated by `/global/reload-agents`, but removes the HTTP poke.
-- [ ] **Serve experts as dynamic MCP tools** (`tools/list_changed`) — cleaner end state but a large refactor; agent bodies must be expressible as tool schemas.
-- [ ] **External docs as Bazel targets** — aspirational; needs a rethink of the per-machine cache layout.
-- [ ] **Split `opencode.py`** into formatter / deployer / notifier when it grows further.

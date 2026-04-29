@@ -2,7 +2,7 @@
 
 These sit on top of :mod:`hivemind.agents.registry` and
 :mod:`hivemind.opencode` and provide the uniform enable / disable / delete /
-refresh / bootstrap surface that CLI, TUI, and MCP call into. Each mutation
+update / bootstrap surface that CLI, TUI, and MCP call into. Each mutation
 tail is:
 
 1. Mutate the registry (flip enabled state, or remove)
@@ -56,7 +56,7 @@ __all__ = [
     "disable_agent",
     "enable_agent",
     "redeploy_all_agents",
-    "refresh_agent",
+    "update_agent",
 ]
 
 
@@ -131,16 +131,16 @@ def delete_agent(name: str, *, purge_memory: bool = False) -> OperationResult:
 
 
 # ---------------------------------------------------------------------------
-# refresh (dispatches to body-specific refresh functions)
+# update (dispatches to body-specific update functions)
 # ---------------------------------------------------------------------------
 
 
-async def refresh_agent(
+async def update_agent(
     name: str,
     *,
     on_progress: ProgressCallback | None = None,
 ) -> OperationResult:
-    """Refresh the agent's body (clone+analyze for git; no-op for others)."""
+    """Update the agent's body (clone+analyze for git; no-op for others)."""
     agent = registry.get(name)
     if agent is None:
         return OperationResult(success=False, error=f"Agent '{name}' not found")
@@ -150,17 +150,17 @@ async def refresh_agent(
 
         result = await update_git_expert(name, on_progress=on_progress)
         if not result.success:
-            return OperationResult(success=False, error=result.error or "refresh failed")
+            return OperationResult(success=False, error=result.error or "update failed")
         # Redeploy if enabled so the new body is picked up
         if agent.enabled:
             agent.deploy(agents_dir=AGENTS_DIR)
             regenerate_librarian()
         return OperationResult(success=True)
 
-    # roster_templated and future kinds don't have a refresh operation yet.
+    # roster_templated and future kinds don't have an update operation yet.
     return OperationResult(
         success=False,
-        error=f"refresh is not supported for agent kind '{agent.kind}'",
+        error=f"update is not supported for agent kind '{agent.kind}'",
     )
 
 

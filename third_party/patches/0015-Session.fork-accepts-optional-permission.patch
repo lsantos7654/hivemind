@@ -1,0 +1,71 @@
+From 6c34b7a954a59e90852eb909383e8732a4cc0b3b Mon Sep 17 00:00:00 2001
+From: Lucas Santos <lsantos7654@gmail.com>
+Date: Tue, 28 Apr 2026 21:04:39 -0400
+Subject: [PATCH 15/16] Session.fork accepts optional permission
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Mirrors patch 0008's parentID extension. Without this, forks always
+start with no permission overlay regardless of what the source session
+had — surprising for callers that expect "fork = inherit context"
+to also mean "inherit permission rules".
+
+Used by patch 0016 (Task tool source_session_id), which forks from a
+source session and wants to lay Task's standard child-hardening
+overlay (deny todowrite, deny task, primary_tools allow) on top of
+whatever rules the source already had.
+
+Mechanism:
+  - Adds optional `permission?: Permission.Ruleset` to Session.fork
+    inner Effect.fn input, the Interface declaration, and the public
+    fn() schema.
+  - Plumbed through to the existing createNext call. Source-side rules
+    are NOT auto-copied — fork() only sets permission when the caller
+    explicitly passes it.
+---
+ packages/opencode/src/session/index.ts | 8 ++++++++
+ 1 file changed, 8 insertions(+)
+
+diff --git a/packages/opencode/src/session/index.ts b/packages/opencode/src/session/index.ts
+index e7f26d7..10f4ef4 100644
+--- a/packages/opencode/src/session/index.ts
++++ b/packages/opencode/src/session/index.ts
+@@ -320,6 +320,7 @@ export namespace Session {
+       sessionID: SessionID
+       messageID?: MessageID
+       parentID?: SessionID
++      permission?: Permission.Ruleset
+     }) => Effect.Effect<Info>
+     readonly touch: (sessionID: SessionID) => Effect.Effect<void>
+     readonly get: (id: SessionID) => Effect.Effect<Info>
+@@ -535,6 +536,7 @@ export namespace Session {
+         sessionID: SessionID
+         messageID?: MessageID
+         parentID?: SessionID
++        permission?: Permission.Ruleset
+       }) {
+         const directory = yield* InstanceState.directory
+         const original = yield* get(input.sessionID)
+@@ -548,6 +550,11 @@ export namespace Session {
+           // default (parent_id = null). Used by the cross-session MCP tools
+           // so a fork shows up under main's subagent tree.
+           parentID: input.parentID,
++          // Hivemind: callers (e.g. the Task tool's source_session_id path)
++          // can pre-set the new session's permission ruleset. Without this,
++          // forks always start with no permission overlay regardless of
++          // what the source had.
++          permission: input.permission,
+         })
+         const msgs = yield* messages({ sessionID: input.sessionID })
+         const idMap = new Map<string, MessageID>()
+@@ -717,6 +724,7 @@ export namespace Session {
+       sessionID: SessionID.zod,
+       messageID: MessageID.zod.optional(),
+       parentID: SessionID.zod.optional(),
++      permission: Permission.Ruleset.optional(),
+     }),
+     (input) => runPromise((svc) => svc.fork(input)),
+   )
+--
+2.50.1

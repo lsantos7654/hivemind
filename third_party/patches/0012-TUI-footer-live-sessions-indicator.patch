@@ -1,7 +1,7 @@
 From 0b9ec013fe730e632915339c68aaea5e77c0d99d Mon Sep 17 00:00:00 2001
 From: Lucas Santos <lsantos7654@gmail.com>
 Date: Mon, 27 Apr 2026 23:02:58 -0400
-Subject: [PATCH 12/14] TUI footer live sessions indicator
+Subject: [PATCH 12/16] TUI footer live sessions indicator
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit

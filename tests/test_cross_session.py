@@ -104,22 +104,6 @@ def test_session_inbox_posts_text_part(fake_http):
     assert result["queued"] is True
 
 
-def test_session_fork_forwards_parent_id(fake_http):
-    fake_http.next_response = {"id": "ses_new", "parentID": "ses_main", "title": "(fork #1)"}
-    result = opencode.session_fork("ses_a", parent_id="ses_main", message_id="msg_x")
-    _, body = fake_http.posts[0]
-    assert body == {"messageID": "msg_x", "parentID": "ses_main"}
-    assert result["id"] == "ses_new"
-
-
-def test_session_root_walks_parent_chain(fake_http):
-    fake_http.script("/session/ses_a", {"id": "ses_a", "parentID": None})
-    fake_http.script("/session/ses_b", {"id": "ses_b", "parentID": "ses_a"})
-    fake_http.script("/session/ses_c", {"id": "ses_c", "parentID": "ses_b"})
-    root = opencode.session_root("ses_c")
-    assert root["id"] == "ses_a"
-
-
 def test_helpers_raise_when_detached(monkeypatch):
     from hivemind import runtime
 
@@ -132,113 +116,40 @@ def test_helpers_raise_when_detached(monkeypatch):
         opencode.session_list()
 
 
-# ---------------------------------------------------------------------------
-# MCP handlers
-# ---------------------------------------------------------------------------
-
-
-def test_send_to_main_picks_most_recent_root(fake_http):
-    fake_http.script(
-        "/session?",
-        [
-            {"id": "ses_root", "title": "main", "parentID": None, "time": {"updated": 1700}},
-        ],
-    )
-    fake_http.script("/session", [{"id": "ses_root", "title": "main", "parentID": None, "time": {"updated": 1700}}])
-    fake_http.script("/inbox", {"sessionID": "ses_root", "queued": False, "depth": 0})
-    out = run(mcp_tools._handle_send_to_main("ping"))
-    assert "delivered" in out[0].text
-    assert "ses_root" in out[0].text
-    inbox_url = next(p[0] for p in fake_http.posts if "/inbox" in p[0])
-    assert inbox_url.endswith("/session/ses_root/inbox")
-
-
-def test_send_to_main_errors_when_no_root(fake_http):
-    fake_http.script("/session", [])
-    out = run(mcp_tools._handle_send_to_main("ping"))
-    assert "no root session" in out[0].text
-
-
-def test_continue_expert_matches_subagent_title(fake_http):
-    fake_http.script(
-        "/session",
-        [
-            {"id": "ses_x", "title": "earlier (@expert-foo subagent)", "time": {"updated": 100}},
-            {"id": "ses_y", "title": "unrelated", "time": {"updated": 200}},
-            {"id": "ses_z", "title": "follow-up (@expert-foo subagent)", "time": {"updated": 300}},
-        ],
-    )
-    fake_http.script("/inbox", {"sessionID": "ses_z", "queued": True, "depth": 1})
-    out = run(mcp_tools._handle_continue_expert("expert-foo", "another question"))
-    # session_list returns most-recent first by default; opencode handles ordering
-    # — our handler picks the first match, so any matching ID is acceptable here.
-    assert "expert-foo" in out[0].text
-    assert "queued" in out[0].text
-
-
-def test_continue_expert_errors_when_no_session(fake_http):
-    fake_http.script("/session", [{"id": "ses_q", "title": "main", "time": {"updated": 1}}])
-    out = run(mcp_tools._handle_continue_expert("expert-bar", "hello"))
-    assert "no live session" in out[0].text
-    assert "Task(subagent_type='expert-bar'" in out[0].text
-
-
-def test_fork_session_chains_fork_then_inbox(fake_http):
-    fake_http.script("/fork", {"id": "ses_fork", "parentID": "ses_main", "title": "(fork #1)"})
-    fake_http.script("/inbox", {"sessionID": "ses_fork", "queued": False, "depth": 0})
-    out = run(mcp_tools._handle_fork_session("ses_src", "go", "ses_main", ""))
-    assert "ses_fork" in out[0].text
-    fork_call = next(p for p in fake_http.posts if "/fork" in p[0])
-    assert fork_call[1] == {"parentID": "ses_main"}
-    inbox_call = next(p for p in fake_http.posts if "/inbox" in p[0])
-    assert inbox_call[0].endswith("/session/ses_fork/inbox")
-
-
-# ---------------------------------------------------------------------------
-# Argument extraction
-# ---------------------------------------------------------------------------
-
-
-def test_extract_args_for_new_tools():
-    assert mcp_tools._extract_args("list_sessions", {"roots": True, "limit": 7}) == (
-        True,
-        False,
-        True,
-        7,
-    )
-    assert mcp_tools._extract_args(
-        "list_sessions",
-        {"live_only": False, "tree": True, "limit": 100},
-    ) == (False, True, False, 100)
-    assert mcp_tools._extract_args("send_to_session", {"session_id": "s", "message": "m"}) == ("s", "m")
-    assert mcp_tools._extract_args("send_to_main", {"message": "m"}) == ("m",)
-    assert mcp_tools._extract_args(
-        "fork_session",
-        {"session_id": "src", "prompt": "go", "parent_id": "p"},
-    ) == ("src", "go", "p", "")
-    assert mcp_tools._extract_args("continue_expert", {"name": "x", "message": "y"}) == ("x", "y")
-    assert mcp_tools._extract_args(
-        "query_session_fork",
-        {"session_id": "src", "question": "q", "parent_id": "p"},
-    ) == ("src", "q", "p", "")
-
-
-# ---------------------------------------------------------------------------
-# Liveness + tree
-# ---------------------------------------------------------------------------
-
-
 def test_live_session_ids_returns_set(fake_http):
     fake_http.script("/global/live-sessions", {"sessions": ["ses_a", "ses_b"]})
     result = opencode.live_session_ids()
     assert result == {"ses_a", "ses_b"}
 
 
+# ---------------------------------------------------------------------------
+# send_message
+# ---------------------------------------------------------------------------
+
+
+def test_send_message_delivers_to_inbox(fake_http):
+    fake_http.next_response = {"sessionID": "ses_a", "queued": False, "depth": 0}
+    out = run(mcp_tools._handle_send_message("ses_a", "hello"))
+    url, body = fake_http.posts[0]
+    assert url.endswith("/session/ses_a/inbox")
+    assert body == {"parts": [{"type": "text", "text": "hello"}]}
+    assert "delivered" in out[0].text
+
+
+def test_send_message_reports_queued_when_busy(fake_http):
+    fake_http.next_response = {"sessionID": "ses_a", "queued": True, "depth": 3}
+    out = run(mcp_tools._handle_send_message("ses_a", "hello"))
+    assert "queued" in out[0].text
+    assert "depth: 3" in out[0].text
+
+
+# ---------------------------------------------------------------------------
+# list_sessions
+# ---------------------------------------------------------------------------
+
+
 def test_list_sessions_live_only_filters_out_unattached(fake_http):
-    fake_http.script(
-        "/global/live-sessions",
-        {"sessions": ["ses_live"]},
-    )
+    fake_http.script("/global/live-sessions", {"sessions": ["ses_live"]})
     fake_http.script(
         "/session",
         [
@@ -307,38 +218,43 @@ def test_list_sessions_live_only_false_skips_filter(fake_http):
 
 
 # ---------------------------------------------------------------------------
-# query_session_fork
+# Argument extraction
 # ---------------------------------------------------------------------------
 
 
-def test_query_session_fork_forks_then_queries(fake_http):
-    fake_http.script("/fork", {"id": "ses_fork", "parentID": None, "title": "(fork #1)"})
-    fake_http.script(
-        "/message",
-        {
-            "info": {"id": "msg_1", "role": "assistant"},
-            "parts": [
-                {"type": "tool", "name": "Read"},
-                {"type": "text", "text": "the answer is 42"},
-            ],
-        },
+def test_extract_args_for_cross_session_tools():
+    assert mcp_tools._extract_args("list_sessions", {"roots": True, "limit": 7}) == (
+        True,
+        False,
+        True,
+        7,
     )
-    out = run(mcp_tools._handle_query_session_fork("ses_src", "what's the answer?", "", ""))
-    import json as _json
-
-    parsed = _json.loads(out[0].text)
-    assert parsed["new_session_id"] == "ses_fork"
-    assert parsed["forked_from"] == "ses_src"
-    assert parsed["reply"] == "the answer is 42"
-    fork_call = next(p for p in fake_http.posts if "/fork" in p[0])
-    assert fork_call[1] == {}
-    msg_call = next(p for p in fake_http.posts if "/session/ses_fork/message" in p[0])
-    assert msg_call[1] == {"parts": [{"type": "text", "text": "what's the answer?"}]}
+    assert mcp_tools._extract_args(
+        "list_sessions",
+        {"live_only": False, "tree": True, "limit": 100},
+    ) == (False, True, False, 100)
+    assert mcp_tools._extract_args("send_message", {"session_id": "s", "message": "m"}) == ("s", "m")
 
 
-def test_query_session_fork_propagates_parent_id(fake_http):
-    fake_http.script("/fork", {"id": "ses_fork", "parentID": "ses_main"})
-    fake_http.script("/message", {"parts": [{"type": "text", "text": "ok"}]})
-    run(mcp_tools._handle_query_session_fork("ses_src", "q", "ses_main", ""))
-    fork_call = next(p for p in fake_http.posts if "/fork" in p[0])
-    assert fork_call[1] == {"parentID": "ses_main"}
+def test_extract_args_for_renamed_update_agent():
+    assert mcp_tools._extract_args("update_agent", {"name": "expert-foo"}) == ("expert-foo", False)
+    assert mcp_tools._extract_args(
+        "update_agent",
+        {"name": "expert-foo", "skip_analysis": True},
+    ) == ("expert-foo", True)
+
+
+def test_dispatcher_does_not_expose_dropped_tools():
+    # Sanity: the deprecated tools must not be registered.
+    for dropped in (
+        "send_to_session",
+        "send_to_main",
+        "fork_session",
+        "query_session_fork",
+        "continue_expert",
+        "get_knowledge",
+        "search_knowledge",
+        "refresh_agent",
+    ):
+        assert dropped not in mcp_tools.TOOL_HANDLERS, f"{dropped} should be removed"
+        assert dropped not in mcp_tools._ARG_EXTRACTORS, f"{dropped} should be removed"

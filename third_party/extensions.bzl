@@ -123,6 +123,8 @@ _OPENCODE_CODE_PATCHES = [
     "0011-LiveSessionsChanged-bus-event.patch",
     "0012-TUI-footer-live-sessions-indicator.patch",
     "0013-Fix-_decr-leak-listen-on-c.req.raw.signal-not-stream.patch",
+    "0015-Session.fork-accepts-optional-permission.patch",
+    "0016-Task-tool-accepts-source_session_id.patch",
 ]
 external_engines = module_extension(
     implementation = _ext_impl,

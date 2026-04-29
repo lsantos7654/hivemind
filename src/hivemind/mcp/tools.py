@@ -1,23 +1,26 @@
 """MCP tool definitions and handlers for hivemind.
 
-The MCP surface is intentionally **mutation + research only**. Listing,
-inspecting, and status-dashboard tools were dropped because opencode
-already discovers agents natively from ``agents/*.md`` and surfaces them
-in its UI; duplicating that surface required a process-local catalog
-cache that grew stale whenever another process (CLI, TUI, a different
-opencode session) wrote to ``hivemind.json`` / ``config.json``. With
-read-only catalog tools removed, callers either use opencode's native
-discovery or read the JSON files directly.
+The MCP surface is intentionally minimal. Listing/inspecting/status
+tools were dropped because opencode discovers agents natively from
+``agents/*.md`` and surfaces them in its UI; knowledge access was
+dropped because experts can read or grep their own knowledge tree
+directly via the standard file tools (``~/.config/opencode/experts/<name>/HEAD/*.md``
+and ``~/.cache/hivemind/repos/<name>/`` are both
+``external_directory: allow``).
 
 Tools that remain:
 
 * **Lifecycle mutations** — ``enable_agent``, ``disable_agent``,
-  ``delete_agent``, ``refresh_agent``, ``redeploy``.
+  ``delete_agent``, ``update_agent``, ``redeploy``.
 * **Kind-specific creators** — ``create_git_expert``, ``create_team``.
 * **Roster mutations** — ``add_expert_to_team``, ``remove_expert_from_team``.
-* **Knowledge research** — ``get_knowledge``, ``search_knowledge``
-  (independent of opencode's agent surface; reads ``experts/<name>/HEAD/``
-  knowledge docs).
+* **Cross-session** — ``list_sessions``, ``send_message``.
+
+Cross-session forking-with-context goes through opencode's native
+``Task(source_session_id=..., subagent_type=..., description=..., prompt=...)``
+primitive (patches 0015/0016), not an MCP tool — that way the
+orchestrator gets the standard ctrl-x-down drill-down. ``Task(task_id=...)``
+resumes a prior subagent. The two are mutually exclusive.
 
 Domain mutations fire the shared :mod:`hivemind.hooks` event themselves;
 this module just registers two MCP-specific listeners at server startup
@@ -96,15 +99,15 @@ TOOLS: list[Tool] = [
         },
     ),
     Tool(
-        name="refresh_agent",
+        name="update_agent",
         description=(
-            "Refresh an agent's body. For git_analyzed agents this fetches + re-analyzes; "
-            "other kinds may not support refresh."
+            "Update an agent's body. For git_analyzed agents this fetches latest commits "
+            "and re-runs AI analysis. Other kinds may not support update."
         ),
         inputSchema={
             "type": "object",
             "properties": {
-                "name": {"type": "string", "description": "Agent name to refresh"},
+                "name": {"type": "string", "description": "Agent name to update"},
                 "skip_analysis": {
                     "type": "boolean",
                     "description": "For git_analyzed: pull latest commits without re-running AI analysis.",
@@ -175,35 +178,6 @@ TOOLS: list[Tool] = [
             "required": ["team", "expert"],
         },
     ),
-    # --- Knowledge access ---
-    Tool(
-        name="get_knowledge",
-        description=(
-            "Read an expert's knowledge document content. "
-            "Available docs: summary, code_structure, build_system, apis_and_interfaces, agent."
-        ),
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "expert": {"type": "string", "description": "Expert name"},
-                "doc": {
-                    "type": "string",
-                    "description": "Document name (default: summary)",
-                    "enum": ["summary", "code_structure", "build_system", "apis_and_interfaces", "agent"],
-                },
-            },
-            "required": ["expert"],
-        },
-    ),
-    Tool(
-        name="search_knowledge",
-        description="Search across all enabled experts' knowledge documents for a query string.",
-        inputSchema={
-            "type": "object",
-            "properties": {"query": {"type": "string", "description": "Search query"}},
-            "required": ["query"],
-        },
-    ),
     # --- Cross-session messaging ---
     Tool(
         name="list_sessions",
@@ -245,11 +219,12 @@ TOOLS: list[Tool] = [
         },
     ),
     Tool(
-        name="send_to_session",
+        name="send_message",
         description=(
             "Append a message to another session's inbox. Delivered immediately if that "
             "session is idle, queued and delivered on next idle if it's busy. Never throws "
-            "BusyError — useful for pinging a session that's mid-turn."
+            "BusyError — safe to ping a session that's mid-turn. Use list_sessions first "
+            "to find the target session ID."
         ),
         inputSchema={
             "type": "object",
@@ -258,90 +233,6 @@ TOOLS: list[Tool] = [
                 "message": {"type": "string", "description": "Message text to append"},
             },
             "required": ["session_id", "message"],
-        },
-    ),
-    Tool(
-        name="send_to_main",
-        description=(
-            "Append a message to the user-facing root session (the most recently updated "
-            "session with no parent). Use from inside a subagent to surface a finding to "
-            "the user without waiting for the Task call to finish."
-        ),
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "message": {"type": "string", "description": "Message text to append"},
-            },
-            "required": ["message"],
-        },
-    ),
-    Tool(
-        name="fork_session",
-        description=(
-            "Fork an existing session (deep-copies its message history) and immediately "
-            "send a follow-up prompt to the fork. Returns the new session's ID. "
-            "Pass parent_id to make the fork a subagent of a chosen session (default: "
-            "upstream sibling — parent_id=null)."
-        ),
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "session_id": {"type": "string", "description": "Source session to fork"},
-                "prompt": {"type": "string", "description": "Initial prompt for the fork"},
-                "parent_id": {
-                    "type": "string",
-                    "description": "Attach the fork as a subagent of this session (optional).",
-                },
-                "message_id": {
-                    "type": "string",
-                    "description": "Truncate the fork's history at this message ID (optional).",
-                },
-            },
-            "required": ["session_id", "prompt"],
-        },
-    ),
-    Tool(
-        name="continue_expert",
-        description=(
-            "Resume a conversation with an existing expert subagent by name. Looks up the "
-            "most recently updated session whose title matches '@<name> subagent' and "
-            "delivers the message via that session's inbox. Returns an error if no "
-            "matching session exists — call Task(<name>, ...) first to spawn one."
-        ),
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "name": {"type": "string", "description": "Expert agent name (e.g. expert-opencode)"},
-                "message": {"type": "string", "description": "Follow-up message"},
-            },
-            "required": ["name", "message"],
-        },
-    ),
-    Tool(
-        name="query_session_fork",
-        description=(
-            "Borrow another session's context to answer a question without disturbing it. "
-            "Forks the source session (deep-copies its message history into a new session), "
-            "synchronously sends the question against the fork, and returns the assistant's "
-            "reply text. The source session is untouched — no new messages land in its "
-            "history. The fork stays in the DB for inspection. Useful when you need the "
-            "context another session has accumulated but don't want to interrupt it."
-        ),
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "session_id": {"type": "string", "description": "Source session to borrow from"},
-                "question": {"type": "string", "description": "Question to ask against the fork"},
-                "parent_id": {
-                    "type": "string",
-                    "description": "Attach the fork as a subagent of this session (optional).",
-                },
-                "message_id": {
-                    "type": "string",
-                    "description": "Truncate the fork's history at this message ID (optional).",
-                },
-            },
-            "required": ["session_id", "question"],
         },
     ),
     # --- System ---
@@ -386,7 +277,7 @@ async def _handle_delete_agent(name: str, purge_memory: bool) -> list[TextConten
     return _text(f"Agent '{name}' deleted{suffix}.")
 
 
-async def _handle_refresh_agent(name: str, skip_analysis: bool) -> list[TextContent]:
+async def _handle_update_agent(name: str, skip_analysis: bool) -> list[TextContent]:
     from hivemind.agents import registry
     from hivemind.agents.git_analyzed import update_git_expert
     from hivemind.config import AGENTS_DIR
@@ -408,7 +299,7 @@ async def _handle_refresh_agent(name: str, skip_analysis: bool) -> list[TextCont
         old_display = result.old_commit[:12] if result.old_commit else "none"
         return _text(f"Agent '{name}' updated from {old_display} to {result.new_commit[:12]}.")
 
-    return _text(f"Error: refresh not supported for agent kind '{agent.kind}'")
+    return _text(f"Error: update not supported for agent kind '{agent.kind}'")
 
 
 # ---------------------------------------------------------------------------
@@ -451,63 +342,6 @@ async def _handle_remove_expert_from_team(team: str, expert: str) -> list[TextCo
     if not result.success:
         return _text(f"Error: {result.error}")
     return _text(f"Removed '{expert}' from team '{team}'.")
-
-
-# ---------------------------------------------------------------------------
-# Handlers — knowledge
-# ---------------------------------------------------------------------------
-
-
-async def _handle_get_knowledge(expert: str, doc: str) -> list[TextContent]:
-    from hivemind.config import get_expert_dir
-
-    expert_dir = get_expert_dir(expert)
-    if not expert_dir.exists():
-        return _text(f"Error: expert '{expert}' not found")
-
-    doc_path = expert_dir / "HEAD" / f"{doc}.md"
-    if not doc_path.exists():
-        available = [f.stem for f in (expert_dir / "HEAD").glob("*.md") if f.exists()]
-        return _text(f"Error: document '{doc}' not found for expert '{expert}'. Available: {', '.join(available)}")
-
-    return _text(doc_path.read_text(encoding="utf-8"))
-
-
-async def _handle_search_knowledge(query: str) -> list[TextContent]:
-    from hivemind.agents import registry
-    from hivemind.config import get_expert_dir
-
-    query_lower = query.lower()
-    results: list[dict[str, str | int]] = []
-
-    for agent in registry.enabled():
-        if agent.kind != "git_analyzed":
-            continue
-        expert_dir = get_expert_dir(agent.name)
-        head_dir = expert_dir / "HEAD"
-        if not head_dir.exists():
-            continue
-
-        for md_file in head_dir.glob("*.md"):
-            try:
-                content = md_file.read_text(encoding="utf-8")
-            except OSError:
-                continue
-
-            for i, line in enumerate(content.splitlines(), 1):
-                if query_lower in line.lower():
-                    results.append(
-                        {
-                            "expert": agent.name,
-                            "file": md_file.name,
-                            "line": i,
-                            "text": line.strip()[:200],
-                        }
-                    )
-
-    if not results:
-        return _text(f"No matches found for '{query}' across enabled expert knowledge docs.")
-    return _json_text(results[:50])
 
 
 # ---------------------------------------------------------------------------
@@ -596,7 +430,7 @@ async def _handle_list_sessions(
     return _json_text(slim)
 
 
-async def _handle_send_to_session(session_id: str, message: str) -> list[TextContent]:
+async def _handle_send_message(session_id: str, message: str) -> list[TextContent]:
     from hivemind import opencode
 
     try:
@@ -605,107 +439,6 @@ async def _handle_send_to_session(session_id: str, message: str) -> list[TextCon
         return _text(f"Error: {exc}")
     state = "queued" if result.get("queued") else "delivered"
     return _text(f"Message {state} to {session_id} (queue depth: {result.get('depth', 0)}).")
-
-
-async def _handle_send_to_main(message: str) -> list[TextContent]:
-    from hivemind import opencode
-
-    try:
-        roots = opencode.session_list(roots=True, limit=1)
-    except RuntimeError as exc:
-        return _text(f"Error: {exc}")
-    if not roots:
-        return _text("Error: no root session is currently active in this engine.")
-    target = roots[0]["id"]
-    result = opencode.session_inbox(target, message)
-    state = "queued" if result.get("queued") else "delivered"
-    return _text(f"Message {state} to main session {target} (queue depth: {result.get('depth', 0)}).")
-
-
-async def _handle_fork_session(
-    session_id: str,
-    prompt: str,
-    parent_id: str,
-    message_id: str,
-) -> list[TextContent]:
-    from hivemind import opencode
-
-    try:
-        forked = opencode.session_fork(
-            session_id,
-            message_id=message_id or None,
-            parent_id=parent_id or None,
-        )
-    except RuntimeError as exc:
-        return _text(f"Error: {exc}")
-    new_id = forked["id"]
-    opencode.session_inbox(new_id, prompt)
-    return _json_text(
-        {
-            "forked_from": session_id,
-            "new_session_id": new_id,
-            "parent_id": forked.get("parentID"),
-            "title": forked.get("title"),
-            "prompt_delivered": True,
-        }
-    )
-
-
-async def _handle_query_session_fork(
-    session_id: str,
-    question: str,
-    parent_id: str,
-    message_id: str,
-) -> list[TextContent]:
-    from hivemind import opencode
-
-    try:
-        forked = opencode.session_fork(
-            session_id,
-            message_id=message_id or None,
-            parent_id=parent_id or None,
-        )
-    except RuntimeError as exc:
-        return _text(f"Error: {exc}")
-    new_id = forked["id"]
-    try:
-        result = opencode.session_query_message(new_id, question)
-    except RuntimeError as exc:
-        return _text(f"Error: forked but query failed: {exc}")
-    parts = result.get("parts") or []
-    reply = ""
-    for part in reversed(parts):
-        if part.get("type") == "text" and part.get("text"):
-            reply = part["text"]
-            break
-    return _json_text(
-        {
-            "forked_from": session_id,
-            "new_session_id": new_id,
-            "title": forked.get("title"),
-            "reply": reply,
-        }
-    )
-
-
-async def _handle_continue_expert(name: str, message: str) -> list[TextContent]:
-    from hivemind import opencode
-
-    try:
-        sessions = opencode.session_list(limit=50)
-    except RuntimeError as exc:
-        return _text(f"Error: {exc}")
-    needle = f"@{name} subagent"
-    matching = [s for s in sessions if needle in (s.get("title") or "")]
-    if not matching:
-        return _text(
-            f"Error: no live session for expert '{name}'. Use Task(subagent_type='{name}', ...) to spawn one first."
-        )
-    # session_list already returns most-recently-updated first.
-    target = matching[0]
-    result = opencode.session_inbox(target["id"], message)
-    state = "queued" if result.get("queued") else "delivered"
-    return _text(f"Message {state} to {name} session {target['id']} (queue depth: {result.get('depth', 0)}).")
 
 
 # ---------------------------------------------------------------------------
@@ -739,19 +472,13 @@ TOOL_HANDLERS: dict[str, ToolHandler] = {
     "enable_agent": _handle_enable_agent,
     "disable_agent": _handle_disable_agent,
     "delete_agent": _handle_delete_agent,
-    "refresh_agent": _handle_refresh_agent,
+    "update_agent": _handle_update_agent,
     "create_git_expert": _handle_create_git_expert,
     "create_team": _handle_create_team,
     "add_expert_to_team": _handle_add_expert_to_team,
     "remove_expert_from_team": _handle_remove_expert_from_team,
-    "get_knowledge": _handle_get_knowledge,
-    "search_knowledge": _handle_search_knowledge,
     "list_sessions": _handle_list_sessions,
-    "send_to_session": _handle_send_to_session,
-    "send_to_main": _handle_send_to_main,
-    "fork_session": _handle_fork_session,
-    "continue_expert": _handle_continue_expert,
-    "query_session_fork": _handle_query_session_fork,
+    "send_message": _handle_send_message,
     "redeploy": _handle_redeploy,
 }
 
@@ -761,34 +488,18 @@ _ARG_EXTRACTORS: dict[str, Callable[[dict[str, Any]], tuple[Any, ...]]] = {
     "enable_agent": lambda a: (a["name"],),
     "disable_agent": lambda a: (a["name"],),
     "delete_agent": lambda a: (a["name"], bool(a.get("purge_memory", False))),
-    "refresh_agent": lambda a: (a["name"], bool(a.get("skip_analysis", False))),
+    "update_agent": lambda a: (a["name"], bool(a.get("skip_analysis", False))),
     "create_git_expert": lambda a: (a["url"], a.get("ref", "")),
     "create_team": lambda a: (a["name"], a["description"], a["experts"]),
     "add_expert_to_team": lambda a: (a["team"], a["expert"]),
     "remove_expert_from_team": lambda a: (a["team"], a["expert"]),
-    "get_knowledge": lambda a: (a["expert"], a.get("doc", "summary")),
-    "search_knowledge": lambda a: (a["query"],),
     "list_sessions": lambda a: (
         bool(a.get("live_only", True)),
         bool(a.get("tree", False)),
         bool(a.get("roots", False)),
         int(a.get("limit", 50)),
     ),
-    "send_to_session": lambda a: (a["session_id"], a["message"]),
-    "send_to_main": lambda a: (a["message"],),
-    "fork_session": lambda a: (
-        a["session_id"],
-        a["prompt"],
-        a.get("parent_id", ""),
-        a.get("message_id", ""),
-    ),
-    "continue_expert": lambda a: (a["name"], a["message"]),
-    "query_session_fork": lambda a: (
-        a["session_id"],
-        a["question"],
-        a.get("parent_id", ""),
-        a.get("message_id", ""),
-    ),
+    "send_message": lambda a: (a["session_id"], a["message"]),
 }
 
 

@@ -1,262 +1,197 @@
 # Hivemind Expert System
 
-Hivemind manages a catalog of domain-expert and team-lead agents. Each agent
-has a body (a git-analyzed repo, a team roster, …) and a lifecycle state.
-You interact with the catalog through the hivemind MCP tools (preferred)
-or the `hivemind` CLI.
+Hivemind manages a curated catalog of domain-expert and team-lead agents
+exposed to opencode as subagents. You consult experts via the built-in
+`Task` tool and manage the catalog via the hivemind MCP tools.
 
-## Agent lifecycle — read this first
+## Consulting an expert
 
-Every agent in the catalog is in one of three states. **Encountering an
-unlisted or disabled agent is normal; enable it before consulting.**
-
-- **unlisted** — the agent is defined in `hivemind.json` (committed to git)
-  but nobody has activated it on this machine. No agent file is deployed,
-  nothing routes to it yet.
-- **enabled** — deployed; opencode can spawn it as a subagent. For
-  `git_analyzed` experts this also means the repo is cloned locally.
-- **disabled** — catalog entry preserved but the deployed agent file is
-  removed; opencode cannot route to it until you re-enable.
-
-If you try to consult an expert or team lead that does not appear in
-opencode's available subagent list, it is likely unlisted or disabled
-in the catalog. Read `hivemind.json` (the full catalog, committed) and
-`config.json` (the per-machine enabled/disabled overlay) to find the
-agent, then call `enable_agent` (MCP) or `hivemind expert enable <name>` /
-`hivemind team enable <name>` (CLI) to activate it. **Do not treat a
-disabled agent as missing or broken — it is a normal state, and enabling
-is the expected next step.**
-
-Roster mutations (adding / removing experts from a team) require the team
-to be enabled first.
-
-## MCP mutations are non-destructive
-
-Calling a hivemind mutation via MCP (`enable_agent`, `disable_agent`,
-`delete_agent`, `refresh_agent`, `create_git_expert`, `create_team`,
-`add_expert_to_team`, `remove_expert_from_team`, `redeploy`) returns
-cleanly without interrupting the session. The hivemind engine is a
-patched fork of opencode that exposes a `POST /global/reload-agents`
-endpoint which re-reads `agents/*.md` for every active instance
-without disposing the InstanceState — so an in-flight tool call (the
-hivemind MCP server itself) survives the reload.
-
-You do NOT need to warn the user before mutations. You do NOT need to
-type `continue`. Just call the tool, get the response, continue with
-the original task. The newly-enabled / disabled / refreshed agent is
-visible to the next agent listing.
-
-(History note: prior to the bun-vendored opencode fork, the only
-invalidation primitive opencode exposed was `POST /global/dispose`
-which tore down the in-flight tool call. The patch
-`//third_party/patches/0004-add-reload-agents-endpoint.patch` adds the
-non-destructive variant.)
-
-## MCP Tools
-
-The hivemind MCP surface is **mutations + research only** — opencode
-already discovers enabled agents natively from `agents/*.md` and shows
-them in its subagent picker, so listing/inspection tools were removed
-to avoid a stale-cache duplication. For catalog inspection, read
-`hivemind.json` (full catalog) and `config.json` (per-machine overlay)
-directly via the file-read tools.
-
-Prefer the MCP mutations over shelling out to the CLI — they hot-reload
-opencode's agent cache automatically without disrupting the in-flight
-session.
-
-**Lifecycle mutations (kind-agnostic):**
-- `enable_agent(name)` — deploy an agent (clones repo for git_analyzed;
-  deploys team lead for roster_templated)
-- `disable_agent(name)` — remove the deployed agent file; preserve data
-- `delete_agent(name, purge_memory?)` — remove catalog entry + backing files
-- `refresh_agent(name)` — re-run the body refresh (git fetch + AI analyze
-  for git_analyzed)
-
-**Kind-specific creators:**
-- `create_git_expert(url, ref?)` — register a new expert from a git remote;
-  lands in the catalog as *unlisted*. Call `enable_agent` after.
-- `create_team(name, description, experts)` — register a new team; lands as
-  *unlisted*. Call `enable_agent` after.
-
-**Team roster:**
-- `add_expert_to_team(team, expert)` / `remove_expert_from_team(team, expert)` —
-  team must be enabled first.
-
-**Knowledge research:**
-- `get_knowledge(expert, doc)` — read an expert's knowledge doc directly
-  (summary, code_structure, build_system, apis_and_interfaces, agent)
-- `search_knowledge(query)` — grep across all enabled experts' docs
-
-**Cross-session messaging:**
-- `list_sessions(live_only=true, tree=false, roots?, limit?)` — list
-  opencode sessions someone is currently attached to. By default
-  filters to "live" sessions: a session is live iff at least one TUI
-  process has an open SSE subscription on it. Subagents render under
-  their live parent. Pass `live_only=false` to see every session in
-  the engine's database. Pass `tree=true` for a nested
-  `{...session, children:[...]}` shape so parent/child topology is
-  obvious without the model walking parentIDs itself.
-- `send_to_session(session_id, message)` — append a message to another
-  session's inbox. Delivered immediately if idle, queued and delivered
-  on next idle if busy. Never throws BusyError.
-- `send_to_main(message)` — same as above but auto-targets the most
-  recently updated root session. Use from inside a subagent to surface
-  a finding to the user without waiting for the Task call to finish.
-- `fork_session(session_id, prompt, parent_id?, message_id?)` — deep-copy
-  an existing session and immediately send a follow-up prompt. Pass
-  `parent_id` to make the fork a real subagent of a chosen session
-  (default: upstream sibling, parent_id=null).
-- `continue_expert(name, message)` — resume a conversation with an
-  existing expert subagent by name. Resolves to the most recently
-  updated session whose title matches `@<name> subagent` and delivers
-  via inbox. Returns an error if no live session exists — call
-  `Task(subagent_type='<name>', ...)` first to spawn one.
-- `query_session_fork(session_id, question, parent_id?, message_id?)` —
-  borrow another session's context to answer a question without
-  disturbing it. Forks the source (deep-copies its history into a new
-  session), synchronously asks the question against the fork, returns
-  the assistant's reply text. The source session itself is untouched
-  — no new messages land in its history. Useful when you need the
-  context a sibling pane has accumulated but don't want to interrupt
-  it.
-
-**System:**
-- `redeploy` — regenerate every enabled agent file from the current catalog
-
-For dashboard-style status (engine path, model, server PID, expert
-counts), use the `hivemind status` CLI in a shell.
-
-Mutations take effect immediately (hot-reload via
-`/global/reload-agents`).
-
-## CLI Commands
-
-For reference, the CLI equivalents are:
+### First spawn
 
 ```
-hivemind init                            # set up opencode dirs + orchestrator memory + deploy enabled agents
-hivemind status                          # dashboard
-hivemind redeploy                        # regenerate every enabled agent file
-
-hivemind expert list                     # list all experts
-hivemind expert show <name>              # show one expert
-hivemind expert add <url> [--ref ...]    # register a new expert (unlisted)
-hivemind expert enable <name>            # deploy an expert
-hivemind expert disable <name>           # undeploy an expert
-hivemind expert delete <name>            # remove catalog entry + data
-hivemind expert update <name>            # fetch + re-analyze
-hivemind expert switch-version <name> <commit>
-
-hivemind team list                       # list all teams
-hivemind team show <name>                # show one team
-hivemind team create <name> -d <desc> -e <e1,e2,...>
-hivemind team enable <name>              # deploy team lead + ensure member repos
-hivemind team disable <name>             # undeploy team lead
-hivemind team delete <name>              # remove team entirely
-hivemind team add-expert <team> <e1,e2,...>
-hivemind team remove-expert <team> <expert>
+Task(
+  subagent_type="expert-foo",
+  description="<3-5 word title>",
+  prompt="<detailed question + what you want back>",
+)
 ```
 
-## Architecture
+The expert returns a summary plus a `task_id` (printed as the first
+line of its output: `task_id: ses_xxx`). Save that ID — you'll want
+it for follow-ups.
 
-- **Catalog** (`hivemind.json`, committed): every agent's kind + body params
-- **Local overlay** (`config.json`, not committed): enabled/disabled lists
-- **Deployed agents** (`agents/<kind>-<name>.md`): files opencode scans
-- **Expert knowledge** (`experts/<name>/HEAD/*.md`): summary + analysis docs
-- **Team files** (`{{ teams_path }}/<team>/`): `description.md` + `expert-<name>.md` per roster member + per-member notes
-- **Cached repos** (`~/.cache/hivemind/repos/<name>/`): git clones
-- **Agent memory** (`~/.config/opencode/hivemind/memory/<name>/`): each
-  agent's durable memory tree (`MEMORY.md`, `short_memory.md`,
-  `long_memory.md`, topic files). Ensured on first `enable_agent`.
+### Follow up with the same expert
 
-## Workflow
+```
+Task(
+  subagent_type="expert-foo",
+  task_id="ses_xxx",                # ← from prior Task output
+  description="<3-5 word title>",
+  prompt="<follow-up>",
+)
+```
 
-You (main) handle all implementation directly. Subagents are for domain
-research only — they cannot spawn other agents.
+Resumes the same subagent session. Its full message history is
+preserved in opencode's DB so the expert picks up where it left off
+— no rediscovery cost. Drill-down (ctrl-x-down) works the same as a
+fresh spawn.
 
-### When you need domain expertise
+**Don't spawn a fresh Task for follow-ups.** A new session has to
+redo everything from scratch.
 
-1. **Check availability.** If you already know the agent name, look for
-   it in opencode's subagent picker (the same list available to the Task
-   tool). If it's not listed, the agent is unlisted or disabled — read
-   `hivemind.json` to confirm it's in the catalog, then call
-   `enable_agent` (this is a normal step, not a failure).
+### Borrow another session's context
 
-2. **Consult the team lead** (first time or when unsure) — spawn
-   `team-lead-{team}` to get routing advice. The team lead knows each
-   expert's strengths and recent consultation history (via per-member
-   notes). It will recommend which expert(s) to call and what to ask.
-   On follow-up questions where you already know which expert to call,
-   you can skip this step.
+```
+Task(
+  subagent_type="expert-foo",
+  source_session_id="ses_yyy",      # ← any session whose context you need
+  description="<3-5 word title>",
+  prompt="<question against that context>",
+)
+```
 
-3. **Follow-up with an existing expert: prefer `continue_expert`.** If
-   you've already spawned an expert this session and have a follow-up,
-   do NOT call `Task` again — that creates a fresh session that has to
-   re-do all the discovery work. Instead call
-   `continue_expert(name, message)` (MCP), which resumes the most
-   recently updated session for that expert. The expert's full
-   conversation history is preserved in opencode's database. The
-   alternate path is `Task(..., task_id=<prior_session_id>)`, where
-   `<prior_session_id>` is the value the prior Task call printed at the
-   top of its output (`task_id: ses_xxx`).
+Forks the source session's full history into a brand-new subagent.
+The source itself is untouched — no new messages land in it. Use
+this for "ask another session a question without disturbing it."
 
-4. **Spawn experts (first call only)** — when spawning each expert, you
-   MUST include these instructions in your prompt every time, even on
-   follow-ups:
-   - The specific question to answer
-   - **If consulting as part of a team:**
-     - That they are being consulted as part of the `{team}` team
-     - The path to their notes file: `{{ teams_path }}/{team}/expert-{name}/notes.md`
-     - That they must update their notes file with: date, what was asked,
-       and a summary of their findings
-     - If the expert is on multiple teams, use the team that's relevant
-       to the current task
-   - **If consulting a solo expert (not in a team):** do NOT ask them to
-     take notes in the team-scoped notes file. Solo consultations have
-     no team-lead reader. Anything worth remembering long-term should go
-     into the expert's own memory tree
-     (`~/.config/opencode/hivemind/memory/{name}/`) or be folded into the
-     expert's knowledge docs via `refresh_agent`.
+`task_id` and `source_session_id` are mutually exclusive — pick one.
 
-5. **Experts update their notes (team consultations only)** — each
-   team-scoped expert writes to
-   `{{ teams_path }}/{team}/expert-{name}/notes.md` with what was asked
-   and what they found. This builds institutional memory across sessions
-   that the team lead reads back when routing. If a team expert does not
-   update its notes, remind it to do so.
+### Don't know which expert to spawn?
 
-6. **Every expert writes its own memory at end-of-turn.** Independently
-   of team notes, every spawned expert appends to its own
-   `~/.config/opencode/hivemind/memory/<name>/short_memory.md` as the
-   last action of every reply. This is enforced by the system prompt
-   directive in the agent's body. Do not need to remind them — but if
-   you spot an expert that skipped this, flag it.
+Spawn the **librarian** (`Task(subagent_type='librarian', ...)`) —
+it knows every enabled expert and team and recommends who to call.
 
-### When you don't know which team or expert to use
+### Team consultation
 
-Spawn the **librarian** (`librarian`) — it knows every enabled expert and
-team and will recommend who to consult. (It only catalogs *enabled* agents;
-an expert you need may exist unlisted/disabled in the catalog — read
-`hivemind.json` directly if the librarian comes up short.)
+If the work clusters around a domain that has a team (e.g.
+`team-lead-bazel`), spawn the team lead first instead of guessing
+which member to hit. Team leads know each member's strengths and
+recent consultation history (via per-member notes) and will route to
+the right expert(s).
 
-### Key principles
+When spawning an expert **as part of a team consultation**, include
+in the prompt:
 
-- **You do the implementation.** Subagents research and advise; you read,
-  write, and run code.
-- **Subagents cannot spawn other agents.** Only you can. Depth is limited to 1.
-- **Maximize parallel expert calls.** If you need input from multiple
-  experts, spawn them all at once.
-- **Experts are grounded in source code** — they have access to cloned
-  repos and structured knowledge docs. Trust their findings over general
-  knowledge.
-- **Disabled is not broken.** If an agent isn't available, enable it —
-  don't work around its absence.
-- **Mutations are non-destructive.** `enable_agent`, `disable_agent`,
-  `refresh_agent`, etc. return cleanly; the engine's
-  `/global/reload-agents` endpoint refreshes the agent registry without
-  disposing the in-flight session. No need to warn the user or wait for
-  a `continue` — just call the tool and proceed.
-- **Notes are team-scoped.** Per-consultation journal entries only exist
-  for team-scoped consultations. Solo-expert durable knowledge lives in
-  the expert's own memory tree.
+- That they're being consulted as part of the `{team}` team.
+- The path to their notes file:
+  `{{ teams_path }}/{team}/expert-{name}/notes.md`.
+- That they must update their notes (date, question, findings) at
+  the end of the turn. The team lead reads these on the next routing
+  pass.
+
+When spawning a **solo** expert (not part of a team consultation),
+do NOT ask them to write team notes — there's no reader. Anything
+worth keeping long-term goes into their own memory tree
+(`~/.config/opencode/hivemind/memory/<name>/`) or into their
+knowledge docs via `update_agent`.
+
+### Maximize parallel calls
+
+If you need input from multiple experts and the questions are
+independent, spawn them all in a single message — opencode runs
+Task subagents concurrently.
+
+## Reading expert knowledge directly
+
+Every git-analyzed expert ships pre-generated analysis docs and a
+cloned upstream source tree. Both are readable with regular file
+tools — prefer this over a Task spawn when you just need to look
+something up.
+
+- `~/.config/opencode/experts/<name>/HEAD/*.md` — analysis docs:
+  typically `summary`, `code_structure`, `build_system`,
+  `apis_and_interfaces`, `agent`. Start here.
+- `~/.cache/hivemind/repos/<name>/` — the cloned upstream source.
+  Use Bash + `rg`/`find`/etc when the analysis docs don't go deep
+  enough.
+
+Both paths are `external_directory: allow` for every deployed agent,
+so `Read`, `Grep`, and `Bash` all work without prompting.
+
+## Cross-session messaging
+
+Two MCP verbs handle every cross-session interaction that isn't a
+Task spawn:
+
+- `list_sessions(live_only=true, tree=false, roots?, limit?)` —
+  discovery. By default returns only "live" sessions (a TUI is
+  currently attached via SSE). Subagents render under their live
+  parent. Pass `tree=true` for a nested
+  `{...session, children:[...]}` shape; `live_only=false` to see
+  every session in the DB.
+- `send_message(session_id, message)` — append a message to another
+  session's inbox. Delivered immediately if the target is idle,
+  queued and delivered on next idle if it's busy. Never throws
+  BusyError, so it's safe to ping a session that's mid-turn.
+
+`list_sessions` first to find the target, `send_message` to deliver.
+That's it.
+
+## Memory contract
+
+Every spawned expert writes to its own
+`~/.config/opencode/hivemind/memory/<name>/short_memory.md` as the
+last action of every reply — enforced by a directive in the deployed
+agent prompt. You don't need to remind them. If you spot one that
+skipped the write, flag it.
+
+Team-scoped consultations write *additionally* to per-member notes
+under `{{ teams_path }}/<team>/expert-<name>/notes.md` (see Team
+consultation above).
+
+## Agent lifecycle (3 states)
+
+Every agent in the catalog is in one of:
+
+- **unlisted** — defined in `hivemind.json` (the committed catalog)
+  but not activated on this machine. opencode won't show it in the
+  subagent picker.
+- **enabled** — deployed; `Task(subagent_type='<name>', ...)` works.
+  For git-analyzed experts the cloned repo is also present locally.
+- **disabled** — catalog entry preserved, deployed file removed.
+
+If `Task` reports an unknown agent, it's almost certainly unlisted
+or disabled — **not missing.** Read `hivemind.json` to confirm it's
+in the catalog, then call `enable_agent(name)`. This is the expected
+next step, not a failure.
+
+Roster mutations (adding/removing experts from a team) require the
+team itself to be enabled first.
+
+## Catalog management (MCP mutations)
+
+All hot-reloaded automatically — the engine re-reads `agents/*.md`
+without disposing in-flight sessions. No need to warn the user or
+wait for a `continue`; just call the tool and proceed.
+
+- `enable_agent(name)` — deploy an unlisted/disabled agent
+- `disable_agent(name)` — undeploy without losing catalog data
+- `delete_agent(name, purge_memory?)` — remove the catalog entry +
+  backing files (memory preserved unless `purge_memory=true`)
+- `update_agent(name, skip_analysis?)` — for git-analyzed experts,
+  fetch latest commits and re-run AI analysis
+- `create_git_expert(url, ref?)` — register a new expert from a git
+  remote (lands unlisted; call `enable_agent` after)
+- `create_team(name, description, experts)` — register a new team
+  (lands unlisted; call `enable_agent` after)
+- `add_expert_to_team(team, expert)` /
+  `remove_expert_from_team(team, expert)` — roster mutations
+- `redeploy` — regenerate every enabled agent file from the current
+  catalog
+
+## Key principles
+
+- **You do the implementation.** Subagents research and advise; you
+  read, write, and run code.
+- **Subagents cannot spawn other agents.** Only the main session
+  can. Depth = 1.
+- **Experts are grounded in source code.** They have access to
+  cloned repos and structured analysis docs. Trust their findings
+  over general knowledge.
+- **Disabled is not broken.** Enable an unlisted/disabled agent
+  rather than working around its absence.
+- **Mutations are non-destructive.** Catalog tools hot-reload; no
+  warning needed, no `continue` needed.
+- **Notes are team-scoped.** Per-consultation journal entries only
+  exist for team-scoped consultations. Solo-expert durable knowledge
+  lives in the expert's own memory tree.
