@@ -1,0 +1,94 @@
+From 912a09fe45f9114605e3b7e4c833cdb1865989d9 Mon Sep 17 00:00:00 2001
+From: Lucas Santos <lsantos7654@gmail.com>
+Date: Thu, 30 Apr 2026 00:56:41 -0400
+Subject: [PATCH 18/19] SDK gen: liveSessions endpoint + LiveSessionsChanged
+ event type
+
+Regenerates the v2 client SDK to expose the per-client presence /
+focus model added by the prior commit:
+
+  - `client.global.liveSessions()` -> { sessions, subagents }
+  - `EventSessionLiveChanged` ("session.live.changed") in the Event
+    union with payload { sessions, subagents }
+
+Replaces the prior 0014 (sessionID query param + initial
+LiveSessionsChanged) and 0026 (subagents field) gen patches, which
+matched the obsolete refcount architecture.
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+---
+ packages/sdk/js/src/v2/gen/sdk.gen.ts   | 25 +++++++++++++++++++++++++
+ packages/sdk/js/src/v2/gen/types.gen.ts | 15 +++++++++++++++
+ 2 files changed, 40 insertions(+)
+
+diff --git a/packages/sdk/js/src/v2/gen/sdk.gen.ts b/packages/sdk/js/src/v2/gen/sdk.gen.ts
+index f1dfacf..6dd8eea 100644
+--- a/packages/sdk/js/src/v2/gen/sdk.gen.ts
++++ b/packages/sdk/js/src/v2/gen/sdk.gen.ts
+@@ -351,6 +351,31 @@ export class Global extends HeyApiClient {
+     })
+   }
+
++  /**
++   * List live sessions
++   *
++   * Hivemind: returns the set of session IDs currently focused by at
++   * least one connected client (TUI), expanded to include direct DB
++   * children of every focused root. `subagents` is the subset whose
++   * `parentID` is set. Provided by the per-client presence model
++   * (server-side patch).
++   */
++  public liveSessions<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
++    return (options?.client ?? this.client).get<
++      {
++        200: {
++          sessions: Array<string>
++          subagents: Array<string>
++        }
++      },
++      unknown,
++      ThrowOnError
++    >({
++      url: "/global/live-sessions",
++      ...options,
++    })
++  }
++
+   /**
+    * Upgrade opencode
+    *
+diff --git a/packages/sdk/js/src/v2/gen/types.gen.ts b/packages/sdk/js/src/v2/gen/types.gen.ts
+index 7dccc5f..1ddc8b6 100644
+--- a/packages/sdk/js/src/v2/gen/types.gen.ts
++++ b/packages/sdk/js/src/v2/gen/types.gen.ts
+@@ -450,6 +450,20 @@ export type EventSessionBackgroundChanged = {
+   }
+ }
+
++/**
++ * Hivemind: emitted when the per-client presence map changes — a
++ * client connects/disconnects or its focus flips. `sessions` is the
++ * focused set ∪ direct children of every focused root; `subagents`
++ * is the subset whose parentID is set. Provided by the per-client
++ * presence model.
++ */
++export type EventSessionLiveChanged = {
++  type: "session.live.changed"
++  properties: {
++    sessions: Array<string>
++    subagents: Array<string>
++  }
++}
+
+ export type EventSessionCompacted = {
+   type: "session.compacted"
+@@ -1015,6 +1029,7 @@ export type Event =
+   | EventSessionStatus
+   | EventSessionIdle
+   | EventSessionBackgroundChanged
++  | EventSessionLiveChanged
+   | EventSessionCompacted
+   | EventTodoUpdated
+   | EventPtyCreated
+--
+2.50.1

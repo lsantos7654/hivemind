@@ -1,0 +1,417 @@
+From d71cf8d0359085c8ca0fcc4ca3df80b0b0b66538 Mon Sep 17 00:00:00 2001
+From: Lucas Santos <lsantos7654@gmail.com>
+Date: Thu, 30 Apr 2026 00:52:41 -0400
+Subject: [PATCH 17/19] Per-client presence + focus model for live session
+ tracking
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Replaces the prior per-session SSE refcount mechanism (the original
+0009 + ~10 follow-up patches) with a single-connection-per-client
+presence model.
+
+Each TUI process opens ONE long-lived SSE on `/event` with header
+`X-Client-ID: <uuid>`. The connection itself is the presence beacon;
+when it closes, `stream.onAbort` fires once and the entry is removed.
+Focus changes within the TUI are signaled out-of-band via
+`POST /event/focus { sessionID | null }`.
+
+Why this fixes the leak class the prior patches kept chasing:
+
+  - One connection per TUI instead of one per session-view → cleanup
+    runs once when the TUI dies, not per navigation. Far fewer paths
+    to leak.
+  - `stream.onAbort` is registered BEFORE `_clients.set`. There is no
+    "_incr ran but listener wasn't installed yet" race window. If
+    `stream.aborted` is true at registration time, we bail
+    synchronously before any state mutation.
+  - On Bun >= 1.2 the canonical disconnect signal is the
+    ReadableStream cancel → stream.abort path that drives onAbort
+    listeners. The prior code's reliance on `c.req.raw.signal` was a
+    legacy-Bun fallback that no longer fires; the prior `Connection:
+    close` header was fighting Hono's `keep-alive` default and not
+    helping.
+  - Focus is explicit server-side state, not derived from request
+    query params. The same connection can rebind focus any number of
+    times without churning sockets.
+
+`expandedLiveSet()` semantics carry over: `sessions = focused ∪
+direct children of focused roots`, `subagents = subagent-focused ∪
+direct children of focused roots`. The footer's
+`sessions.length - subagents.length` arithmetic still produces the
+root count.
+
+`liveSessions()` now returns the union of focuses across all live
+clients (was: the keys of the per-session refcount map).
+
+Subscriptions without `X-Client-ID` are unchanged — they get the same
+event stream and do not contribute to liveness.
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+---
+ packages/opencode/src/server/routes/event.ts  | 290 ++++++++++++++----
+ packages/opencode/src/server/routes/global.ts |  28 ++
+ 2 files changed, 253 insertions(+), 65 deletions(-)
+
+diff --git a/packages/opencode/src/server/routes/event.ts b/packages/opencode/src/server/routes/event.ts
+index 989b857..67a0b18 100644
+--- a/packages/opencode/src/server/routes/event.ts
++++ b/packages/opencode/src/server/routes/event.ts
+@@ -1,83 +1,243 @@
+ import { Hono } from "hono"
+-import { describeRoute, resolver } from "hono-openapi"
++import { describeRoute, resolver, validator } from "hono-openapi"
+ import { streamSSE } from "hono/streaming"
++import z from "zod"
+ import { Log } from "@/util/log"
+ import { BusEvent } from "@/bus/bus-event"
+ import { Bus } from "@/bus"
++import { Session } from "@/session"
++import { SessionID } from "@/session/schema"
+ import { AsyncQueue } from "../../util/queue"
+
+ const log = Log.create({ service: "server" })
+
++// Hivemind: emitted on every change to the per-client presence map so
++// connected clients (e.g. the TUI footer) can render a live count
++// without polling. `sessions` is every currently-focused session ID
++// plus the direct children of every focused root; `subagents` is the
++// subset whose `parentID` is set. The TUI footer derives a "root
++// sessions" count via `sessions.length - subagents.length` and shows
++// the two as separate pills.
++export const LiveSessionsChanged = BusEvent.define(
++  "session.live.changed",
++  z.object({
++    sessions: z.array(z.string()),
++    subagents: z.array(z.string()),
++  }),
++)
++
++// Hivemind: per-client presence state. Each TUI process opens ONE
++// long-lived SSE on `/event` with header `X-Client-ID: <uuid>` on
++// mount, kept alive for the life of the TUI. The SSE connection is
++// the presence beacon — when it closes, the client's entry is removed
++// and any sessions it owned drop out of the live set. Focus changes
++// within the TUI are signaled out-of-band via `POST /event/focus`.
++//
++// Single connection per client (not per session view) so cleanup is
++// one-shot: `stream.onAbort` fires once when the TUI dies, taking the
++// entire entry with it. There is no refcount and no race window
++// between a "register presence" mutation and an abort-listener
++// registration — the listener is registered before the mutation, and
++// `stream.aborted` is rechecked synchronously after.
++//
++// Subscriptions without an `X-Client-ID` header (the legacy "subscribe
++// to all events" shape) do not contribute to liveness — the route is
++// backwards-compatible for non-TUI consumers.
++const _clients = new Map<string, { focus: string | null }>()
++
++function _publishChange(): void {
++  // Fire-and-forget the expansion so call-sites stay sync. Each call
++  // does one Session.get (per focused ID) and at most one
++  // Session.children (per focused root) — typically 0–2 single-indexed
++  // queries per change, <1ms each.
++  void (async () => {
++    try {
++      const expanded = await expandedLiveSet()
++      await Bus.publish(LiveSessionsChanged, expanded)
++    } catch (err) {
++      log.error("failed to publish LiveSessionsChanged", { err })
++    }
++  })()
++}
++
++/**
++ * Hivemind: raw set of currently-focused session IDs across all live
++ * clients. Useful for diagnostics; the route + bus event use
++ * `expandedLiveSet` which also pulls direct children of every focused
++ * root from the DB.
++ */
++export function liveSessions(): string[] {
++  const focused = new Set<string>()
++  for (const c of _clients.values()) {
++    if (c.focus) focused.add(c.focus)
++  }
++  return [...focused]
++}
++
++/**
++ * Hivemind: expanded live set used by both the bus event and the
++ * `/global/live-sessions` route.
++ *
++ * `sessions` = focused IDs ∪ direct children of every focused root.
++ * `subagents` = focused IDs that are subagents ∪ direct children of
++ *               every focused root.
++ *
++ * Both contain the same subagent IDs (so `subagents ⊆ sessions`); the
++ * footer reads `sessions.length - subagents.length` to derive the root
++ * count and `subagents.length` for the subagents pill, both correct.
++ *
++ * Subagents cannot spawn subagents (depth-1 contract per `task.ts`
++ * permission overlay), so a single `Session.children(rootID)` per
++ * focused root is exhaustive — no recursive descent.
++ */
++export async function expandedLiveSet(): Promise<{
++  sessions: string[]
++  subagents: string[]
++}> {
++  const focused = liveSessions()
++  if (focused.length === 0) return { sessions: [], subagents: [] }
++
++  const sessionsSet = new Set<string>(focused)
++  const subagentsSet = new Set<string>()
++
++  for (const id of focused) {
++    try {
++      const session = await Session.get(SessionID.make(id))
++      if (session.parentID != null) {
++        subagentsSet.add(id)
++        continue
++      }
++      const children = await Session.children(SessionID.make(id))
++      for (const child of children) {
++        sessionsSet.add(child.id)
++        subagentsSet.add(child.id)
++      }
++    } catch (err) {
++      // DB miss; fall through with what we have. A slight footer
++      // miscount is preferable to failing the publish.
++      log.error("expandedLiveSet: lookup failed", { id, err })
++    }
++  }
++
++  return { sessions: [...sessionsSet], subagents: [...subagentsSet] }
++}
++
+ export const EventRoutes = () =>
+-  new Hono().get(
+-    "/event",
+-    describeRoute({
+-      summary: "Subscribe to events",
+-      description: "Get events",
+-      operationId: "event.subscribe",
+-      responses: {
+-        200: {
+-          description: "Event stream",
+-          content: {
+-            "text/event-stream": {
+-              schema: resolver(BusEvent.payloads()),
++  new Hono()
++    .get(
++      "/event",
++      describeRoute({
++        summary: "Subscribe to events",
++        description:
++          "Get events. Pass `X-Client-ID: <uuid>` as a header to register the connection as a presence beacon — the client appears in `GET /global/live-sessions` (focus initially null; update via `POST /event/focus`). Closing the stream removes the entry. Without the header the stream behaves identically but does not contribute to liveness tracking.",
++        operationId: "event.subscribe",
++        responses: {
++          200: {
++            description: "Event stream",
++            content: {
++              "text/event-stream": {
++                schema: resolver(BusEvent.payloads()),
++              },
+             },
+           },
+         },
+-      },
+-    }),
+-    async (c) => {
+-      log.info("event connected")
+-      c.header("Cache-Control", "no-cache, no-transform")
+-      c.header("X-Accel-Buffering", "no")
+-      c.header("X-Content-Type-Options", "nosniff")
+-      return streamSSE(c, async (stream) => {
+-        const q = new AsyncQueue<string | null>()
+-        let done = false
+-
+-        q.push(
+-          JSON.stringify({
+-            type: "server.connected",
+-            properties: {},
+-          }),
+-        )
+-
+-        // Send heartbeat every 10s to prevent stalled proxy streams.
+-        const heartbeat = setInterval(() => {
+-          q.push(
+-            JSON.stringify({
+-              type: "server.heartbeat",
+-              properties: {},
+-            }),
+-          )
+-        }, 10_000)
+-
+-        const stop = () => {
+-          if (done) return
+-          done = true
+-          clearInterval(heartbeat)
+-          unsub()
+-          q.push(null)
+-          log.info("event disconnected")
+-        }
+-
+-        const unsub = Bus.subscribeAll((event) => {
+-          q.push(JSON.stringify(event))
+-          if (event.type === Bus.InstanceDisposed.type) {
++      }),
++      async (c) => {
++        const clientID = c.req.header("x-client-id")
++        log.info("event connected", { clientID })
++        c.header("Cache-Control", "no-cache, no-transform")
++        c.header("X-Accel-Buffering", "no")
++        c.header("X-Content-Type-Options", "nosniff")
++        return streamSSE(c, async (stream) => {
++          const q = new AsyncQueue<string | null>()
++          let done = false
++          let unsub: (() => void) | undefined
++          let heartbeat: ReturnType<typeof setInterval> | undefined
++
++          const stop = () => {
++            if (done) return
++            done = true
++            if (clientID && _clients.delete(clientID)) {
++              _publishChange()
++            }
++            if (heartbeat) clearInterval(heartbeat)
++            if (unsub) unsub()
++            q.push(null)
++            log.info("event disconnected", { clientID })
++          }
++
++          // Register cleanup BEFORE any state mutation. `stream.onAbort`
++          // is the canonical disconnect hook on Bun >= 1.2 — registering
++          // before `_clients.set` closes the race window patches 0009–
++          // 0030 in the prior architecture chased ineffectually.
++          stream.onAbort(stop)
++          if (stream.aborted) {
+             stop()
++            return
+           }
+-        })
+
+-        stream.onAbort(stop)
++          q.push(JSON.stringify({ type: "server.connected", properties: {} }))
++
++          heartbeat = setInterval(() => {
++            q.push(JSON.stringify({ type: "server.heartbeat", properties: {} }))
++          }, 10_000)
++
++          unsub = Bus.subscribeAll((event) => {
++            q.push(JSON.stringify(event))
++            if (event.type === Bus.InstanceDisposed.type) stop()
++          })
+
+-        try {
+-          for await (const data of q) {
+-            if (data === null) return
+-            await stream.writeSSE({ data })
++          // Register presence AFTER Bus.subscribeAll so this connection
++          // receives its own `session.live.changed` announcement —
++          // otherwise the TUI footer that just attached doesn't update
++          // to reflect itself until another client triggers the next
++          // change.
++          if (clientID) {
++            _clients.set(clientID, { focus: null })
++            _publishChange()
++          }
++
++          try {
++            for await (const data of q) {
++              if (data === null) return
++              await stream.writeSSE({ data })
++            }
++          } finally {
++            stop()
+           }
+-        } finally {
+-          stop()
+-        }
+-      })
+-    },
+-  )
++        })
++      },
++    )
++    .post(
++      "/event/focus",
++      describeRoute({
++        summary: "Update presence focus",
++        description:
++          "Update the currently-focused session for the client identified by `X-Client-ID`. Pass `{ sessionID: \"<id>\" }` to focus, `{ sessionID: null }` to blur. Live-set / footer pills update via `session.live.changed` on the next bus tick. Returns 404 if no presence stream is registered for the given client.",
++        operationId: "event.focus",
++        responses: {
++          200: {
++            description: "Focus updated",
++            content: {
++              "application/json": {
++                schema: resolver(z.object({ ok: z.boolean() })),
++              },
++            },
++          },
++          400: { description: "Missing X-Client-ID header" },
++          404: { description: "Client not registered" },
++        },
++      }),
++      validator("json", z.object({ sessionID: z.string().nullable() })),
++      async (c) => {
++        const clientID = c.req.header("x-client-id")
++        if (!clientID) return c.json({ error: "X-Client-ID header required" }, 400)
++        const entry = _clients.get(clientID)
++        if (!entry) return c.json({ error: "client not registered" }, 404)
++        const { sessionID } = c.req.valid("json")
++        if (entry.focus === sessionID) return c.json({ ok: true })
++        entry.focus = sessionID
++        _publishChange()
++        return c.json({ ok: true })
++      },
++    )
+diff --git a/packages/opencode/src/server/routes/global.ts b/packages/opencode/src/server/routes/global.ts
+index b4cfc32..d996c4f 100644
+--- a/packages/opencode/src/server/routes/global.ts
++++ b/packages/opencode/src/server/routes/global.ts
+@@ -13,6 +13,7 @@ import { lazy } from "../../util/lazy"
+ import { Config } from "../../config/config"
+ import { Agent } from "@/agent/agent"
+ import { SessionBackground } from "@/session/background"
++import { expandedLiveSet } from "./event"
+ import { errors } from "../error"
+
+ const log = Log.create({ service: "server" })
+@@ -297,6 +298,33 @@ export const GlobalRoutes = lazy(() =>
+         return c.json(result)
+       },
+     )
++    .get(
++      "/live-sessions",
++      describeRoute({
++        summary: "List live sessions",
++        description:
++          "Hivemind: return the set of session IDs currently focused by at least one connected client (TUI). Each TUI opens a single SSE on `/event` with header `X-Client-ID` and signals focus via `POST /event/focus`. `sessions` is the focused set ∪ direct DB children of every focused root; `subagents` is the subset whose `parentID` is set. The TUI footer derives a root-session count via `sessions.length - subagents.length` and shows the two as separate pills.",
++        operationId: "global.liveSessions",
++        responses: {
++          200: {
++            description: "Live sessions",
++            content: {
++              "application/json": {
++                schema: resolver(
++                  z.object({
++                    sessions: z.array(z.string()),
++                    subagents: z.array(z.string()),
++                  }),
++                ),
++              },
++            },
++          },
++        },
++      }),
++      async (c) => {
++        return c.json(await expandedLiveSet())
++      },
++    )
+     .get(
+       "/background-tasks",
+       describeRoute({
+--
+2.50.1

@@ -1,7 +1,7 @@
-From fff65008011a3d3d76ec80b3ccd608f4a65ad0fc Mon Sep 17 00:00:00 2001
+From 17f60acd2749c1d452c461c88d6bfec98b180f1d Mon Sep 17 00:00:00 2001
 From: Lucas Santos <lsantos7654@gmail.com>
 Date: Wed, 29 Apr 2026 00:41:30 -0400
-Subject: [PATCH 17/27] Background Task mode + cascade cancellation
+Subject: [PATCH 11/19] Background Task mode + cascade cancellation
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
@@ -58,19 +58,19 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
  create mode 100644 packages/opencode/src/tool/read-task-result.ts
 
 diff --git a/packages/opencode/src/server/routes/global.ts b/packages/opencode/src/server/routes/global.ts
-index 2489328..275fff4 100644
+index 8abef06..b4cfc32 100644
 --- a/packages/opencode/src/server/routes/global.ts
 +++ b/packages/opencode/src/server/routes/global.ts
-@@ -13,6 +13,7 @@ import { lazy } from "../../util/lazy"
+@@ -12,6 +12,7 @@ import { Log } from "../../util/log"
+ import { lazy } from "../../util/lazy"
  import { Config } from "../../config/config"
  import { Agent } from "@/agent/agent"
- import { liveSessions } from "./event"
 +import { SessionBackground } from "@/session/background"
  import { errors } from "../error"
 
  const log = Log.create({ service: "server" })
-@@ -323,6 +324,38 @@ export const GlobalRoutes = lazy(() =>
-         return c.json({ sessions: liveSessions() })
+@@ -296,6 +297,38 @@ export const GlobalRoutes = lazy(() =>
+         return c.json(result)
        },
      )
 +    .get(

@@ -103,9 +103,8 @@ def _ext_impl(ctx):
 # //third_party/dep_patches/. Empty by default — most patches should be
 # code patches.
 _OPENCODE_DEP_PATCHES = [
-    "0014-SDK-gen-sessionID-query-param-LiveSessionsChanged-ev.patch",
-    "0018-SDK-gen-backgroundTasks-endpoint-SessionBackgroundCh.patch",
-    "0026-SDK-gen-subagents-field-on-liveSessions-LiveSessions.patch",
+    "0012-SDK-gen-backgroundTasks-endpoint-SessionBackgroundCh.patch",
+    "0018-SDK-gen-liveSessions-endpoint-LiveSessionsChanged-ev.patch",
 ]
 # Patches that modify only source files (no dep manifest changes). Applied
 # only in @opencode_src, after dep_patches, after install. Editing one
@@ -120,22 +119,15 @@ _OPENCODE_CODE_PATCHES = [
     "0006-Bake-bash.sudo-deny-into-Permission.fromConfig.patch",
     "0007-Per-session-inbox-with-deferred-delivery.patch",
     "0008-Session.fork-accepts-optional-parentID.patch",
-    "0009-SSE-liveness-counter.patch",
-    "0010-TUI-per-session-SSE-subscription-for-liveness.patch",
-    "0011-LiveSessionsChanged-bus-event.patch",
-    "0012-TUI-footer-live-sessions-indicator.patch",
-    "0013-Fix-_decr-leak-listen-on-c.req.raw.signal-not-stream.patch",
-    "0015-Session.fork-accepts-optional-permission.patch",
-    "0016-Task-tool-accepts-source_session_id.patch",
-    "0017-Background-Task-mode-cascade-cancellation.patch",
-    "0019-TUI-footer-background-tasks-indicator.patch",
-    "0020-SessionPrompt.continue-bg-complete-wake-up.patch",
-    "0021-TUI-session_footer-slot-dual-slot-home-footer-plugin.patch",
-    "0022-Force-Connection-close-on-SSE-liveness-route.patch",
-    "0023-Subscribe-to-bus-before-incrementing-liveness-counte.patch",
-    "0024-Fix-SessionPrompt.continue-empty-user-message-API-re.patch",
-    "0025-Split-live-tracker-into-sessions-subagents.patch",
-    "0027-TUI-footer-cleanup-sessions-subagents-split-pills.patch",
+    "0009-Session.fork-accepts-optional-permission.patch",
+    "0010-Task-tool-accepts-source_session_id.patch",
+    "0011-Background-Task-mode-cascade-cancellation.patch",
+    "0013-SessionPrompt.continue-bg-complete-wake-up.patch",
+    "0014-TUI-session_footer-slot-dual-slot-home-footer-plugin.patch",
+    "0015-Fix-SessionPrompt.continue-empty-user-message-API-re.patch",
+    "0016-Wake-up-synthetic-message-becomes-a-directive.patch",
+    "0017-Per-client-presence-focus-model-for-live-session-tra.patch",
+    "0019-TUI-presence-stream-focus-POST-sessions-subagents-fo.patch",
 ]
 external_engines = module_extension(
     implementation = _ext_impl,

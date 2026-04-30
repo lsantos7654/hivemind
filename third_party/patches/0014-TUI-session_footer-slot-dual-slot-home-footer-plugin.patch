@@ -1,7 +1,7 @@
-From abd134be913afc8a0af4036f110d1d92163ce69d Mon Sep 17 00:00:00 2001
+From e4c3ea407e67b7d36b578dedf5e8794728785b91 Mon Sep 17 00:00:00 2001
 From: Lucas Santos <lsantos7654@gmail.com>
 Date: Wed, 29 Apr 2026 22:12:46 -0400
-Subject: [PATCH 21/27] TUI session_footer slot + dual-slot home-footer plugin
+Subject: [PATCH 14/19] TUI session_footer slot + dual-slot home-footer plugin
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
@@ -29,10 +29,10 @@ convention — see sidebar.tsx).
  2 files changed, 19 insertions(+)
 
 diff --git a/packages/opencode/src/cli/cmd/tui/feature-plugins/home/footer.tsx b/packages/opencode/src/cli/cmd/tui/feature-plugins/home/footer.tsx
-index a83a152..534e9c7 100644
+index c876c4a..0db4889 100644
 --- a/packages/opencode/src/cli/cmd/tui/feature-plugins/home/footer.tsx
 +++ b/packages/opencode/src/cli/cmd/tui/feature-plugins/home/footer.tsx
-@@ -221,6 +221,13 @@ const tui: TuiPlugin = async (api) => {
+@@ -144,6 +144,13 @@ const tui: TuiPlugin = async (api) => {
        home_footer() {
          return <View api={api} />
        },
