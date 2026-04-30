@@ -1,0 +1,59 @@
+From c4ffbf79b95f543c12507cc720897577d735b722 Mon Sep 17 00:00:00 2001
+From: Lucas Santos <lsantos7654@gmail.com>
+Date: Wed, 29 Apr 2026 22:39:16 -0400
+Subject: [PATCH 23/27] Subscribe to bus before incrementing liveness counter
+
+When a new TUI attached, its footer's "live" indicator stayed at the
+stale count until *another* client triggered the next change.
+
+Cause: in event.ts the _incr call (which publishes LiveSessionsChanged
+via Bus.publish) ran BEFORE Bus.subscribeAll registered this request as
+a subscriber. The publish dispatched to the existing subscriber set,
+which did not yet include the just-attaching request. The new TUI
+missed its own "you just went live" announcement.
+
+Subsequent events from other clients arrived correctly because by then
+the bus subscription was active.
+
+Fix: move Bus.subscribeAll above _incr. The new subscriber is
+registered before the publish, so it receives its own announcement and
+the footer updates within one event of the SSE handshake.
+
+stop() references heartbeat and unsub via closure; both are still
+initialized before stop is invoked (only via the abort listeners wired
+up after this block), so the reorder is safe.
+---
+ packages/opencode/src/server/routes/event.ts | 11 +++++++++--
+ 1 file changed, 9 insertions(+), 2 deletions(-)
+
+diff --git a/packages/opencode/src/server/routes/event.ts b/packages/opencode/src/server/routes/event.ts
+index fd9dfe5..abebeae 100644
+--- a/packages/opencode/src/server/routes/event.ts
++++ b/packages/opencode/src/server/routes/event.ts
+@@ -94,8 +94,6 @@ export const EventRoutes = () =>
+         const q = new AsyncQueue<string | null>()
+         let done = false
+
+-        if (sessionID) _incr(sessionID)
+-
+         q.push(
+           JSON.stringify({
+             type: "server.connected",
+@@ -130,6 +128,15 @@ export const EventRoutes = () =>
+           }
+         })
+
++        // Hivemind: _incr publishes LiveSessionsChanged via Bus.publish (see
++        // _publishChange above). The publish must happen AFTER the
++        // Bus.subscribeAll above so this request receives its own
++        // "you just went live" event — otherwise the TUI footer that just
++        // attached doesn't update to reflect itself until *another* client
++        // triggers the next change. Reorder is a pure semantic fix; no
++        // behavior change beyond the timing window.
++        if (sessionID) _incr(sessionID)
++
+         // Hivemind: hono-streaming's `stream.onAbort` doesn't fire reliably
+         // when `stream.writeSSE` is blocked in the kernel send buffer
+         // (the for-await loop never advances, so the `finally` block
+--
+2.50.1

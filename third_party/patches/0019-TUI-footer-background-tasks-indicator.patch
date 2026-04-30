@@ -1,7 +1,7 @@
 From dc9fa0020d939dd17e6b2d24d11d6ac9308d5acb Mon Sep 17 00:00:00 2001
 From: Lucas Santos <lsantos7654@gmail.com>
 Date: Wed, 29 Apr 2026 00:45:06 -0400
-Subject: [PATCH 19/19] TUI footer background tasks indicator
+Subject: [PATCH 19/27] TUI footer background tasks indicator
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit

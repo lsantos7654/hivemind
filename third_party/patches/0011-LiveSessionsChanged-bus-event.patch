@@ -1,7 +1,7 @@
 From b71c5a819a00dc6542ae7244812da4c0db35c491 Mon Sep 17 00:00:00 2001
 From: Lucas Santos <lsantos7654@gmail.com>
 Date: Mon, 27 Apr 2026 23:01:18 -0400
-Subject: [PATCH 11/19] LiveSessionsChanged bus event
+Subject: [PATCH 11/27] LiveSessionsChanged bus event
 
 Emits session.live.changed on every increment/decrement of the
 per-session SSE subscriber map (introduced in patch 0009). The payload

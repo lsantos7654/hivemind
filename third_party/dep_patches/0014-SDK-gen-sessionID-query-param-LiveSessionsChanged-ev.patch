@@ -1,7 +1,7 @@
 From 7a249e643135201651209582ae940d48de5de081 Mon Sep 17 00:00:00 2001
 From: Lucas Santos <lsantos7654@gmail.com>
 Date: Tue, 28 Apr 2026 00:06:22 -0400
-Subject: [PATCH 14/19] SDK gen: sessionID query param + LiveSessionsChanged
+Subject: [PATCH 14/27] SDK gen: sessionID query param + LiveSessionsChanged
  event type
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8

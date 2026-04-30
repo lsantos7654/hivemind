@@ -1,0 +1,64 @@
+From 37cd5a4f3e213fefe83562a5cd2a826de098d0f5 Mon Sep 17 00:00:00 2001
+From: Lucas Santos <lsantos7654@gmail.com>
+Date: Wed, 29 Apr 2026 23:10:07 -0400
+Subject: [PATCH 24/27] =?UTF-8?q?Fix=20SessionPrompt.continue=20empty=20us?=
+ =?UTF-8?q?er=20message=20=E2=86=92=20API=20rejection?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Patch 0020 spawned the wake-up turn with a synthetic-flagged user
+message whose text was the empty string. The path through
+MessageV2.toModelMessagesEffect filters user-message parts and then
+drops messages whose part list is empty. An empty-text part collapses
+to length 0 in the model API messages, leaving the previous assistant
+turn as the trailing message — and Claude rejects that with "This
+model does not support assistant message prefill. The conversation
+must end with a user message." The wake-up never executed.
+
+Replace the empty text with a single "." so the part survives every
+downstream filter. The synthetic flag keeps doing the same UI work it
+already did — it suppresses the per-step user-message wrap (so the
+model doesn't see "<system-reminder>The user sent the following
+message: </system-reminder>" wrapping nothing) and the chat-UI render.
+The model now sees a one-character user turn; the system-reminder
+injection from patch 0017 ("Background tasks ready: ses_xxx, use
+read_task_result(...)") drives actual behavior. Models reliably
+ignore lone-dot user messages.
+
+If echoing or other model misbehavior surfaces, follow-up is to
+extend MessageV2.toModelMessagesEffect to emit a placeholder when
+a user message would otherwise be empty — broader change, deferred
+until needed.
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+---
+ packages/opencode/src/session/prompt.ts | 13 ++++++++++++-
+ 1 file changed, 12 insertions(+), 1 deletion(-)
+
+diff --git a/packages/opencode/src/session/prompt.ts b/packages/opencode/src/session/prompt.ts
+index e10dbe1..281711c 100644
+--- a/packages/opencode/src/session/prompt.ts
++++ b/packages/opencode/src/session/prompt.ts
+@@ -1321,7 +1321,18 @@ NOTE: At any point in time through this workflow you should feel free to ask the
+       )(function* (sessionID: SessionID) {
+         return yield* prompt({
+           sessionID,
+-          parts: [{ type: "text", text: "", synthetic: true }],
++          // Hivemind: non-empty placeholder. Empty text gets dropped in
++          // MessageV2.toModelMessagesEffect (parts collapse to length 0
++          // for empty-text user messages), leaving the previous assistant
++          // message as the trailing message in the model API messages
++          // list — which Claude rejects as "assistant message prefill".
++          // A single dot is the smallest non-whitespace content that
++          // survives every downstream filter; the synthetic flag still
++          // suppresses the per-step user-message wrap and the chat-UI
++          // rendering, so the model just sees a one-character user turn
++          // and the system-reminder injection from patch 0017 drives
++          // actual behavior on this turn.
++          parts: [{ type: "text", text: ".", synthetic: true }],
+         })
+       })
+
+--
+2.50.1

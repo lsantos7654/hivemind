@@ -1,0 +1,73 @@
+From abd134be913afc8a0af4036f110d1d92163ce69d Mon Sep 17 00:00:00 2001
+From: Lucas Santos <lsantos7654@gmail.com>
+Date: Wed, 29 Apr 2026 22:12:46 -0400
+Subject: [PATCH 21/27] TUI session_footer slot + dual-slot home-footer plugin
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Adds a session_footer plugin slot to the session route, parallel to
+home_footer (routes/home.tsx:80). The home-footer plugin
+(feature-plugins/home/footer.tsx) now registers its View into BOTH
+slots so the live / bg / MCP / hivemind / version indicators are
+visible inside a session, not just on the home page.
+
+The hardcoded routes/session/footer.tsx file is unused (no route
+imports it); we leave it alone rather than tying anything to it.
+The bottom strip a user sees inside a session ("20.6K (2%) ctrl+p
+commands") is rendered by component/prompt/index.tsx, so the new
+session_footer slot sits below the prompt's status row, full-width
+across the main content column.
+
+mode="single_winner" matches home_footer so only one plugin can
+claim the slot at a time. session_id is forwarded for plugins that
+want it (the indicators don't need it but it's the established
+convention — see sidebar.tsx).
+---
+ .../src/cli/cmd/tui/feature-plugins/home/footer.tsx  |  7 +++++++
+ .../src/cli/cmd/tui/routes/session/index.tsx         | 12 ++++++++++++
+ 2 files changed, 19 insertions(+)
+
+diff --git a/packages/opencode/src/cli/cmd/tui/feature-plugins/home/footer.tsx b/packages/opencode/src/cli/cmd/tui/feature-plugins/home/footer.tsx
+index a83a152..534e9c7 100644
+--- a/packages/opencode/src/cli/cmd/tui/feature-plugins/home/footer.tsx
++++ b/packages/opencode/src/cli/cmd/tui/feature-plugins/home/footer.tsx
+@@ -221,6 +221,13 @@ const tui: TuiPlugin = async (api) => {
+       home_footer() {
+         return <View api={api} />
+       },
++      // Hivemind: same view rendered into the session route's
++      // session_footer slot (routes/session/index.tsx). So live /
++      // bg / MCP / hivemind / version indicators are visible while
++      // a user is inside a session, not just on the home page.
++      session_footer() {
++        return <View api={api} />
++      },
+     },
+   })
+ }
+diff --git a/packages/opencode/src/cli/cmd/tui/routes/session/index.tsx b/packages/opencode/src/cli/cmd/tui/routes/session/index.tsx
+index 1f061cc..7bc2607 100644
+--- a/packages/opencode/src/cli/cmd/tui/routes/session/index.tsx
++++ b/packages/opencode/src/cli/cmd/tui/routes/session/index.tsx
+@@ -1201,6 +1201,18 @@ export function Session() {
+             </box>
+           </Show>
+           <Toast />
++          {/* Hivemind: full-width session footer slot. The home-footer */}
++          {/* plugin (feature-plugins/home/footer.tsx) registers into both */}
++          {/* `home_footer` and `session_footer` so the live/bg/MCP/version */}
++          {/* indicators are visible on the home view AND while inside a */}
++          {/* session. Mirrors home_footer at routes/home.tsx:80. */}
++          <box width="100%" flexShrink={0}>
++            <TuiPluginRuntime.Slot
++              name="session_footer"
++              mode="single_winner"
++              session_id={route.sessionID}
++            />
++          </box>
+         </box>
+         <Show when={sidebarVisible()}>
+           <Switch>
+--
+2.50.1

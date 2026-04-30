@@ -1,7 +1,7 @@
 From fff65008011a3d3d76ec80b3ccd608f4a65ad0fc Mon Sep 17 00:00:00 2001
 From: Lucas Santos <lsantos7654@gmail.com>
 Date: Wed, 29 Apr 2026 00:41:30 -0400
-Subject: [PATCH 17/19] Background Task mode + cascade cancellation
+Subject: [PATCH 17/27] Background Task mode + cascade cancellation
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit

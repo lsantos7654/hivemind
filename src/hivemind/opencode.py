@@ -201,6 +201,7 @@ def _transform_body(body: str) -> str:
 
 def _build_frontmatter(
     *,
+    name: str,
     description: str,
     tools: dict[str, bool],
     extra_permissions: list[str] | None = None,
@@ -227,6 +228,7 @@ def _build_frontmatter(
     lines.append("  external_directory:")
     lines.append(f'    "{cache_base_path()}/**": allow')
     lines.append(f'    "{experts_base_path()}/**": allow')
+    lines.append(f'    "{memory_dir()}/{name}/**": allow')
     if extra_permissions:
         lines.extend(f"    {perm}" for perm in extra_permissions)
 
@@ -249,6 +251,7 @@ def format_agent(kind: Kind, name: str, description: str, body: str) -> str:
     cfg = _cfg()
     if kind == "git_analyzed":
         return _build_frontmatter(
+            name=name,
             description=description,
             tools=dict(cfg.tools),
             body=body,
@@ -257,6 +260,7 @@ def format_agent(kind: Kind, name: str, description: str, body: str) -> str:
         tools = dict(cfg.tools)
         tools["edit"] = True
         return _build_frontmatter(
+            name=name,
             description=description,
             tools=tools,
             extra_permissions=[f'"{teams_base_path()}/**": allow'],
@@ -264,6 +268,7 @@ def format_agent(kind: Kind, name: str, description: str, body: str) -> str:
         )
     if kind == "librarian":
         return _build_frontmatter(
+            name=name,
             description=LIBRARIAN_DESCRIPTION,
             tools={"read": True, "grep": True, "glob": True},
             body=body,
