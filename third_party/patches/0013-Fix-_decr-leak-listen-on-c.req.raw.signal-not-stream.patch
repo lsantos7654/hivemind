@@ -1,7 +1,7 @@
 From 62fe2869de0be8c3d663df74608a85e882b11f88 Mon Sep 17 00:00:00 2001
 From: Lucas Santos <lsantos7654@gmail.com>
 Date: Mon, 27 Apr 2026 23:32:48 -0400
-Subject: [PATCH 13/16] Fix _decr leak: listen on c.req.raw.signal, not
+Subject: [PATCH 13/19] Fix _decr leak: listen on c.req.raw.signal, not
  stream.onAbort
 
 Patch 0009's stop() handler runs _decr to drop the per-session

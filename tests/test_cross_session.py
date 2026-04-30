@@ -122,6 +122,31 @@ def test_live_session_ids_returns_set(fake_http):
     assert result == {"ses_a", "ses_b"}
 
 
+def test_background_tasks_active_returns_list(fake_http):
+    fake_http.script(
+        "/global/background-tasks",
+        {
+            "tasks": [
+                {"parentID": "ses_root", "taskID": "ses_bg1", "status": "running"},
+                {"parentID": "ses_root", "taskID": "ses_bg2", "status": "complete"},
+            ],
+        },
+    )
+    result = opencode.background_tasks_active()
+    assert len(result) == 2
+    running = [t for t in result if t["status"] == "running"]
+    complete = [t for t in result if t["status"] == "complete"]
+    assert running[0]["taskID"] == "ses_bg1"
+    assert complete[0]["taskID"] == "ses_bg2"
+    # Endpoint shape — matches the dep_patch SDK addition.
+    assert any(url.endswith("/global/background-tasks") for url, _ in fake_http.gets)
+
+
+def test_background_tasks_active_returns_empty_when_idle(fake_http):
+    fake_http.script("/global/background-tasks", {"tasks": []})
+    assert opencode.background_tasks_active() == []
+
+
 # ---------------------------------------------------------------------------
 # send_message
 # ---------------------------------------------------------------------------

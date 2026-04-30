@@ -1,0 +1,574 @@
+From fff65008011a3d3d76ec80b3ccd608f4a65ad0fc Mon Sep 17 00:00:00 2001
+From: Lucas Santos <lsantos7654@gmail.com>
+Date: Wed, 29 Apr 2026 00:41:30 -0400
+Subject: [PATCH 17/19] Background Task mode + cascade cancellation
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Adds `background: true` to the Task tool. When set, Task spawns the
+subagent with the same parentID/fork/resume logic as today, but returns
+immediately with `task_id` and `status: spawned (background)` instead
+of awaiting the prompt. The subagent runs to completion in its own
+session; the result is buffered in SessionBackground (a per-parent
+in-memory registry keyed by parentID) until the parent consumes it.
+
+The parent picks up results in two steps:
+1. On its next turn, the system-array assembly in SessionPrompt scans
+   SessionBackground.pendingFor and injects a <system-reminder> listing
+   ready task_ids.
+2. The model calls a new `read_task_result(task_id)` tool to consume
+   each result. Strict pull — running tasks return a status indicator,
+   unknown tasks (consumed already or never spawned by this parent)
+   return an error.
+
+Cancellation cascade: SessionPrompt.cancel was extended to walk
+SessionBackground.runningFor(parentID) and call state.cancel for each
+running child, so aborting the parent (existing
+POST /:sessionID/abort route) kills running background workers without
+any new TUI keybind or HTTP route. Subagents cannot spawn subagents
+(task.ts:75,92-100,184-186 deny `task` permission to every Task-spawned
+child unless its definition explicitly grants it; no hivemind agent
+does), so the cascade is depth-1 — direct calls to state.cancel, no
+recursion.
+
+A per-parent concurrency cap of 8 running background tasks is enforced
+in SessionBackground.register, which throws CapExceededError; the
+Task tool surfaces it as a fail Effect.
+
+New endpoint GET /global/background-tasks returns the active task set
+for the upcoming TUI footer indicator. New bus event
+session.background.changed fires on every register/complete/consume so
+the indicator can update reactively.
+
+Background runners die with the engine process, so the in-memory
+registry is consistent with runner lifetime — no persistence layer
+needed for v1.
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+---
+ packages/opencode/src/server/routes/global.ts |  33 ++++
+ packages/opencode/src/session/background.ts   | 177 ++++++++++++++++++
+ packages/opencode/src/session/prompt.ts       |  30 +++
+ .../opencode/src/tool/read-task-result.ts     |  64 +++++++
+ packages/opencode/src/tool/registry.ts        |   3 +
+ packages/opencode/src/tool/task.ts            |  94 ++++++++--
+ 6 files changed, 384 insertions(+), 17 deletions(-)
+ create mode 100644 packages/opencode/src/session/background.ts
+ create mode 100644 packages/opencode/src/tool/read-task-result.ts
+
+diff --git a/packages/opencode/src/server/routes/global.ts b/packages/opencode/src/server/routes/global.ts
+index 2489328..275fff4 100644
+--- a/packages/opencode/src/server/routes/global.ts
++++ b/packages/opencode/src/server/routes/global.ts
+@@ -13,6 +13,7 @@ import { lazy } from "../../util/lazy"
+ import { Config } from "../../config/config"
+ import { Agent } from "@/agent/agent"
+ import { liveSessions } from "./event"
++import { SessionBackground } from "@/session/background"
+ import { errors } from "../error"
+
+ const log = Log.create({ service: "server" })
+@@ -323,6 +324,38 @@ export const GlobalRoutes = lazy(() =>
+         return c.json({ sessions: liveSessions() })
+       },
+     )
++    .get(
++      "/background-tasks",
++      describeRoute({
++        summary: "List background tasks",
++        description:
++          "Hivemind: return the set of background-mode Task children currently tracked across all parents. Each entry has parentID, taskID, and status (\"running\" | \"complete\"). Running tasks are subagents kicked off via Task(background=true) whose prompts have not yet finished; complete tasks are buffered results awaiting consumption by the parent via the read_task_result tool. The TUI footer subscribes to session.background.changed for live updates and uses this route for initial state on mount.",
++        operationId: "global.backgroundTasks",
++        responses: {
++          200: {
++            description: "Background tasks",
++            content: {
++              "application/json": {
++                schema: resolver(
++                  z.object({
++                    tasks: z.array(
++                      z.object({
++                        parentID: z.string(),
++                        taskID: z.string(),
++                        status: z.enum(["running", "complete"]),
++                      }),
++                    ),
++                  }),
++                ),
++              },
++            },
++          },
++        },
++      }),
++      async (c) => {
++        return c.json({ tasks: SessionBackground.activeTasks() })
++      },
++    )
+     .post(
+       "/upgrade",
+       describeRoute({
+diff --git a/packages/opencode/src/session/background.ts b/packages/opencode/src/session/background.ts
+new file mode 100644
+index 0000000..5f24b5a
+--- /dev/null
++++ b/packages/opencode/src/session/background.ts
+@@ -0,0 +1,177 @@
++// Hivemind: in-memory registry of background-mode Task children, keyed by
++// parent session. Pairs with the `background: true` parameter on the Task
++// tool (tool/task.ts). When a background child is spawned the entry is
++// added with status="running"; when its prompt completes the entry flips
++// to status="complete" and the result text is buffered. The parent's next
++// turn picks up a <system-reminder> listing pending task_ids and consumes
++// each result via the read_task_result tool.
++//
++// The registry is also the cascade-cancellation source: SessionPrompt.cancel
++// walks the parent's running children and calls SessionRunState.cancel on
++// each so aborting the parent kills its background workers.
++//
++// In-memory only. On engine restart the buffer is gone — acceptable because
++// background runners die with the process anyway, so the lost buffer is
++// consistent with the lost runners.
++import z from "zod"
++import { Bus } from "@/bus"
++import { BusEvent } from "@/bus/bus-event"
++import { Log } from "../util/log"
++import { SessionID } from "./schema"
++
++export namespace SessionBackground {
++  const log = Log.create({ service: "session.background" })
++
++  // Per-parent concurrency cap. Background tasks already in `complete`
++  // status do not count against the cap — only `running` children do.
++  export const CONCURRENCY_CAP = 8
++
++  export type Status = "running" | "complete"
++
++  export interface Pending {
++    parentID: SessionID
++    taskID: SessionID
++    status: Status
++    result?: string
++    startedAt: number
++    completedAt?: number
++  }
++
++  // Map<parentID, Map<taskID, Pending>>
++  const _registry = new Map<SessionID, Map<SessionID, Pending>>()
++
++  export const Changed = BusEvent.define(
++    "session.background.changed",
++    z.object({
++      tasks: z.array(
++        z.object({
++          parentID: SessionID.zod,
++          taskID: SessionID.zod,
++          status: z.enum(["running", "complete"]),
++        }),
++      ),
++    }),
++  )
++
++  export class CapExceededError extends Error {
++    constructor(
++      public parentID: SessionID,
++      public cap: number,
++    ) {
++      super(`max ${cap} concurrent background tasks per parent (parentID=${parentID})`)
++      this.name = "BackgroundCapExceededError"
++    }
++  }
++
++  function _publishChange(): void {
++    Bus.publish(Changed, { tasks: activeTasks() }).catch((err) =>
++      log.error("failed to publish BackgroundTasksChanged", { err }),
++    )
++  }
++
++  function _bucket(parentID: SessionID): Map<SessionID, Pending> {
++    let bucket = _registry.get(parentID)
++    if (!bucket) {
++      bucket = new Map()
++      _registry.set(parentID, bucket)
++    }
++    return bucket
++  }
++
++  function _runningCount(parentID: SessionID): number {
++    const bucket = _registry.get(parentID)
++    if (!bucket) return 0
++    let n = 0
++    for (const p of bucket.values()) if (p.status === "running") n++
++    return n
++  }
++
++  /**
++   * Register a freshly spawned background task. Throws CapExceededError
++   * if the parent already has CONCURRENCY_CAP running tasks. Fires
++   * BackgroundTasksChanged on success.
++   */
++  export function register(parentID: SessionID, taskID: SessionID): void {
++    if (_runningCount(parentID) >= CONCURRENCY_CAP) {
++      throw new CapExceededError(parentID, CONCURRENCY_CAP)
++    }
++    const bucket = _bucket(parentID)
++    bucket.set(taskID, {
++      parentID,
++      taskID,
++      status: "running",
++      startedAt: Date.now(),
++    })
++    log.info("register", { parentID, taskID })
++    _publishChange()
++  }
++
++  /**
++   * Mark a running task complete. Stores `result` for later consumption
++   * via `consume`. No-op if the task is unknown (e.g. cancelled before
++   * the runner reached completion). Fires BackgroundTasksChanged.
++   */
++  export function complete(parentID: SessionID, taskID: SessionID, result: string): void {
++    const bucket = _registry.get(parentID)
++    const entry = bucket?.get(taskID)
++    if (!entry) {
++      log.info("complete (unknown task, ignored)", { parentID, taskID })
++      return
++    }
++    entry.status = "complete"
++    entry.result = result
++    entry.completedAt = Date.now()
++    log.info("complete", { parentID, taskID, resultLength: result.length })
++    _publishChange()
++  }
++
++  /**
++   * Pop a completed result and remove it from the registry. Returns
++   * undefined if the task is unknown or still running.
++   */
++  export function consume(parentID: SessionID, taskID: SessionID): Pending | undefined {
++    const bucket = _registry.get(parentID)
++    const entry = bucket?.get(taskID)
++    if (!entry) return undefined
++    if (entry.status !== "complete") return entry  // still running, leave registry intact
++    bucket!.delete(taskID)
++    if (bucket!.size === 0) _registry.delete(parentID)
++    log.info("consume", { parentID, taskID })
++    _publishChange()
++    return entry
++  }
++
++  /** Read entries for a parent without mutating the registry. */
++  export function pendingFor(parentID: SessionID): Pending[] {
++    const bucket = _registry.get(parentID)
++    if (!bucket) return []
++    return [...bucket.values()]
++  }
++
++  /** Running children of a parent — for cascade cancellation. */
++  export function runningFor(parentID: SessionID): SessionID[] {
++    const bucket = _registry.get(parentID)
++    if (!bucket) return []
++    return [...bucket.values()].filter((p) => p.status === "running").map((p) => p.taskID)
++  }
++
++  /** All entries across all parents — for /global/background-tasks. */
++  export function activeTasks(): Array<{ parentID: SessionID; taskID: SessionID; status: Status }> {
++    const out: Array<{ parentID: SessionID; taskID: SessionID; status: Status }> = []
++    for (const bucket of _registry.values()) {
++      for (const p of bucket.values()) {
++        out.push({ parentID: p.parentID, taskID: p.taskID, status: p.status })
++      }
++    }
++    return out
++  }
++
++  /** Count of currently-running tasks across all parents — for footer. */
++  export function activeRunningCount(): number {
++    let n = 0
++    for (const bucket of _registry.values()) {
++      for (const p of bucket.values()) if (p.status === "running") n++
++    }
++    return n
++  }
++}
+diff --git a/packages/opencode/src/session/prompt.ts b/packages/opencode/src/session/prompt.ts
+index 7f0a014..4aaf957 100644
+--- a/packages/opencode/src/session/prompt.ts
++++ b/packages/opencode/src/session/prompt.ts
+@@ -48,6 +48,7 @@ import { InstanceState } from "@/effect/instance-state"
+ import { makeRuntime } from "@/effect/run-service"
+ import { TaskTool } from "@/tool/task"
+ import { SessionRunState } from "./run-state"
++import { SessionBackground } from "./background"
+
+ // @ts-ignore
+ globalThis.AI_SDK_LOG_WARNINGS = false
+@@ -103,6 +104,17 @@ export namespace SessionPrompt {
+       const cancel = Effect.fn("SessionPrompt.cancel")(function* (sessionID: SessionID) {
+         log.info("cancel", { sessionID })
+         yield* state.cancel(sessionID)
++        // Hivemind: cancel any background children spawned from this
++        // session. Subagents cannot spawn subagents (see
++        // tool/task.ts childPermissionOverlay which denies the `task`
++        // permission for every Task-spawned child unless the child's
++        // own definition explicitly grants it; no hivemind template
++        // does), so this cascade is exactly one level — direct calls
++        // to state.cancel, no recursion. SessionRunState.cancel is
++        // idempotent so cancelling an already-idle child is safe.
++        for (const childID of SessionBackground.runningFor(sessionID)) {
++          yield* state.cancel(childID)
++        }
+       })
+
+       const resolvePromptParts = Effect.fn("SessionPrompt.resolvePromptParts")(function* (template: string) {
+@@ -1471,6 +1483,24 @@ NOTE: At any point in time through this workflow you should feel free to ask the
+                 MessageV2.toModelMessagesEffect(msgs, model),
+               ])
+               const system = [...env, ...(skills ? [skills] : []), ...instructions]
++              // Hivemind: surface completed background tasks as a
++              // <system-reminder> so the model knows results are
++              // ready to consume via read_task_result. Pull-only —
++              // we never auto-fold result text here, the model picks
++              // each one explicitly. Tasks still in `running` status
++              // do not appear; the reminder is added once and dropped
++              // automatically as soon as the model consumes them.
++              const bgReady = SessionBackground.pendingFor(sessionID).filter((p) => p.status === "complete")
++              if (bgReady.length > 0) {
++                system.push(
++                  [
++                    "<system-reminder>",
++                    `Background tasks ready: ${bgReady.map((p) => p.taskID).join(", ")}.`,
++                    'Use read_task_result(task_id="...") to fetch each result.',
++                    "</system-reminder>",
++                  ].join("\n"),
++                )
++              }
+               const format = lastUser.format ?? { type: "text" as const }
+               if (format.type === "json_schema") system.push(STRUCTURED_OUTPUT_SYSTEM_PROMPT)
+               const result = yield* handle.process({
+diff --git a/packages/opencode/src/tool/read-task-result.ts b/packages/opencode/src/tool/read-task-result.ts
+new file mode 100644
+index 0000000..b5281a3
+--- /dev/null
++++ b/packages/opencode/src/tool/read-task-result.ts
+@@ -0,0 +1,64 @@
++// Hivemind: pull a completed background-task result out of
++// SessionBackground's per-parent buffer. Pairs with the `background: true`
++// parameter on the Task tool — when the engine signals via
++// <system-reminder> that a task is ready, the model calls this tool with
++// the corresponding task_id to consume the result.
++//
++// Strict pull semantics. If the task is still running this returns an
++// indication, not the result, and leaves the registry untouched. If the
++// task is unknown (consumed already or never spawned by this parent)
++// this returns an error. A task is consumable only by the parent that
++// spawned it — cross-session reads are rejected.
++import z from "zod"
++import { Tool } from "./tool"
++import { SessionBackground } from "../session/background"
++import { SessionID } from "../session/schema"
++
++const DESCRIPTION = `Read the result of a background Task spawned with background=true.
++
++Strict pull: call this tool only after you see a <system-reminder> announcing the task_id is ready. If the task is still running, the tool returns a status indicator and you should wait for the next reminder. After a successful read, the result is consumed and a second call with the same task_id returns "no such task."
++
++Tasks are scoped to the parent session that spawned them — you can only read results for background tasks you spawned yourself.`
++
++const parameters = z.object({
++  task_id: z
++    .string()
++    .describe("The task_id returned by a Task call with background=true. Must match a task this session spawned."),
++})
++
++type Metadata = {
++  taskID: string
++  status: "complete" | "running" | "unknown"
++}
++
++export const ReadTaskResultTool = Tool.define("read_task_result", {
++  description: DESCRIPTION,
++  parameters,
++  async execute(params: z.infer<typeof parameters>, ctx: Tool.Context<Metadata>) {
++    const taskID = SessionID.make(params.task_id)
++    const entry = SessionBackground.consume(ctx.sessionID, taskID)
++    if (!entry) {
++      return {
++        title: "read_task_result (unknown)",
++        metadata: { taskID: params.task_id, status: "unknown" as const },
++        output: `<task_result task_id="${params.task_id}" status="unknown">No background task with this task_id was spawned by the current session, or its result has already been consumed.</task_result>`,
++      }
++    }
++    if (entry.status !== "complete") {
++      return {
++        title: "read_task_result (running)",
++        metadata: { taskID: params.task_id, status: "running" as const },
++        output: `<task_result task_id="${params.task_id}" status="running">Task has not yet completed. Wait for the next <system-reminder> announcing readiness.</task_result>`,
++      }
++    }
++    return {
++      title: "read_task_result",
++      metadata: { taskID: params.task_id, status: "complete" as const },
++      output: [
++        `<task_result task_id="${params.task_id}">`,
++        entry.result ?? "",
++        "</task_result>",
++      ].join("\n"),
++    }
++  },
++})
+diff --git a/packages/opencode/src/tool/registry.ts b/packages/opencode/src/tool/registry.ts
+index 800c45c..9e3b052 100644
+--- a/packages/opencode/src/tool/registry.ts
++++ b/packages/opencode/src/tool/registry.ts
+@@ -6,6 +6,7 @@ import { GlobTool } from "./glob"
+ import { GrepTool } from "./grep"
+ import { ReadTool } from "./read"
+ import { TaskDescription, TaskTool } from "./task"
++import { ReadTaskResultTool } from "./read-task-result"
+ import { TodoWriteTool } from "./todo"
+ import { WebFetchTool } from "./webfetch"
+ import { WriteTool } from "./write"
+@@ -152,6 +153,7 @@ export namespace ToolRegistry {
+             edit: Tool.init(EditTool),
+             write: Tool.init(WriteTool),
+             task: Tool.init(task),
++            readTaskResult: Tool.init(ReadTaskResultTool),
+             fetch: Tool.init(WebFetchTool),
+             todo: Tool.init(todo),
+             search: Tool.init(WebSearchTool),
+@@ -175,6 +177,7 @@ export namespace ToolRegistry {
+               tool.edit,
+               tool.write,
+               tool.task,
++              tool.readTaskResult,
+               tool.fetch,
+               tool.todo,
+               tool.search,
+diff --git a/packages/opencode/src/tool/task.ts b/packages/opencode/src/tool/task.ts
+index cfdcaff..f94ccb4 100644
+--- a/packages/opencode/src/tool/task.ts
++++ b/packages/opencode/src/tool/task.ts
+@@ -6,6 +6,7 @@ import { SessionID, MessageID } from "../session/schema"
+ import { MessageV2 } from "../session/message-v2"
+ import { Agent } from "../agent/agent"
+ import { SessionPrompt } from "../session/prompt"
++import { SessionBackground } from "../session/background"
+ import { Config } from "../config/config"
+ import { Permission } from "@/permission"
+ import { Effect } from "effect"
+@@ -29,6 +30,12 @@ const parameters = z.object({
+       "Optional. Pass a session ID to fork that session into a fresh subagent instead of starting from scratch. The fork inherits the source's full message history and permission rules; the source itself is untouched. Useful for follow-up questions that need another session's accumulated context. Mutually exclusive with task_id.",
+     )
+     .optional(),
++  background: z
++    .boolean()
++    .describe(
++      "Optional. If true, spawn the subagent and return immediately with task_id and status=spawned (background). The subagent runs to completion in its own session; the result is NOT returned synchronously. On a later turn the engine injects a <system-reminder> listing ready task_ids — fetch each result with read_task_result(task_id). Aborting the parent session cascades to running background children. Useful for long-running consultations or parallel expert spawns where blocking the parent's tool call would waste time. Default false (synchronous).",
++    )
++    .optional(),
+   command: z.string().describe("The command that triggered this task").optional(),
+ })
+
+@@ -161,6 +168,75 @@ export const TaskTool = Tool.defineEffect(
+
+       const messageID = MessageID.ascending()
+
++      const promptInput = {
++        messageID,
++        sessionID: nextSession.id,
++        model: {
++          modelID: model.modelID,
++          providerID: model.providerID,
++        },
++        agent: next.name,
++        tools: {
++          ...(canTodo ? {} : { todowrite: false }),
++          ...(canTask ? {} : { task: false }),
++          ...Object.fromEntries((cfg.experimental?.primary_tools ?? []).map((item) => [item, false])),
++        },
++      }
++
++      // Hivemind: background mode kicks off the subagent prompt without
++      // awaiting it. The result lands in SessionBackground's per-parent
++      // buffer; the parent picks it up via a <system-reminder> + the
++      // read_task_result tool. Cascade cancellation is handled by
++      // SessionPrompt.cancel walking SessionBackground.runningFor — we
++      // do NOT register a ctx.abort listener because this tool call
++      // returns ~immediately, so the AbortSignal would die before it
++      // could fire for any reason that matters to the still-running
++      // child.
++      if (params.background) {
++        try {
++          SessionBackground.register(ctx.sessionID, nextSession.id)
++        } catch (err) {
++          if (err instanceof SessionBackground.CapExceededError) {
++            return yield* Effect.fail(err)
++          }
++          throw err
++        }
++
++        const parts = yield* Effect.promise(() => SessionPrompt.resolvePromptParts(params.prompt))
++
++        // Fire-and-forget. Capture both fulfilment paths into the
++        // background registry so the buffer always closes out.
++        SessionPrompt.prompt({ ...promptInput, parts })
++          .then((result) => {
++            const text = result.parts.findLast((item) => item.type === "text")?.text ?? ""
++            SessionBackground.complete(ctx.sessionID, nextSession.id, text)
++          })
++          .catch((err) => {
++            const text = err instanceof Error ? err.message : String(err)
++            SessionBackground.complete(
++              ctx.sessionID,
++              nextSession.id,
++              `<task_error>${text}</task_error>`,
++            )
++          })
++
++        return {
++          title: params.description,
++          metadata: {
++            sessionId: nextSession.id,
++            model,
++          },
++          output: [
++            `task_id: ${nextSession.id}`,
++            `status: spawned (background)`,
++            "",
++            'The subagent is running. You will see a <system-reminder> when its result is ready; fetch with read_task_result(task_id="' +
++              nextSession.id +
++              '").',
++          ].join("\n"),
++        }
++      }
++
+       function cancel() {
+         SessionPrompt.cancel(nextSession.id)
+       }
+@@ -172,23 +248,7 @@ export const TaskTool = Tool.defineEffect(
+         () =>
+           Effect.gen(function* () {
+             const parts = yield* Effect.promise(() => SessionPrompt.resolvePromptParts(params.prompt))
+-            const result = yield* Effect.promise(() =>
+-              SessionPrompt.prompt({
+-                messageID,
+-                sessionID: nextSession.id,
+-                model: {
+-                  modelID: model.modelID,
+-                  providerID: model.providerID,
+-                },
+-                agent: next.name,
+-                tools: {
+-                  ...(canTodo ? {} : { todowrite: false }),
+-                  ...(canTask ? {} : { task: false }),
+-                  ...Object.fromEntries((cfg.experimental?.primary_tools ?? []).map((item) => [item, false])),
+-                },
+-                parts,
+-              }),
+-            )
++            const result = yield* Effect.promise(() => SessionPrompt.prompt({ ...promptInput, parts }))
+
+             return {
+               title: params.description,
+--
+2.50.1

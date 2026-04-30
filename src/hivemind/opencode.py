@@ -567,6 +567,27 @@ def live_session_ids() -> set[str]:
     return set(sessions)
 
 
+def background_tasks_active() -> list[dict[str, Any]]:
+    """GET /global/background-tasks — background-mode Task children.
+
+    Provided by
+    ``//third_party/patches/0017-Background-Task-mode-cascade-cancellation.patch``.
+    Each entry has ``parentID``, ``taskID``, and ``status``
+    (``"running"`` | ``"complete"``). Running entries are subagents
+    spawned via ``Task(background=true)`` whose prompts have not yet
+    finished; complete entries are buffered results awaiting
+    consumption by the parent via the ``read_task_result`` tool.
+    """
+    resp = httpx.get(
+        f"{_server_url()}/global/background-tasks",
+        timeout=SESSION_HTTP_TIMEOUT,
+    )
+    resp.raise_for_status()
+    data = resp.json()
+    tasks: list[dict[str, Any]] = data.get("tasks", [])
+    return tasks
+
+
 # ---------------------------------------------------------------------------
 # Directory initialisation
 # ---------------------------------------------------------------------------

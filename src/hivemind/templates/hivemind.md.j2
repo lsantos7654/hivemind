@@ -91,6 +91,40 @@ If you need input from multiple experts and the questions are
 independent, spawn them all in a single message — opencode runs
 Task subagents concurrently.
 
+### Background expert spawns
+
+For consultations likely to take more than a few seconds (large
+analyses, multi-file walks, the memory-compaction daemon), prefer:
+
+```
+Task(
+  subagent_type="expert-foo",
+  background=true,
+  description="<3-5 word title>",
+  prompt="<question>",
+)
+```
+
+The tool returns immediately with `task_id: ses_xxx` and `status:
+spawned (background)` — you keep working while the subagent runs.
+On a later turn you'll see a `<system-reminder>` listing ready
+task IDs; fetch each result with:
+
+```
+read_task_result(task_id="ses_xxx")
+```
+
+Strict pull — running tasks return a status indicator and leave the
+buffer untouched; calling `read_task_result` again after a successful
+read returns "no such task." Cancellation cascades from the parent —
+aborting your own session also kills running background children.
+The TUI footer shows `● N bg` for live awareness.
+
+Per-parent cap is 8 concurrent running background tasks; over the
+cap returns an error. Compose `background=true` orthogonally with
+`task_id` (background resume) or `source_session_id` (background
+fork).
+
 ## Reading expert knowledge directly
 
 Every git-analyzed expert ships pre-generated analysis docs and a

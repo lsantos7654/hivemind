@@ -1,7 +1,7 @@
 From 08ec3348641caa243103f88337032d64ae0f1e13 Mon Sep 17 00:00:00 2001
 From: Lucas Santos <lsantos7654@gmail.com>
 Date: Mon, 20 Apr 2026 21:22:13 -0400
-Subject: [PATCH 04/16] Non-destructive agent reload endpoint
+Subject: [PATCH 04/19] Non-destructive agent reload endpoint
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit

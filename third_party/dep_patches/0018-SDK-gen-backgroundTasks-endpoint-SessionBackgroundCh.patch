@@ -1,0 +1,110 @@
+From 3c3b9117c71d83836ef6942e79b2ef73c7200a1a Mon Sep 17 00:00:00 2001
+From: Lucas Santos <lsantos7654@gmail.com>
+Date: Wed, 29 Apr 2026 00:44:25 -0400
+Subject: [PATCH 18/19] SDK gen: backgroundTasks endpoint +
+ SessionBackgroundChanged event
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Standalone SDK changes lifted into a dep_patch so the matching
+server-side and TUI-side patches actually wire up — the bun bundler
+reads the SDK at runtime via a node_modules symlink that resolves
+into @opencode_node_modules, which only receives dep_patches. Code
+patches alone leave that copy unmodified.
+
+Two changes:
+  - sdk.gen.ts: Global.backgroundTasks() returning the active set
+    of background-mode Task children (parentID + taskID + status)
+    backed by GET /global/background-tasks.
+  - types.gen.ts: EventSessionBackgroundChanged variant on the Event
+    union (type "session.background.changed"), payload mirrors the
+    /global/background-tasks response shape so the TUI can keep its
+    state in sync from one channel.
+
+Pairs with patch 0017 (the engine-side registry, route, and bus
+event). Follow-up TUI footer patch consumes both.
+---
+ packages/sdk/js/src/v2/gen/sdk.gen.ts   | 27 +++++++++++++++++++++++++
+ packages/sdk/js/src/v2/gen/types.gen.ts | 21 +++++++++++++++++++
+ 2 files changed, 48 insertions(+)
+
+diff --git a/packages/sdk/js/src/v2/gen/sdk.gen.ts b/packages/sdk/js/src/v2/gen/sdk.gen.ts
+index 8a9edde..71d09f7 100644
+--- a/packages/sdk/js/src/v2/gen/sdk.gen.ts
++++ b/packages/sdk/js/src/v2/gen/sdk.gen.ts
+@@ -338,6 +338,33 @@ export class Global extends HeyApiClient {
+     })
+   }
+
++  /**
++   * List background tasks
++   *
++   * Hivemind: returns the set of background-mode Task children currently
++   * tracked across all parents. Each entry has parentID, taskID, and
++   * status ("running" | "complete"). Provided by patch
++   * `//third_party/patches/0017-Background-Task-mode-cascade-cancellation.patch`.
++   */
++  public backgroundTasks<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
++    return (options?.client ?? this.client).get<
++      {
++        200: {
++          tasks: Array<{
++            parentID: string
++            taskID: string
++            status: "running" | "complete"
++          }>
++        }
++      },
++      unknown,
++      ThrowOnError
++    >({
++      url: "/global/background-tasks",
++      ...options,
++    })
++  }
++
+   /**
+    * Upgrade opencode
+    *
+diff --git a/packages/sdk/js/src/v2/gen/types.gen.ts b/packages/sdk/js/src/v2/gen/types.gen.ts
+index 0334800..034d5bd 100644
+--- a/packages/sdk/js/src/v2/gen/types.gen.ts
++++ b/packages/sdk/js/src/v2/gen/types.gen.ts
+@@ -441,6 +441,26 @@ export type EventSessionLiveChanged = {
+   }
+ }
+
++/**
++ * Hivemind: emitted when the SessionBackground registry mutates — a
++ * background-mode Task spawn (status=running), its completion
++ * (status=complete), or the parent consuming a result via
++ * read_task_result (entry removed). Carries the full active set so a
++ * subscriber can derive .length, diff against last-known state, etc.
++ * Provided by patch
++ * `//third_party/patches/0017-Background-Task-mode-cascade-cancellation.patch`.
++ */
++export type EventSessionBackgroundChanged = {
++  type: "session.background.changed"
++  properties: {
++    tasks: Array<{
++      parentID: string
++      taskID: string
++      status: "running" | "complete"
++    }>
++  }
++}
++
+ export type EventSessionCompacted = {
+   type: "session.compacted"
+   properties: {
+@@ -1005,6 +1025,7 @@ export type Event =
+   | EventSessionStatus
+   | EventSessionIdle
+   | EventSessionLiveChanged
++  | EventSessionBackgroundChanged
+   | EventSessionCompacted
+   | EventTodoUpdated
+   | EventPtyCreated
+--
+2.50.1

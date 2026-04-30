@@ -1,7 +1,7 @@
 From dfbee0063ed7e002de81ceae9816e19285504e81 Mon Sep 17 00:00:00 2001
 From: Lucas Santos <lsantos7654@gmail.com>
 Date: Mon, 27 Apr 2026 22:42:38 -0400
-Subject: [PATCH 09/16] SSE liveness counter
+Subject: [PATCH 09/19] SSE liveness counter
 
 Adds GET /global/live-sessions returning the set of session IDs with
 at least one open SSE subscription on /event?sessionID=<id>. Used by

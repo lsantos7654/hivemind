@@ -104,6 +104,7 @@ def _ext_impl(ctx):
 # code patches.
 _OPENCODE_DEP_PATCHES = [
     "0014-SDK-gen-sessionID-query-param-LiveSessionsChanged-ev.patch",
+    "0018-SDK-gen-backgroundTasks-endpoint-SessionBackgroundCh.patch",
 ]
 # Patches that modify only source files (no dep manifest changes). Applied
 # only in @opencode_src, after dep_patches, after install. Editing one
@@ -125,6 +126,8 @@ _OPENCODE_CODE_PATCHES = [
     "0013-Fix-_decr-leak-listen-on-c.req.raw.signal-not-stream.patch",
     "0015-Session.fork-accepts-optional-permission.patch",
     "0016-Task-tool-accepts-source_session_id.patch",
+    "0017-Background-Task-mode-cascade-cancellation.patch",
+    "0019-TUI-footer-background-tasks-indicator.patch",
 ]
 external_engines = module_extension(
     implementation = _ext_impl,

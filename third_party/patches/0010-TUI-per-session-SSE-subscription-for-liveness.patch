@@ -1,7 +1,7 @@
 From 7da232a5f62718cc9dbd4caab254eb41d237290c Mon Sep 17 00:00:00 2001
 From: Lucas Santos <lsantos7654@gmail.com>
 Date: Mon, 27 Apr 2026 22:48:23 -0400
-Subject: [PATCH 10/16] TUI per-session SSE subscription for liveness
+Subject: [PATCH 10/19] TUI per-session SSE subscription for liveness
 
 Pairs with the server-side patch 0009 (SSE liveness counter). The TUI
 now passes ?sessionID=<currentSession> on its /event subscription so
