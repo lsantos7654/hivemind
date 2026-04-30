@@ -128,6 +128,7 @@ _OPENCODE_CODE_PATCHES = [
     "0016-Wake-up-synthetic-message-becomes-a-directive.patch",
     "0017-Per-client-presence-focus-model-for-live-session-tra.patch",
     "0019-TUI-presence-stream-focus-POST-sessions-subagents-fo.patch",
+    "0020-Tests-presence-focus-model.patch",
 ]
 external_engines = module_extension(
     implementation = _ext_impl,

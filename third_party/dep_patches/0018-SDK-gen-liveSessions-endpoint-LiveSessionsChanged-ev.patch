@@ -1,7 +1,7 @@
 From 912a09fe45f9114605e3b7e4c833cdb1865989d9 Mon Sep 17 00:00:00 2001
 From: Lucas Santos <lsantos7654@gmail.com>
 Date: Thu, 30 Apr 2026 00:56:41 -0400
-Subject: [PATCH 18/19] SDK gen: liveSessions endpoint + LiveSessionsChanged
+Subject: [PATCH 18/20] SDK gen: liveSessions endpoint + LiveSessionsChanged
  event type
 
 Regenerates the v2 client SDK to expose the per-client presence /
