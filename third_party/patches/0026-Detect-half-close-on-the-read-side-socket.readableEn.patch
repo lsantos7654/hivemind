@@ -1,0 +1,96 @@
+From 79a76c5ed081314869d95c53d9cf02c8edf133c2 Mon Sep 17 00:00:00 2001
+From: Lucas Santos <lsantos7654@gmail.com>
+Date: Fri, 1 May 2026 00:44:30 -0400
+Subject: [PATCH 26/26] Detect half-close on the read side
+ (socket.readableEnded)
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+After patches up through 0025, Ctrl-C on a TUI still doesn't drop
+the count: the active write probe doesn't surface anything because
+clean FIN closes only the read side of the TCP connection. Writes
+into a half-closed socket are accepted by the kernel without error
+(they sit in the send buffer indefinitely), so neither
+`outgoing.write()` nor `outgoing.destroyed` flips.
+
+The signal that DOES change is on the read side:
+`socket.readable === false` and `socket.readableEnded === true`
+once the peer's FIN is processed. These flags reflect TCP-level
+state that the kernel knows about, even when Bun's Node http
+compat is batching the corresponding 'close'/'aborted' events.
+
+Add both checks to the existing sweep, before the active-write
+probe. The full-close indicators (destroyed) stay first; the
+half-close indicators come next; the write probe stays as
+defense in depth for connections that flip to fully-destroyed
+without exposing the half-close state first.
+
+If `socket.readable` / `readableEnded` themselves don't update
+on Bun's compat (i.e. they're cached against the same batched
+event delivery), this won't fix the symptom — in which case the
+escalation path is to switch from `@hono/node-server` to native
+`Bun.serve` so `req.signal.abort` fires from uWS's
+`us_socket_context_on_close` directly.
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+---
+ packages/opencode/src/server/routes/event.ts | 30 +++++++++++++++++---
+ 1 file changed, 26 insertions(+), 4 deletions(-)
+
+diff --git a/packages/opencode/src/server/routes/event.ts b/packages/opencode/src/server/routes/event.ts
+index 6badaea..cc5d514 100644
+--- a/packages/opencode/src/server/routes/event.ts
++++ b/packages/opencode/src/server/routes/event.ts
+@@ -49,7 +49,12 @@ export const LiveSessionsChanged = BusEvent.define(
+ type NodeOutgoing = {
+   destroyed?: boolean
+   writableEnded?: boolean
+-  socket?: { destroyed?: boolean; readable?: boolean; writable?: boolean }
++  socket?: {
++    destroyed?: boolean
++    readable?: boolean
++    readableEnded?: boolean
++    writable?: boolean
++  }
+   write?: (chunk: string) => boolean | void
+   on?: Function
+ }
+@@ -89,15 +94,32 @@ const _sweep = setInterval(() => {
+   for (const [clientID, entry] of _clients) {
+     const out = entry.outgoing
+     if (!out) continue
+-    if (out.destroyed || out.writableEnded || out.socket?.destroyed) {
+-      log.info("sweep evicting dead client (passive)", { clientID })
++    const sock = out.socket
++    // Full-close indicators: destroyed at either layer means we're
++    // definitively done.
++    if (out.destroyed || out.writableEnded || sock?.destroyed) {
++      log.info("sweep evicting (passive)", { clientID })
++      entry.stop?.()
++      continue
++    }
++    // Half-close indicator: peer sent FIN, our read side ended, but
++    // our write side is still "open" (kernel will keep accepting
++    // writes into the send buffer indefinitely). Ctrl-C in the TUI
++    // produces a clean FIN — write probes don't surface anything,
++    // but the read side flips here.
++    if (sock?.readable === false || sock?.readableEnded === true) {
++      log.info("sweep evicting (read half-closed)", { clientID })
+       entry.stop?.()
+       continue
+     }
++    // Active-write probe — defense-in-depth for the case where the
++    // socket is fully gone but flags haven't propagated yet. Only
++    // surfaces RST/ECONNRESET, not clean FIN (writes to a half-closed
++    // socket are accepted by the kernel).
+     try {
+       out.write?.(":\n")
+     } catch {
+-      log.info("sweep evicting dead client (write threw)", { clientID })
++      log.info("sweep evicting (write threw)", { clientID })
+       entry.stop?.()
+     }
+   }
+--
+2.50.1

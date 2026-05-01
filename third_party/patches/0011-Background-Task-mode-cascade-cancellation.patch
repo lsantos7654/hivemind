@@ -1,7 +1,7 @@
 From 17f60acd2749c1d452c461c88d6bfec98b180f1d Mon Sep 17 00:00:00 2001
 From: Lucas Santos <lsantos7654@gmail.com>
 Date: Wed, 29 Apr 2026 00:41:30 -0400
-Subject: [PATCH 11/25] Background Task mode + cascade cancellation
+Subject: [PATCH 11/26] Background Task mode + cascade cancellation
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit

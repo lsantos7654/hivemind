@@ -1,7 +1,7 @@
 From ae89cabae1a6ac3cc7d5476610b0e964321d2283 Mon Sep 17 00:00:00 2001
 From: Lucas Santos <lsantos7654@gmail.com>
 Date: Thu, 30 Apr 2026 01:11:44 -0400
-Subject: [PATCH 20/25] Tests: presence + focus model
+Subject: [PATCH 20/26] Tests: presence + focus model
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
