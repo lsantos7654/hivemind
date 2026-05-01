@@ -135,6 +135,7 @@ _OPENCODE_CODE_PATCHES = [
     "0024-Subagents-pill-is-per-TUI-scoped-to-the-focused-sess.patch",
     "0025-Force-detect-dead-SSE-clients-via-active-probe-slot-.patch",
     "0026-Detect-half-close-on-the-read-side-socket.readableEn.patch",
+    "0027-Switch-listener-from-hono-node-server-to-native-Bun..patch",
 ]
 external_engines = module_extension(
     implementation = _ext_impl,

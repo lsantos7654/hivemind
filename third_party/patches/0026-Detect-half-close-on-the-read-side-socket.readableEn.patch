@@ -1,7 +1,7 @@
 From 79a76c5ed081314869d95c53d9cf02c8edf133c2 Mon Sep 17 00:00:00 2001
 From: Lucas Santos <lsantos7654@gmail.com>
 Date: Fri, 1 May 2026 00:44:30 -0400
-Subject: [PATCH 26/26] Detect half-close on the read side
+Subject: [PATCH 26/27] Detect half-close on the read side
  (socket.readableEnded)
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8

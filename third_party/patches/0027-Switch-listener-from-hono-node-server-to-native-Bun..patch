@@ -1,0 +1,519 @@
+From ed4f2691d9ee514ce5276ebe70f60a85c5593d0e Mon Sep 17 00:00:00 2001
+From: Lucas Santos <lsantos7654@gmail.com>
+Date: Fri, 1 May 2026 01:06:47 -0400
+Subject: [PATCH 27/27] Switch listener from @hono/node-server to native
+ Bun.serve
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+The disconnect-detection chase (patches 0021–0026) all targeted
+the wrong substrate. @hono/node-server runs Hono on Bun's Node
+http compat. On that path:
+
+  - `c.req.raw.signal` doesn't fire reliably for long-lived SSE
+    responses. The adaptor wires it from `outgoing.on("close")`,
+    which Bun's Node compat batches.
+  - `outgoing.destroyed` and friends update only when that batched
+    event is processed.
+  - Active write probes don't surface anything because clean FIN
+    closes the read side; the kernel happily accepts more writes
+    into the send buffer.
+  - Read-side flags (`socket.readable`, `socket.readableEnded`)
+    are also cached against the same batched events.
+
+User confirmed Phase A (read-side flag check) didn't fix it.
+Escalating to Phase B from the plan: native `Bun.serve`.
+
+Native Bun.serve runs Hono on Bun's uWebSockets path. There,
+`req.signal.abort()` fires from `RequestContext.onAbort` via
+`us_socket_context_on_close` synchronously when the kernel
+delivers EPOLLRDHUP — no batching, no wait for "other I/O".
+This is the substrate the Bun expert pointed us at originally.
+
+Migration:
+  - Replace `createNodeWebSocket` with `createBunWebSocket`
+    from `hono/bun`. Same `upgradeWebSocket` shape; existing
+    PtyRoutes consumer is unchanged.
+  - Replace `createAdaptorServer({ fetch })` +
+    `server.listen(port, host)` with `Bun.serve({ fetch,
+    websocket, port, hostname })`.
+  - Pass `server` as second arg to `app.fetch(req, server)` so
+    Hono's `getBunServer(c)` can find it for WS upgrades.
+  - Bun.Server has a different shape than node:http.Server:
+    `server.port` instead of `server.address()`, `server.stop()`
+    instead of `server.close(cb)`. Listener interface stays
+    identical.
+  - Drop @hono/node-server import; remove the type import for
+    `ServerType`.
+
+In `event.ts`:
+  - Drop `c.env.incoming/outgoing` access — that was the
+    @hono/node-server-specific bindings shape.
+  - Drop `incoming.on/once`, `outgoing.on/once`,
+    `socket.setKeepAlive` — these don't apply on Bun.serve.
+  - Drop the entire module-level `_sweep` `setInterval`. Native
+    Bun.serve fires the disconnect signal synchronously, so the
+    sweep is no longer load-bearing. Removing it simplifies the
+    code and removes the timer overhead.
+  - Keep `stream.onAbort` and `c.req.raw.signal.addEventListener`
+    as the two cleanup paths. Both are wired to the same uSockets
+    source on Bun.serve.
+
+In real-server tests:
+  - Replace `createAdaptorServer` with `Bun.serve` to match
+    production. Drop the 11s heartbeat-wait — disconnect now
+    fires within milliseconds, so 200ms slack is enough.
+
+8/8 event tests pass, including the cross-process curl-kill
+scenario. With Bun.serve as the substrate, neither the periodic
+sweep nor the active probe is necessary; cleanup is event-driven
+and instant.
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+---
+ packages/opencode/src/server/routes/event.ts  | 143 ++----------------
+ packages/opencode/src/server/server.ts        |  89 +++++------
+ .../test/server/event.real-server.test.ts     |  60 +++-----
+ 3 files changed, 76 insertions(+), 216 deletions(-)
+
+diff --git a/packages/opencode/src/server/routes/event.ts b/packages/opencode/src/server/routes/event.ts
+index cc5d514..fffa940 100644
+--- a/packages/opencode/src/server/routes/event.ts
++++ b/packages/opencode/src/server/routes/event.ts
+@@ -40,92 +40,12 @@ export const LiveSessionsChanged = BusEvent.define(
+ // Subscriptions without an `X-Client-ID` header (the legacy "subscribe
+ // to all events" shape) do not contribute to liveness — the route is
+ // backwards-compatible for non-TUI consumers.
+-//
+-// Each entry carries a reference to the underlying Node response
+-// (`outgoing`) and the handler's `stop()` callback so the module-level
+-// liveness probe (see `_sweep`) can directly check socket state and
+-// self-evict if the client died but the abstraction-layer disconnect
+-// signals haven't fired yet.
+-type NodeOutgoing = {
+-  destroyed?: boolean
+-  writableEnded?: boolean
+-  socket?: {
+-    destroyed?: boolean
+-    readable?: boolean
+-    readableEnded?: boolean
+-    writable?: boolean
+-  }
+-  write?: (chunk: string) => boolean | void
+-  on?: Function
+-}
+ type ClientEntry = {
+   focus: string | null
+-  outgoing?: NodeOutgoing
+   stop?: () => void
+ }
+ const _clients = new Map<string, ClientEntry>()
+
+-// Hivemind: server-side liveness probe. Fires every 2 seconds, iterates
+-// `_clients`, and actively writes an SSE-comment probe (`":\n"` — a
+-// no-op per the SSE spec, ignored by clients) to each client's Node
+-// `outgoing`. The probe forces the kernel to attempt a real send,
+-// which surfaces `EPIPE` / write errors on half-closed sockets that
+-// passive flag checks (`destroyed`, `writableEnded`, `socket.destroyed`)
+-// don't catch.
+-//
+-// Why this is necessary: production runs on `@hono/node-server`'s Node
+-// http compat on Bun. Bun's I/O loop batches socket-close events when
+-// other I/O is active — they sit queued until something else wakes the
+-// loop. Even `outgoing.destroyed` doesn't flip until that batched event
+-// is delivered, so passive sweeps can't catch it either.
+-//
+-// Active write probes bypass the queue: writing to a half-closed socket
+-// hits the kernel synchronously and (on Bun's compat) either throws,
+-// returns false, or fires an 'error' event we hooked at registration
+-// time. Any of those routes calls `stop()` and evicts the client.
+-//
+-// The probe is "harmless" — `":\n"` is the SSE comment syntax. Clients
+-// (curl, fetch readers) skip lines starting with `:` per the spec, so
+-// the probe doesn't pollute the event stream.
+-//
+-// One timer at module scope, not per-client. Cost is constant in client
+-// count: 2s interval × one syscall per active client. Cheap.
+-const _sweep = setInterval(() => {
+-  for (const [clientID, entry] of _clients) {
+-    const out = entry.outgoing
+-    if (!out) continue
+-    const sock = out.socket
+-    // Full-close indicators: destroyed at either layer means we're
+-    // definitively done.
+-    if (out.destroyed || out.writableEnded || sock?.destroyed) {
+-      log.info("sweep evicting (passive)", { clientID })
+-      entry.stop?.()
+-      continue
+-    }
+-    // Half-close indicator: peer sent FIN, our read side ended, but
+-    // our write side is still "open" (kernel will keep accepting
+-    // writes into the send buffer indefinitely). Ctrl-C in the TUI
+-    // produces a clean FIN — write probes don't surface anything,
+-    // but the read side flips here.
+-    if (sock?.readable === false || sock?.readableEnded === true) {
+-      log.info("sweep evicting (read half-closed)", { clientID })
+-      entry.stop?.()
+-      continue
+-    }
+-    // Active-write probe — defense-in-depth for the case where the
+-    // socket is fully gone but flags haven't propagated yet. Only
+-    // surfaces RST/ECONNRESET, not clean FIN (writes to a half-closed
+-    // socket are accepted by the kernel).
+-    try {
+-      out.write?.(":\n")
+-    } catch {
+-      log.info("sweep evicting (write threw)", { clientID })
+-      entry.stop?.()
+-    }
+-  }
+-}, 2_000)
+-_sweep.unref?.()
+-
+ function _publishChange(): void {
+   Bus.publish(LiveSessionsChanged, { sessions: liveSessions() }).catch((err) =>
+     log.error("failed to publish LiveSessionsChanged", { err }),
+@@ -174,36 +94,6 @@ export const EventRoutes = () =>
+         c.header("Cache-Control", "no-cache, no-transform")
+         c.header("X-Accel-Buffering", "no")
+         c.header("X-Content-Type-Options", "nosniff")
+-        // Hivemind: in production we run on `@hono/node-server`'s Node http
+-        // adaptor. The adaptor exposes the underlying Node IncomingMessage
+-        // and ServerResponse via Hono's bindings argument (see
+-        // `getRequestListener` in @hono/node-server: it calls
+-        // `fetchCallback(req, { incoming, outgoing })`). We capture them
+-        // here to wire disconnect detection directly to Node's socket
+-        // events — neither `stream.onAbort` nor `c.req.raw.signal` fires
+-        // reliably for long-lived SSE responses on Bun's Node compat.
+-        const env = c.env as
+-          | {
+-              incoming?: { on: Function; once: Function; socket?: { setKeepAlive?: Function } }
+-              outgoing?: { on: Function; once: Function }
+-            }
+-          | undefined
+-        const incoming = env?.incoming
+-        const outgoing = env?.outgoing
+-        // Hivemind: enable aggressive TCP keepalive on the request
+-        // socket so the kernel itself probes the peer every second
+-        // and tears the socket down on failed probes. Without this,
+-        // a Ctrl-C'd TUI's socket can sit half-open from the server's
+-        // POV indefinitely on Bun's Node compat — none of the
+-        // userland event handlers fire and even `outgoing.destroyed`
+-        // never flips. Kernel-level keepalive bypasses the JS event
+-        // queue entirely.
+-        try {
+-          incoming?.socket?.setKeepAlive?.(true, 1_000)
+-        } catch {
+-          // setKeepAlive may not be available on every transport
+-          // (HTTP/2, WebSocket upgrade, etc.). Best-effort.
+-        }
+         return streamSSE(c, async (stream) => {
+           const q = new AsyncQueue<string | null>()
+           let done = false
+@@ -222,26 +112,20 @@ export const EventRoutes = () =>
+             log.info("event disconnected", { clientID })
+           }
+
+-          // Register cleanup BEFORE any state mutation. We hook every
+-          // disconnect signal we can reach. Production runs on
+-          // `@hono/node-server` (Node http compat on Bun); empirically,
+-          // for long-lived SSE responses neither `stream.onAbort` nor
+-          // `c.req.raw.signal` fires when curl is killed — heartbeat
+-          // writes succeed silently into the kernel send buffer post-
+-          // FIN, so Bun never observes the close at the response-stream
+-          // level. The Node `incoming` / `outgoing` socket events are
+-          // the only reliable source of disconnect detection on this
+-          // topology.
++          // Register cleanup BEFORE any state mutation. On native
++          // `Bun.serve` (the runtime we use after migrating off
++          // `@hono/node-server`), `c.req.raw.signal` is the canonical
++          // disconnect signal — it fires from uWS's
++          // `us_socket_context_on_close` via uSockets EPOLLRDHUP, so
++          // the close propagates to userland synchronously regardless
++          // of other I/O activity. `stream.onAbort` is wired to the
++          // same source (Hono's StreamingApi calls `stream.abort()`
++          // when its responseReadable is cancelled).
+           //
+-          // `stop()` is idempotent via `done`, so any number of these
+-          // can fire. Whichever fires first wins.
++          // `stop()` is idempotent via `done`, so multiple paths
++          // firing is safe.
+           stream.onAbort(stop)
+           c.req.raw.signal.addEventListener("abort", stop, { once: true })
+-          incoming?.once("close", stop)
+-          incoming?.once("aborted", stop)
+-          incoming?.once("error", stop)
+-          outgoing?.once("close", stop)
+-          outgoing?.once("error", stop)
+           if (stream.aborted || c.req.raw.signal.aborted) {
+             stop()
+             return
+@@ -264,10 +148,7 @@ export const EventRoutes = () =>
+           // to reflect itself until another client triggers the next
+           // change.
+           if (clientID) {
+-            // Record `outgoing` and `stop` on the entry so the
+-            // module-level sweep can probe and self-evict if Bun
+-            // batches the close event behind unrelated I/O.
+-            _clients.set(clientID, { focus: null, outgoing: outgoing as ClientEntry["outgoing"], stop })
++            _clients.set(clientID, { focus: null, stop })
+             _publishChange()
+           }
+
+diff --git a/packages/opencode/src/server/server.ts b/packages/opencode/src/server/server.ts
+index c4f2a93..ea4e590 100644
+--- a/packages/opencode/src/server/server.ts
++++ b/packages/opencode/src/server/server.ts
+@@ -2,10 +2,11 @@ import { Log } from "../util/log"
+ import { describeRoute, generateSpecs, validator, resolver, openAPIRouteHandler } from "hono-openapi"
+ import { Hono } from "hono"
+ import { compress } from "hono/compress"
+-import { createNodeWebSocket } from "@hono/node-ws"
++import { createBunWebSocket } from "hono/bun"
+ import { cors } from "hono/cors"
+ import { basicAuth } from "hono/basic-auth"
+ import type { UpgradeWebSocket } from "hono/ws"
++import type { Server as BunServer, ServerWebSocket } from "bun"
+ import z from "zod"
+ import { Auth } from "../auth"
+ import { Flag } from "../flag/flag"
+@@ -18,7 +19,6 @@ import { lazy } from "@/util/lazy"
+ import { errorHandler } from "./middleware"
+ import { InstanceRoutes } from "./instance"
+ import { initProjectors } from "./projectors"
+-import { createAdaptorServer, type ServerType } from "@hono/node-server"
+
+ // @ts-ignore This global is needed to prevent ai-sdk from logging warnings to stdout https://github.com/vercel/ai/blob/2dc67e0ef538307f21368db32d5a12345d98831b/packages/ai/src/logger/log-warnings.ts#L85
+ globalThis.AI_SDK_LOG_WARNINGS = false
+@@ -240,9 +240,15 @@ export namespace Server {
+
+   function create(opts: { cors?: string[] }) {
+     const app = new Hono()
+-    const ws = createNodeWebSocket({ app })
++    // Hivemind: native Bun WebSocket helper. Replaces @hono/node-ws,
++    // which (on Bun's Node http compat) batches socket-close events
++    // alongside other I/O — leading to TUI presence entries that
++    // never get cleaned up until an unrelated new connection arrives.
++    // Native Bun.serve's uSockets path delivers `req.signal.abort()`
++    // synchronously on TCP close.
++    const ws = createBunWebSocket<ServerWebSocket>()
+     return {
+-      app: ControlPlaneRoutes(ws.upgradeWebSocket, app, opts),
++      app: ControlPlaneRoutes(ws.upgradeWebSocket as UpgradeWebSocket, app, opts),
+       ws,
+     }
+   }
+@@ -281,46 +287,47 @@ export namespace Server {
+     cors?: string[]
+   }): Promise<Listener> {
+     const built = create(opts)
+-    const start = (port: number) =>
+-      new Promise<ServerType>((resolve, reject) => {
+-        const server = createAdaptorServer({ fetch: built.app.fetch })
+-        built.ws.injectWebSocket(server)
+-        const fail = (err: Error) => {
+-          cleanup()
+-          reject(err)
+-        }
+-        const ready = () => {
+-          cleanup()
+-          resolve(server)
+-        }
+-        const cleanup = () => {
+-          server.off("error", fail)
+-          server.off("listening", ready)
+-        }
+-        server.once("error", fail)
+-        server.once("listening", ready)
+-        server.listen(port, opts.hostname)
++    // Hivemind: native Bun.serve. The `server` is passed as the
++    // second arg to `built.app.fetch(req, server)` so Hono's
++    // `getBunServer(c)` can find it for WebSocket upgrades. Bun.serve
++    // also wires `req.signal` to fire on socket close synchronously
++    // via uSockets — the load-bearing piece for SSE disconnect
++    // detection.
++    const start = (port: number): BunServer => {
++      const server: BunServer = Bun.serve({
++        fetch: (req: Request) => built.app.fetch(req, server),
++        websocket: built.ws.websocket,
++        port,
++        hostname: opts.hostname,
+       })
++      return server
++    }
+
+-    const server = opts.port === 0 ? await start(4096).catch(() => start(0)) : await start(opts.port)
+-    const addr = server.address()
+-    if (!addr || typeof addr === "string") {
+-      throw new Error(`Failed to resolve server address for port ${opts.port}`)
++    let server: BunServer
++    if (opts.port === 0) {
++      try {
++        server = start(4096)
++      } catch {
++        server = start(0)
++      }
++    } else {
++      server = start(opts.port)
+     }
++    const port = server.port
+
+     const next = new URL("http://localhost")
+     next.hostname = opts.hostname
+-    next.port = String(addr.port)
++    next.port = String(port)
+     url = next
+
+     const mdns =
+       opts.mdns &&
+-      addr.port &&
++      port &&
+       opts.hostname !== "127.0.0.1" &&
+       opts.hostname !== "localhost" &&
+       opts.hostname !== "::1"
+     if (mdns) {
+-      MDNS.publish(addr.port, opts.mdnsDomain)
++      MDNS.publish(port, opts.mdnsDomain)
+     } else if (opts.mdns) {
+       log.warn("mDNS enabled but hostname is loopback; skipping mDNS publish")
+     }
+@@ -328,27 +335,13 @@ export namespace Server {
+     let closing: Promise<void> | undefined
+     return {
+       hostname: opts.hostname,
+-      port: addr.port,
++      port,
+       url: next,
+       stop(close?: boolean) {
+-        closing ??= new Promise((resolve, reject) => {
++        closing ??= (async () => {
+           if (mdns) MDNS.unpublish()
+-          server.close((err) => {
+-            if (err) {
+-              reject(err)
+-              return
+-            }
+-            resolve()
+-          })
+-          if (close) {
+-            if ("closeAllConnections" in server && typeof server.closeAllConnections === "function") {
+-              server.closeAllConnections()
+-            }
+-            if ("closeIdleConnections" in server && typeof server.closeIdleConnections === "function") {
+-              server.closeIdleConnections()
+-            }
+-          }
+-        })
++          await server.stop(close ?? false)
++        })()
+         return closing
+       },
+     }
+diff --git a/packages/opencode/test/server/event.real-server.test.ts b/packages/opencode/test/server/event.real-server.test.ts
+index 470f0c9..d088b8b 100644
+--- a/packages/opencode/test/server/event.real-server.test.ts
++++ b/packages/opencode/test/server/event.real-server.test.ts
+@@ -1,6 +1,5 @@
+ import { afterEach, describe, expect, test } from "bun:test"
+-import { createAdaptorServer } from "@hono/node-server"
+-import { AddressInfo } from "node:net"
++import type { Server as BunServer } from "bun"
+ import { Instance } from "../../src/project/instance"
+ import { Server } from "../../src/server/server"
+ import { Log } from "../../src/util/log"
+@@ -12,22 +11,13 @@ afterEach(async () => {
+   await Instance.disposeAll()
+ })
+
+-// Hivemind: this suite spins the same `@hono/node-server` adaptor
+-// that production uses (`server.ts:286 createAdaptorServer({...})`)
+-// on a random port, and drives it from a SEPARATE child process
+-// (`curl -N`). The combination matters:
+-//
+-//  - `app.request()` (used by `event.test.ts`) is in-process
+-//    fake-fetch — Hono dispatches handlers without any HTTP layer.
+-//  - Native `Bun.serve` exercises Bun's uWebSockets-derived stack.
+-//  - `@hono/node-server` runs on Bun's Node compat (`node:http`),
+-//    which is what production actually uses — and where the
+-//    SSE-disconnect bug manifests.
+-//
+-// Cross-process curl is needed because same-process fetch+abort
+-// goes through an in-runtime shortcut that propagates cancel
+-// cleanly. Real OS-level FIN is the only path that exercises the
+-// production failure mode.
++// Hivemind: this suite spins native `Bun.serve` (the runtime
++// production uses after the migration off `@hono/node-server`) on a
++// random port and drives it from a SEPARATE child process (`curl -N`).
++// Native Bun.serve exercises uSockets/EPOLLRDHUP, where socket close
++// propagates synchronously to `req.signal.abort()`. Cross-process
++// curl is required to exercise real kernel FIN delivery — same-
++// process fetch+abort takes an in-runtime shortcut.
+
+ async function liveSessions(url: string) {
+   const res = await fetch(url + "/global/live-sessions")
+@@ -52,20 +42,22 @@ async function spawnCurlSSE(url: string, clientID: string) {
+
+ async function startServer(): Promise<{ url: string; stop: () => Promise<void> }> {
+   const app = Server.Default().app
+-  const server = createAdaptorServer({ fetch: app.fetch })
+-  await new Promise<void>((resolve, reject) => {
+-    server.once("error", reject)
+-    server.once("listening", () => resolve())
+-    server.listen(0, "127.0.0.1")
++  let server: BunServer
++  // eslint-disable-next-line prefer-const
++  server = Bun.serve({
++    fetch: (req: Request) => app.fetch(req, server),
++    port: 0,
++    hostname: "127.0.0.1",
+   })
+-  const addr = server.address() as AddressInfo
+   return {
+-    url: `http://127.0.0.1:${addr.port}`,
+-    stop: () => new Promise<void>((resolve) => server.close(() => resolve())),
++    url: `http://127.0.0.1:${server.port}`,
++    stop: async () => {
++      await server.stop(true)
++    },
+   }
+ }
+
+-describe("event presence over @hono/node-server (cross-process)", () => {
++describe("event presence over Bun.serve (cross-process)", () => {
+   test("killing a separate-process SSE client removes the client", async () => {
+     await using tmp = await tmpdir({ git: true })
+     await Instance.provide({
+@@ -87,18 +79,12 @@ describe("event presence over @hono/node-server (cross-process)", () => {
+           const before = await liveSessions(url)
+           expect(before.sessions).toContain("ses_real_root")
+
+-          // Heartbeats fire every 10s. The bug only manifests after at
+-          // least one heartbeat write succeeds silently into the kernel
+-          // send buffer post-FIN, which is what blocks Bun from
+-          // observing the close. Wait through one full heartbeat
+-          // before killing.
+-          await Bun.sleep(11_000)
+-
+           // Kernel-level FIN delivery: kill the curl process. The OS
+-          // tears down the socket; the server must observe it.
++          // tears down the socket; native Bun.serve fires
++          // req.signal.abort within milliseconds (uSockets EPOLLRDHUP).
+           proc.kill()
+           await proc.exited
+-          await Bun.sleep(500)
++          await Bun.sleep(200)
+
+           const after = await liveSessions(url)
+           expect(after.sessions).toEqual([])
+@@ -107,7 +93,7 @@ describe("event presence over @hono/node-server (cross-process)", () => {
+         }
+       },
+     })
+-  }, { timeout: 30_000 })
++  })
+
+   test("two cross-process clients, one is killed, only its focus drops", async () => {
+     await using tmp = await tmpdir({ git: true })
+--
+2.50.1

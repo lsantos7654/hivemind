@@ -1,7 +1,7 @@
 From 271e133dd006820c2680aca171cb9d73daa2e2a5 Mon Sep 17 00:00:00 2001
 From: Lucas Santos <lsantos7654@gmail.com>
 Date: Thu, 30 Apr 2026 00:56:56 -0400
-Subject: [PATCH 19/26] TUI presence stream + focus POST + sessions/subagents
+Subject: [PATCH 19/27] TUI presence stream + focus POST + sessions/subagents
  footer pills
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8

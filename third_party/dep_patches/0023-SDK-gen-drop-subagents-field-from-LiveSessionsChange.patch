@@ -1,7 +1,7 @@
 From 4c2a8e773a3ce2053e5d2e9de84903019705b74e Mon Sep 17 00:00:00 2001
 From: Lucas Santos <lsantos7654@gmail.com>
 Date: Fri, 1 May 2026 00:19:04 -0400
-Subject: [PATCH 23/26] SDK gen: drop subagents field from LiveSessionsChanged
+Subject: [PATCH 23/27] SDK gen: drop subagents field from LiveSessionsChanged
  + liveSessions
 
 Subagent counts are now computed per-TUI from the focused session's
