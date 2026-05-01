@@ -1,7 +1,7 @@
 From 5c1a5964693b8d9e57b9ff119cfb7408d25550e6 Mon Sep 17 00:00:00 2001
 From: Lucas Santos <lsantos7654@gmail.com>
 Date: Thu, 30 Apr 2026 23:40:04 -0400
-Subject: [PATCH 21/21] Detect disconnect via Node http events on
+Subject: [PATCH 21/22] Detect disconnect via Node http events on
  @hono/node-server
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8

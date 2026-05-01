@@ -1,0 +1,125 @@
+From 3b44d7ba8ddc1943fee41646aa45f66373e5978c Mon Sep 17 00:00:00 2001
+From: Lucas Santos <lsantos7654@gmail.com>
+Date: Fri, 1 May 2026 00:04:30 -0400
+Subject: [PATCH 22/22] Add module-level liveness probe for batched-event
+ scenarios
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Patch 0021 hooked every disconnect event the abstraction layers
+expose: `stream.onAbort`, `c.req.raw.signal`, `incoming.on('close')`,
+`incoming.on('aborted')`, `outgoing.on('close')`. Tests passed; the
+user's actual production scenario still leaks: open 2 TUIs on
+different sessions, close 1, count stays at 2 until a third TUI
+connects.
+
+The bug is one layer below the events we're listening to. Bun's
+Node http compat batches socket-close events when the process has
+steady JS work and other live sockets — they sit in a queue and
+are delivered only when other I/O wakes the loop. Opening a third
+TUI is the trigger because its inbound connection is the I/O event
+that pumps the loop. Tests don't reproduce this because the test
+process is otherwise quiet.
+
+Fix: a server-side liveness probe at module scope. One
+`setInterval(..., 2_000).unref()`. Iterates `_clients`, checks each
+client's Node `outgoing.destroyed | writableEnded | socket.destroyed`,
+and self-evicts via the entry's `stop()` callback. Bypasses the
+event queue by polling the underlying socket state directly.
+
+Per-client cost is constant (Map iteration + 3 boolean checks); the
+probe runs once per process regardless of client count. The timer
+is `.unref()`d so it doesn't keep tests or short-lived processes
+alive past their natural lifetime.
+
+The fast-path event handlers from patch 0021 stay — when they DO
+fire, cleanup is instant (sub-ms). The probe is the safety net for
+when Bun batches.
+
+Each `_clients` entry now carries `outgoing` and `stop` references
+so the sweep can probe and call cleanup. The other code paths
+(`liveSessions`, `expandedLiveSet`, focus updates) only read
+`entry.focus`, so they're unaffected.
+
+Verification:
+  - `bun test test/server/event.{test,real-server.test}.ts` — 8/8.
+  - Production reproducer (open 2 TUIs, close 1, wait 3s) — count
+    drops to 1 without opening anything else.
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+---
+ packages/opencode/src/server/routes/event.ts | 51 +++++++++++++++++++-
+ 1 file changed, 49 insertions(+), 2 deletions(-)
+
+diff --git a/packages/opencode/src/server/routes/event.ts b/packages/opencode/src/server/routes/event.ts
+index 18ef44a..740529c 100644
+--- a/packages/opencode/src/server/routes/event.ts
++++ b/packages/opencode/src/server/routes/event.ts
+@@ -43,7 +43,51 @@ export const LiveSessionsChanged = BusEvent.define(
+ // Subscriptions without an `X-Client-ID` header (the legacy "subscribe
+ // to all events" shape) do not contribute to liveness — the route is
+ // backwards-compatible for non-TUI consumers.
+-const _clients = new Map<string, { focus: string | null }>()
++//
++// Each entry carries a reference to the underlying Node response
++// (`outgoing`) and the handler's `stop()` callback so the module-level
++// liveness probe (see `_sweep`) can directly check socket state and
++// self-evict if the client died but the abstraction-layer disconnect
++// signals haven't fired yet.
++type ClientEntry = {
++  focus: string | null
++  outgoing?: { destroyed?: boolean; writableEnded?: boolean; socket?: { destroyed?: boolean } }
++  stop?: () => void
++}
++const _clients = new Map<string, ClientEntry>()
++
++// Hivemind: server-side liveness probe. Fires every 2 seconds, iterates
++// `_clients`, and self-evicts any whose underlying Node `outgoing` is
++// destroyed/ended — i.e. the TUI's TCP socket is gone but the
++// `outgoing.on("close")` event hasn't been delivered to JS yet.
++//
++// Why this is necessary: production runs on `@hono/node-server`'s Node
++// http compat on Bun. When a busy server has multiple sockets and steady
++// JS work, Bun's I/O loop batches socket-close events and only delivers
++// them when other I/O (e.g. a new incoming connection) wakes the loop.
++// The user's reproducer is exactly this: closing one of two TUIs leaves
++// the count stale until a third TUI connects. The event handlers on the
++// SSE handler (`stream.onAbort`, `c.req.raw.signal`,
++// `incoming.on("close")`, `outgoing.on("close")`) all sit downstream of
++// that batched event — when it doesn't fire, none of them do.
++//
++// The probe bypasses the queue: it polls socket state directly. The
++// timer is `.unref()`d so it doesn't keep tests alive past their
++// natural lifetime.
++//
++// One timer at module scope, not per-client. Cost is constant in client
++// count: 2s interval × <1µs per probe iteration. Cheap.
++const _sweep = setInterval(() => {
++  for (const [clientID, entry] of _clients) {
++    const out = entry.outgoing
++    if (!out) continue
++    if (out.destroyed || out.writableEnded || out.socket?.destroyed) {
++      log.info("sweep evicting dead client", { clientID })
++      entry.stop?.()
++    }
++  }
++}, 2_000)
++_sweep.unref?.()
+
+ function _publishChange(): void {
+   // Fire-and-forget the expansion so call-sites stay sync. Each call
+@@ -217,7 +261,10 @@ export const EventRoutes = () =>
+           // to reflect itself until another client triggers the next
+           // change.
+           if (clientID) {
+-            _clients.set(clientID, { focus: null })
++            // Record `outgoing` and `stop` on the entry so the
++            // module-level sweep can probe and self-evict if Bun
++            // batches the close event behind unrelated I/O.
++            _clients.set(clientID, { focus: null, outgoing: outgoing as ClientEntry["outgoing"], stop })
+             _publishChange()
+           }
+
+--
+2.50.1

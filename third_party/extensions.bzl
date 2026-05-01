@@ -130,6 +130,7 @@ _OPENCODE_CODE_PATCHES = [
     "0019-TUI-presence-stream-focus-POST-sessions-subagents-fo.patch",
     "0020-Tests-presence-focus-model.patch",
     "0021-Detect-disconnect-via-Node-http-events-on-hono-node-.patch",
+    "0022-Add-module-level-liveness-probe-for-batched-event-sc.patch",
 ]
 external_engines = module_extension(
     implementation = _ext_impl,
