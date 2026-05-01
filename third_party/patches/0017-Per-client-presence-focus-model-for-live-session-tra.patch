@@ -1,7 +1,7 @@
 From d71cf8d0359085c8ca0fcc4ca3df80b0b0b66538 Mon Sep 17 00:00:00 2001
 From: Lucas Santos <lsantos7654@gmail.com>
 Date: Thu, 30 Apr 2026 00:52:41 -0400
-Subject: [PATCH 17/24] Per-client presence + focus model for live session
+Subject: [PATCH 17/25] Per-client presence + focus model for live session
  tracking
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8

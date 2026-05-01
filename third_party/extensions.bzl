@@ -133,6 +133,7 @@ _OPENCODE_CODE_PATCHES = [
     "0021-Detect-disconnect-via-Node-http-events-on-hono-node-.patch",
     "0022-Add-module-level-liveness-probe-for-batched-event-sc.patch",
     "0024-Subagents-pill-is-per-TUI-scoped-to-the-focused-sess.patch",
+    "0025-Force-detect-dead-SSE-clients-via-active-probe-slot-.patch",
 ]
 external_engines = module_extension(
     implementation = _ext_impl,

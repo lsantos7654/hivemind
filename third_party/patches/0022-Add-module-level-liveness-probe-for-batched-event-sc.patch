@@ -1,7 +1,7 @@
 From 3b44d7ba8ddc1943fee41646aa45f66373e5978c Mon Sep 17 00:00:00 2001
 From: Lucas Santos <lsantos7654@gmail.com>
 Date: Fri, 1 May 2026 00:04:30 -0400
-Subject: [PATCH 22/24] Add module-level liveness probe for batched-event
+Subject: [PATCH 22/25] Add module-level liveness probe for batched-event
  scenarios
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8

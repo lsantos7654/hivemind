@@ -1,7 +1,7 @@
 From 254f1e3f0703443d10e6b3dbde238094400c1d05 Mon Sep 17 00:00:00 2001
 From: Lucas Santos <lsantos7654@gmail.com>
 Date: Fri, 1 May 2026 00:19:20 -0400
-Subject: [PATCH 24/24] Subagents pill is per-TUI, scoped to the focused
+Subject: [PATCH 24/25] Subagents pill is per-TUI, scoped to the focused
  session
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8

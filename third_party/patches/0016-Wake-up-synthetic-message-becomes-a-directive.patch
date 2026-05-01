@@ -1,7 +1,7 @@
 From 4d3076c53ead4982cd460d8bac6c4a24c1c77bb4 Mon Sep 17 00:00:00 2001
 From: Lucas Santos <lsantos7654@gmail.com>
 Date: Wed, 29 Apr 2026 23:51:29 -0400
-Subject: [PATCH 16/24] Wake-up synthetic message becomes a directive
+Subject: [PATCH 16/25] Wake-up synthetic message becomes a directive
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
