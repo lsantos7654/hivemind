@@ -1,7 +1,7 @@
 From f25ed35fe88fdbc3d768e1c14abddf144b7e6427 Mon Sep 17 00:00:00 2001
 From: Lucas Santos <lsantos7654@gmail.com>
 Date: Wed, 29 Apr 2026 23:10:07 -0400
-Subject: [PATCH 15/22] =?UTF-8?q?Fix=20SessionPrompt.continue=20empty=20us?=
+Subject: [PATCH 15/24] =?UTF-8?q?Fix=20SessionPrompt.continue=20empty=20us?=
  =?UTF-8?q?er=20message=20=E2=86=92=20API=20rejection?=
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8

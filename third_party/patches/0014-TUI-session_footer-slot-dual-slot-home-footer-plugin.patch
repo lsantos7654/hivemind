@@ -1,7 +1,7 @@
 From e4c3ea407e67b7d36b578dedf5e8794728785b91 Mon Sep 17 00:00:00 2001
 From: Lucas Santos <lsantos7654@gmail.com>
 Date: Wed, 29 Apr 2026 22:12:46 -0400
-Subject: [PATCH 14/22] TUI session_footer slot + dual-slot home-footer plugin
+Subject: [PATCH 14/24] TUI session_footer slot + dual-slot home-footer plugin
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit

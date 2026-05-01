@@ -105,6 +105,7 @@ def _ext_impl(ctx):
 _OPENCODE_DEP_PATCHES = [
     "0012-SDK-gen-backgroundTasks-endpoint-SessionBackgroundCh.patch",
     "0018-SDK-gen-liveSessions-endpoint-LiveSessionsChanged-ev.patch",
+    "0023-SDK-gen-drop-subagents-field-from-LiveSessionsChange.patch",
 ]
 # Patches that modify only source files (no dep manifest changes). Applied
 # only in @opencode_src, after dep_patches, after install. Editing one
@@ -131,6 +132,7 @@ _OPENCODE_CODE_PATCHES = [
     "0020-Tests-presence-focus-model.patch",
     "0021-Detect-disconnect-via-Node-http-events-on-hono-node-.patch",
     "0022-Add-module-level-liveness-probe-for-batched-event-sc.patch",
+    "0024-Subagents-pill-is-per-TUI-scoped-to-the-focused-sess.patch",
 ]
 external_engines = module_extension(
     implementation = _ext_impl,

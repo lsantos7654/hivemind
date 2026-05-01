@@ -1,0 +1,70 @@
+From 4c2a8e773a3ce2053e5d2e9de84903019705b74e Mon Sep 17 00:00:00 2001
+From: Lucas Santos <lsantos7654@gmail.com>
+Date: Fri, 1 May 2026 00:19:04 -0400
+Subject: [PATCH 23/24] SDK gen: drop subagents field from LiveSessionsChanged
+ + liveSessions
+
+Subagent counts are now computed per-TUI from the focused session's
+direct DB children (see feature-plugins/home/footer.tsx) rather than
+aggregated server-side. The `subagents` field on the bus event and
+the `/global/live-sessions` endpoint was the global-aggregate count;
+removing it from the SDK shape matches the new server payload.
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+---
+ packages/sdk/js/src/v2/gen/sdk.gen.ts   | 10 ++++------
+ packages/sdk/js/src/v2/gen/types.gen.ts |  7 +++----
+ 2 files changed, 7 insertions(+), 10 deletions(-)
+
+diff --git a/packages/sdk/js/src/v2/gen/sdk.gen.ts b/packages/sdk/js/src/v2/gen/sdk.gen.ts
+index 6dd8eea..e557e29 100644
+--- a/packages/sdk/js/src/v2/gen/sdk.gen.ts
++++ b/packages/sdk/js/src/v2/gen/sdk.gen.ts
+@@ -354,18 +354,16 @@ export class Global extends HeyApiClient {
+   /**
+    * List live sessions
+    *
+-   * Hivemind: returns the set of session IDs currently focused by at
+-   * least one connected client (TUI), expanded to include direct DB
+-   * children of every focused root. `subagents` is the subset whose
+-   * `parentID` is set. Provided by the per-client presence model
+-   * (server-side patch).
++   * Hivemind: returns the deduplicated set of session IDs currently
++   * focused by at least one connected client (TUI). Subagent counts
++   * are computed per-TUI from the focused session's direct DB children
++   * and do not flow through this endpoint.
+    */
+   public liveSessions<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+     return (options?.client ?? this.client).get<
+       {
+         200: {
+           sessions: Array<string>
+-          subagents: Array<string>
+         }
+       },
+       unknown,
+diff --git a/packages/sdk/js/src/v2/gen/types.gen.ts b/packages/sdk/js/src/v2/gen/types.gen.ts
+index 1ddc8b6..63ba912 100644
+--- a/packages/sdk/js/src/v2/gen/types.gen.ts
++++ b/packages/sdk/js/src/v2/gen/types.gen.ts
+@@ -453,15 +453,14 @@ export type EventSessionBackgroundChanged = {
+ /**
+  * Hivemind: emitted when the per-client presence map changes — a
+  * client connects/disconnects or its focus flips. `sessions` is the
+- * focused set ∪ direct children of every focused root; `subagents`
+- * is the subset whose parentID is set. Provided by the per-client
+- * presence model.
++ * deduplicated set of session IDs focused by at least one client.
++ * Subagent counts are computed per-TUI from the focused session's
++ * direct children and do not flow through this event.
+  */
+ export type EventSessionLiveChanged = {
+   type: "session.live.changed"
+   properties: {
+     sessions: Array<string>
+-    subagents: Array<string>
+   }
+ }
+
+--
+2.50.1
