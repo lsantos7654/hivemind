@@ -105,7 +105,6 @@ def _ext_impl(ctx):
 _OPENCODE_DEP_PATCHES = [
     "0012-SDK-gen-backgroundTasks-endpoint-SessionBackgroundCh.patch",
     "0018-SDK-gen-liveSessions-endpoint-LiveSessionsChanged-ev.patch",
-    "0023-SDK-gen-drop-subagents-field-from-LiveSessionsChange.patch",
 ]
 # Patches that modify only source files (no dep manifest changes). Applied
 # only in @opencode_src, after dep_patches, after install. Editing one
@@ -127,15 +126,8 @@ _OPENCODE_CODE_PATCHES = [
     "0014-TUI-session_footer-slot-dual-slot-home-footer-plugin.patch",
     "0015-Fix-SessionPrompt.continue-empty-user-message-API-re.patch",
     "0016-Wake-up-synthetic-message-becomes-a-directive.patch",
-    "0017-Per-client-presence-focus-model-for-live-session-tra.patch",
-    "0019-TUI-presence-stream-focus-POST-sessions-subagents-fo.patch",
-    "0020-Tests-presence-focus-model.patch",
-    "0021-Detect-disconnect-via-Node-http-events-on-hono-node-.patch",
-    "0022-Add-module-level-liveness-probe-for-batched-event-sc.patch",
-    "0024-Subagents-pill-is-per-TUI-scoped-to-the-focused-sess.patch",
-    "0025-Force-detect-dead-SSE-clients-via-active-probe-slot-.patch",
-    "0026-Detect-half-close-on-the-read-side-socket.readableEn.patch",
-    "0027-Switch-listener-from-hono-node-server-to-native-Bun..patch",
+    "0017-Switch-HTTP-listener-to-native-Bun.serve.patch",
+    "0019-Per-client-WebSocket-presence-focus-tracking.patch",
 ]
 external_engines = module_extension(
     implementation = _ext_impl,

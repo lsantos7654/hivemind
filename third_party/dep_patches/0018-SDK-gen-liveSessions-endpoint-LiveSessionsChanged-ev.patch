@@ -1,19 +1,19 @@
-From 912a09fe45f9114605e3b7e4c833cdb1865989d9 Mon Sep 17 00:00:00 2001
+From bd82e7cbd1587ad7b1d80470b9857e17fe9b359a Mon Sep 17 00:00:00 2001
 From: Lucas Santos <lsantos7654@gmail.com>
-Date: Thu, 30 Apr 2026 00:56:41 -0400
-Subject: [PATCH 18/27] SDK gen: liveSessions endpoint + LiveSessionsChanged
+Date: Fri, 1 May 2026 01:52:42 -0400
+Subject: [PATCH 18/19] SDK gen: liveSessions endpoint + LiveSessionsChanged
  event type
 
-Regenerates the v2 client SDK to expose the per-client presence /
-focus model added by the prior commit:
+Adds the typed bindings the TUI footer plugin uses:
 
-  - `client.global.liveSessions()` -> { sessions, subagents }
-  - `EventSessionLiveChanged` ("session.live.changed") in the Event
-    union with payload { sessions, subagents }
+  - `client.global.liveSessions()` -> { sessions: string[] }
+  - `EventSessionLiveChanged` ("session.live.changed") added to the
+    Event union with payload { sessions: string[] }
 
-Replaces the prior 0014 (sessionID query param + initial
-LiveSessionsChanged) and 0026 (subagents field) gen patches, which
-matched the obsolete refcount architecture.
+The shape matches the per-client WebSocket presence model that
+follows. Subagent counts are computed per-TUI from
+`client.session.children(focused)` and do not flow through this
+event.
 
 Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 ---
@@ -22,7 +22,7 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
  2 files changed, 40 insertions(+)
 
 diff --git a/packages/sdk/js/src/v2/gen/sdk.gen.ts b/packages/sdk/js/src/v2/gen/sdk.gen.ts
-index f1dfacf..6dd8eea 100644
+index f1dfacf..010c1f4 100644
 --- a/packages/sdk/js/src/v2/gen/sdk.gen.ts
 +++ b/packages/sdk/js/src/v2/gen/sdk.gen.ts
 @@ -351,6 +351,31 @@ export class Global extends HeyApiClient {
@@ -32,18 +32,18 @@ index f1dfacf..6dd8eea 100644
 +  /**
 +   * List live sessions
 +   *
-+   * Hivemind: returns the set of session IDs currently focused by at
-+   * least one connected client (TUI), expanded to include direct DB
-+   * children of every focused root. `subagents` is the subset whose
-+   * `parentID` is set. Provided by the per-client presence model
-+   * (server-side patch).
++   * Hivemind: returns the deduplicated set of session IDs currently
++   * focused by at least one connected client (TUI). Each TUI opens a
++   * single WebSocket on `/presence` and signals focus via JSON
++   * messages. Subagent counts are computed per-TUI from the focused
++   * session's direct DB children and do not flow through this
++   * endpoint.
 +   */
 +  public liveSessions<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
 +    return (options?.client ?? this.client).get<
 +      {
 +        200: {
 +          sessions: Array<string>
-+          subagents: Array<string>
 +        }
 +      },
 +      unknown,
@@ -58,7 +58,7 @@ index f1dfacf..6dd8eea 100644
     * Upgrade opencode
     *
 diff --git a/packages/sdk/js/src/v2/gen/types.gen.ts b/packages/sdk/js/src/v2/gen/types.gen.ts
-index 7dccc5f..1ddc8b6 100644
+index 7dccc5f..4ce2c9d 100644
 --- a/packages/sdk/js/src/v2/gen/types.gen.ts
 +++ b/packages/sdk/js/src/v2/gen/types.gen.ts
 @@ -450,6 +450,20 @@ export type EventSessionBackgroundChanged = {
@@ -66,17 +66,17 @@ index 7dccc5f..1ddc8b6 100644
  }
 
 +/**
-+ * Hivemind: emitted when the per-client presence map changes — a
-+ * client connects/disconnects or its focus flips. `sessions` is the
-+ * focused set ∪ direct children of every focused root; `subagents`
-+ * is the subset whose parentID is set. Provided by the per-client
-+ * presence model.
++ * Hivemind: emitted when the per-client presence map changes — a TUI
++ * connects/disconnects its `/presence` WebSocket or sends a focus
++ * update. `sessions` is the deduplicated set of session IDs focused
++ * by at least one client. Subagent counts are computed per-TUI from
++ * the focused session's direct DB children and do not flow through
++ * this event.
 + */
 +export type EventSessionLiveChanged = {
 +  type: "session.live.changed"
 +  properties: {
 +    sessions: Array<string>
-+    subagents: Array<string>
 +  }
 +}
 

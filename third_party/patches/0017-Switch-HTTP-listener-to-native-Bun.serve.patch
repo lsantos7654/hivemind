@@ -1,0 +1,185 @@
+From 8bd0c3b94695ce9124140f752597ec8a8758e6a7 Mon Sep 17 00:00:00 2001
+From: Lucas Santos <lsantos7654@gmail.com>
+Date: Fri, 1 May 2026 01:51:53 -0400
+Subject: [PATCH 17/19] Switch HTTP listener to native Bun.serve
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Replace @hono/node-server's createAdaptorServer with Bun.serve and
+@hono/node-ws's createNodeWebSocket with hono/bun's createBunWebSocket.
+
+Native Bun.serve runs Hono on Bun's uWebSockets path. `req.signal.abort`
+fires synchronously from `RequestContext.onAbort` via
+`us_socket_context_on_close` (EPOLLRDHUP) — no batching of socket-close
+events behind unrelated I/O. WebSocket close events go through the
+same path, so per-connection cleanup is reliable across all transports.
+
+Mechanically:
+  - `createNodeWebSocket({app})` → `createBunWebSocket()` (hono/bun).
+    Same `upgradeWebSocket` shape, existing `PtyRoutes` consumer is
+    unaffected.
+  - `createAdaptorServer({fetch})` + `server.listen` → `Bun.serve({
+    fetch, websocket, port, hostname })`.
+  - Pass `server` as 2nd arg to `app.fetch(req, server)` so
+    `getBunServer(c)` can locate it for WebSocket upgrades.
+  - `server.address().port` → `server.port`.
+  - `server.close(cb)` → `server.stop(close ?? false)`.
+
+Drops the @hono/node-server and @hono/node-ws dependencies. The
+listener is independently valid as a cleanup; it's also a prerequisite
+for the per-client WebSocket presence channel that follows.
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+---
+ packages/opencode/src/server/server.ts | 86 ++++++++++++--------------
+ 1 file changed, 38 insertions(+), 48 deletions(-)
+
+diff --git a/packages/opencode/src/server/server.ts b/packages/opencode/src/server/server.ts
+index c4f2a93..74f163e 100644
+--- a/packages/opencode/src/server/server.ts
++++ b/packages/opencode/src/server/server.ts
+@@ -2,10 +2,11 @@ import { Log } from "../util/log"
+ import { describeRoute, generateSpecs, validator, resolver, openAPIRouteHandler } from "hono-openapi"
+ import { Hono } from "hono"
+ import { compress } from "hono/compress"
+-import { createNodeWebSocket } from "@hono/node-ws"
++import { createBunWebSocket } from "hono/bun"
+ import { cors } from "hono/cors"
+ import { basicAuth } from "hono/basic-auth"
+ import type { UpgradeWebSocket } from "hono/ws"
++import type { Server as BunServer, ServerWebSocket } from "bun"
+ import z from "zod"
+ import { Auth } from "../auth"
+ import { Flag } from "../flag/flag"
+@@ -18,7 +19,6 @@ import { lazy } from "@/util/lazy"
+ import { errorHandler } from "./middleware"
+ import { InstanceRoutes } from "./instance"
+ import { initProjectors } from "./projectors"
+-import { createAdaptorServer, type ServerType } from "@hono/node-server"
+
+ // @ts-ignore This global is needed to prevent ai-sdk from logging warnings to stdout https://github.com/vercel/ai/blob/2dc67e0ef538307f21368db32d5a12345d98831b/packages/ai/src/logger/log-warnings.ts#L85
+ globalThis.AI_SDK_LOG_WARNINGS = false
+@@ -240,9 +240,13 @@ export namespace Server {
+
+   function create(opts: { cors?: string[] }) {
+     const app = new Hono()
+-    const ws = createNodeWebSocket({ app })
++    // Hivemind: native Bun WebSocket helper. Replaces @hono/node-ws.
++    // Bun.serve fires `req.signal.abort` synchronously on TCP close
++    // via uSockets EPOLLRDHUP, with no event-loop batching — required
++    // for reliable WebSocket close detection in the presence channel.
++    const ws = createBunWebSocket<ServerWebSocket>()
+     return {
+-      app: ControlPlaneRoutes(ws.upgradeWebSocket, app, opts),
++      app: ControlPlaneRoutes(ws.upgradeWebSocket as UpgradeWebSocket, app, opts),
+       ws,
+     }
+   }
+@@ -281,46 +285,46 @@ export namespace Server {
+     cors?: string[]
+   }): Promise<Listener> {
+     const built = create(opts)
+-    const start = (port: number) =>
+-      new Promise<ServerType>((resolve, reject) => {
+-        const server = createAdaptorServer({ fetch: built.app.fetch })
+-        built.ws.injectWebSocket(server)
+-        const fail = (err: Error) => {
+-          cleanup()
+-          reject(err)
+-        }
+-        const ready = () => {
+-          cleanup()
+-          resolve(server)
+-        }
+-        const cleanup = () => {
+-          server.off("error", fail)
+-          server.off("listening", ready)
+-        }
+-        server.once("error", fail)
+-        server.once("listening", ready)
+-        server.listen(port, opts.hostname)
++    // Hivemind: native Bun.serve. The `server` is passed as the second
++    // arg to `built.app.fetch(req, server)` so Hono's `getBunServer(c)`
++    // can locate it for WebSocket upgrades. Bun.serve fires
++    // `req.signal.abort` synchronously via uSockets — the load-bearing
++    // piece for the presence WebSocket close detection.
++    const start = (port: number): BunServer => {
++      const server: BunServer = Bun.serve({
++        fetch: (req: Request) => built.app.fetch(req, server),
++        websocket: built.ws.websocket,
++        port,
++        hostname: opts.hostname,
+       })
++      return server
++    }
+
+-    const server = opts.port === 0 ? await start(4096).catch(() => start(0)) : await start(opts.port)
+-    const addr = server.address()
+-    if (!addr || typeof addr === "string") {
+-      throw new Error(`Failed to resolve server address for port ${opts.port}`)
++    let server: BunServer
++    if (opts.port === 0) {
++      try {
++        server = start(4096)
++      } catch {
++        server = start(0)
++      }
++    } else {
++      server = start(opts.port)
+     }
++    const port = server.port
+
+     const next = new URL("http://localhost")
+     next.hostname = opts.hostname
+-    next.port = String(addr.port)
++    next.port = String(port)
+     url = next
+
+     const mdns =
+       opts.mdns &&
+-      addr.port &&
++      port &&
+       opts.hostname !== "127.0.0.1" &&
+       opts.hostname !== "localhost" &&
+       opts.hostname !== "::1"
+     if (mdns) {
+-      MDNS.publish(addr.port, opts.mdnsDomain)
++      MDNS.publish(port, opts.mdnsDomain)
+     } else if (opts.mdns) {
+       log.warn("mDNS enabled but hostname is loopback; skipping mDNS publish")
+     }
+@@ -328,27 +332,13 @@ export namespace Server {
+     let closing: Promise<void> | undefined
+     return {
+       hostname: opts.hostname,
+-      port: addr.port,
++      port,
+       url: next,
+       stop(close?: boolean) {
+-        closing ??= new Promise((resolve, reject) => {
++        closing ??= (async () => {
+           if (mdns) MDNS.unpublish()
+-          server.close((err) => {
+-            if (err) {
+-              reject(err)
+-              return
+-            }
+-            resolve()
+-          })
+-          if (close) {
+-            if ("closeAllConnections" in server && typeof server.closeAllConnections === "function") {
+-              server.closeAllConnections()
+-            }
+-            if ("closeIdleConnections" in server && typeof server.closeIdleConnections === "function") {
+-              server.closeIdleConnections()
+-            }
+-          }
+-        })
++          await server.stop(close ?? false)
++        })()
+         return closing
+       },
+     }
+--
+2.50.1

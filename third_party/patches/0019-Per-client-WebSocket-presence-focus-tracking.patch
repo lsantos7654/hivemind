@@ -1,0 +1,806 @@
+From 6dd6bbc86b405371f4329b1e5818c321b36d298e Mon Sep 17 00:00:00 2001
+From: Lucas Santos <lsantos7654@gmail.com>
+Date: Fri, 1 May 2026 02:00:37 -0400
+Subject: [PATCH 19/19] Per-client WebSocket presence + focus tracking
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Adds a single `/presence` WebSocket route owned by every connected
+TUI for the life of its process. The connection itself is the
+presence beacon — when the WebSocket closes (clean exit, SIGINT,
+kill, network drop), the protocol's CLOSE frame triggers
+`onClose` synchronously on the server and the entry is removed
+from `_clients`. There is no batched-event problem because
+WebSocket close detection lives below us in Bun's uSockets layer.
+
+Focus updates ride on the same channel as JSON messages:
+
+  client → server:  { "type": "focus", "sessionID": "ses_..." | null }
+
+A single state mutation per navigation. No separate POST endpoint,
+no client-generated UUIDs, no `X-Client-ID` header, no race between
+the handshake and a follow-up focus call.
+
+`_clients` keyed by `wsContext.raw` (the underlying ServerWebSocket)
+because Hono wraps the raw socket in a fresh `WSContext` per
+callback — using the wrapper as a Map key would fail lookups
+between `onOpen` and subsequent callbacks.
+
+Endpoints:
+  - `GET /presence` (WebSocket upgrade) — the beacon.
+  - `GET /global/live-sessions` — initial-seed reads. Returns
+    `{ sessions: string[] }` (deduped focus values).
+
+Bus event:
+  - `session.live.changed` with payload `{ sessions: string[] }`.
+    Published on every `_clients` mutation. The TUI footer's
+    Sessions pill subscribes to this for live updates.
+
+TUI (`sdk.tsx`):
+  - Opens one `WebSocket` to `/presence` on mount.
+  - `createEffect(route.data)` sends a focus message on every
+    navigation. A small reconnect loop on `ws.close` for
+    resilience; pendingFocus buffers the latest value until
+    the new socket is open.
+
+Footer (`feature-plugins/home/footer.tsx`):
+  - Sessions pill: count = `event.properties.sessions.length`.
+    Seeded from `GET /global/live-sessions` on mount.
+  - Subagents pill: per-TUI, fetches
+    `client.session.children(sessionID)` from the slot context.
+    Refetches on `session.created` / `session.deleted` events
+    whose `parentID` matches the focused session.
+  - Drops the upstream `Directory` / `Mcp` / `Version` pills
+    (the prior feedback that drove the cleanup).
+  - Same View rendered into both `home_footer` and
+    `session_footer` slots.
+
+Tests: `packages/opencode/test/server/presence.test.ts` — seven
+cases, all running native `Bun.serve` + real `WebSocket` clients:
+focus appears, focus update mutates, blur to null, close removes
+client, two-client kill-one only-drops-one, dedup on shared
+session, malformed messages survive.
+
+Drops the substrate complexity from the prior approach: no SSE
+presence beacon, no `_subscriberCount` refcount, no Node http
+event hooks (incoming/outgoing), no module-level sweep, no
+active write probe, no socket setKeepAlive, no read-side flag
+poll, no presence-related @hono/node-server dependence (already
+gone from substrate commit). Net code: ~150 lines of presence
+routes + ~50 lines TUI + ~250 lines tests, replacing what would
+otherwise have been the 11-patch SSE iteration.
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+---
+ .../opencode/src/cli/cmd/tui/context/sdk.tsx  |  76 +++++-
+ .../cmd/tui/feature-plugins/home/footer.tsx   | 123 +++++----
+ packages/opencode/src/server/routes/global.ts |  27 ++
+ .../opencode/src/server/routes/presence.ts    | 102 +++++++
+ packages/opencode/src/server/server.ts        |   9 +
+ .../opencode/test/server/presence.test.ts     | 252 ++++++++++++++++++
+ 6 files changed, 541 insertions(+), 48 deletions(-)
+ create mode 100644 packages/opencode/src/server/routes/presence.ts
+ create mode 100644 packages/opencode/test/server/presence.test.ts
+
+diff --git a/packages/opencode/src/cli/cmd/tui/context/sdk.tsx b/packages/opencode/src/cli/cmd/tui/context/sdk.tsx
+index 348c3ca..2722f5d 100644
+--- a/packages/opencode/src/cli/cmd/tui/context/sdk.tsx
++++ b/packages/opencode/src/cli/cmd/tui/context/sdk.tsx
+@@ -1,7 +1,8 @@
+ import { createOpencodeClient, type Event } from "@opencode-ai/sdk/v2"
+ import { createSimpleContext } from "./helper"
++import { useRoute } from "./route"
+ import { createGlobalEmitter } from "@solid-primitives/event-bus"
+-import { batch, onCleanup, onMount } from "solid-js"
++import { batch, createEffect, onCleanup, onMount } from "solid-js"
+
+ export type EventSource = {
+   subscribe: (directory: string | undefined, handler: (event: Event) => void) => Promise<() => void>
+@@ -87,18 +88,91 @@ export const { use: useSDK, provider: SDKProvider } = createSimpleContext({
+       })().catch(() => {})
+     }
+
++    // Hivemind: presence WebSocket. One connection per TUI process,
++    // kept alive for the life of the TUI. The connection itself is
++    // the presence beacon — when it closes (clean exit, SIGINT, kill,
++    // network drop), the WebSocket protocol's close frame triggers
++    // `onClose` on the server synchronously and the entry is removed
++    // from `_clients`. Focus updates ride on the same channel as
++    // JSON messages: `{"type":"focus","sessionID":"ses_..."|null}`.
++    let presenceWS: WebSocket | undefined
++    let presenceReady = false
++    let pendingFocus: string | null | undefined = undefined
++    let presenceReconnectTimer: Timer | undefined
++    let presenceClosed = false
++
++    function presenceURL(): string {
++      const u = new URL(props.url)
++      u.protocol = u.protocol === "https:" ? "wss:" : "ws:"
++      u.pathname = (u.pathname.endsWith("/") ? u.pathname.slice(0, -1) : u.pathname) + "/presence"
++      return u.toString()
++    }
++
++    function sendFocus(sessionID: string | null) {
++      if (presenceWS && presenceWS.readyState === WebSocket.OPEN) {
++        presenceWS.send(JSON.stringify({ type: "focus", sessionID }))
++      } else {
++        pendingFocus = sessionID
++      }
++    }
++
++    function startPresence() {
++      if (presenceClosed) return
++      presenceWS = new WebSocket(presenceURL())
++      presenceReady = false
++      presenceWS.onopen = () => {
++        presenceReady = true
++        if (pendingFocus !== undefined) {
++          presenceWS?.send(JSON.stringify({ type: "focus", sessionID: pendingFocus }))
++          pendingFocus = undefined
++        }
++      }
++      presenceWS.onclose = () => {
++        presenceReady = false
++        presenceWS = undefined
++        if (presenceClosed || abort.signal.aborted) return
++        // Reconnect with a small backoff. Don't lose the most recent
++        // focus on reconnect — re-send it once the new socket opens.
++        presenceReconnectTimer = setTimeout(startPresence, 500)
++      }
++      presenceWS.onerror = () => {
++        // Errors will be followed by onclose; nothing to do here.
++      }
++    }
++
++    const route = useRoute()
++
+     onMount(async () => {
+       if (props.events) {
+         const unsub = await props.events.subscribe(props.directory, handleEvent)
+         onCleanup(unsub)
+       } else {
+         startSSE()
++        startPresence()
++        // Mirror the active route into the server's presence map.
++        // SolidJS reruns this effect whenever `route.data` changes,
++        // so each navigation triggers exactly one focus message
++        // without us having to diff session IDs manually.
++        createEffect(() => {
++          const data = route.data
++          const sessionID = data.type === "session" ? data.sessionID : null
++          // Always remember the latest focus so a reconnect re-sends it.
++          if (presenceReady) sendFocus(sessionID)
++          else pendingFocus = sessionID
++        })
+       }
+     })
+
+     onCleanup(() => {
+       abort.abort()
+       sse?.abort()
++      presenceClosed = true
++      if (presenceReconnectTimer) clearTimeout(presenceReconnectTimer)
++      try {
++        presenceWS?.close()
++      } catch {
++        // ignore — onclose handler will fire and clean up state
++      }
+       if (timer) clearTimeout(timer)
+     })
+
+diff --git a/packages/opencode/src/cli/cmd/tui/feature-plugins/home/footer.tsx b/packages/opencode/src/cli/cmd/tui/feature-plugins/home/footer.tsx
+index 0db4889..feea16e 100644
+--- a/packages/opencode/src/cli/cmd/tui/feature-plugins/home/footer.tsx
++++ b/packages/opencode/src/cli/cmd/tui/feature-plugins/home/footer.tsx
+@@ -1,9 +1,8 @@
+ import type { TuiPlugin, TuiPluginApi, TuiPluginModule } from "@opencode-ai/plugin/tui"
+-import { createMemo, Match, Show, Switch } from "solid-js"
++import { createSignal, onCleanup, onMount } from "solid-js"
+ import { existsSync, readFileSync } from "node:fs"
+ import { homedir } from "node:os"
+ import { join } from "node:path"
+-import { Global } from "@/global"
+
+ const id = "internal:home-footer"
+
+@@ -66,57 +65,87 @@ function HivemindStatus(props: { api: TuiPluginApi }) {
+   )
+ }
+
+-function Directory(props: { api: TuiPluginApi }) {
++// Hivemind: global "● N sessions" pill. Counts every distinct session
++// ID currently focused by some connected TUI. Driven by
++// `session.live.changed` from the per-client presence WebSocket map;
++// seeded from `GET /global/live-sessions` on mount.
++function Sessions(props: { api: TuiPluginApi }) {
+   const theme = () => props.api.theme.current
+-  const dir = createMemo(() => {
+-    const dir = props.api.state.path.directory || process.cwd()
+-    const out = dir.replace(Global.Path.home, "~")
+-    const branch = props.api.state.vcs?.branch
+-    if (branch) return out + ":" + branch
+-    return out
++  const [count, setCount] = createSignal(0)
++
++  onMount(async () => {
++    try {
++      const result = await props.api.client.global.liveSessions()
++      const data = (result as { data?: { sessions?: string[] } }).data
++      setCount(data?.sessions?.length ?? 0)
++    } catch {
++      // best-effort initial fetch; bus event will populate on next change
++    }
+   })
+
+-  return <text fg={theme().textMuted}>{dir()}</text>
+-}
+-
+-function Mcp(props: { api: TuiPluginApi }) {
+-  const theme = () => props.api.theme.current
+-  const list = createMemo(() => props.api.state.mcp())
+-  const has = createMemo(() => list().length > 0)
+-  const err = createMemo(() => list().some((item) => item.status === "failed"))
+-  const count = createMemo(() => list().filter((item) => item.status === "connected").length)
++  const unsubscribe = props.api.event.on("session.live.changed", (event) => {
++    setCount(event.properties.sessions.length)
++  })
++  onCleanup(unsubscribe)
+
+   return (
+-    <Show when={has()}>
+-      <box gap={1} flexDirection="row" flexShrink={0}>
+-        <text fg={theme().text}>
+-          <Switch>
+-            <Match when={err()}>
+-              <span style={{ fg: theme().error }}>⊙ </span>
+-            </Match>
+-            <Match when={true}>
+-              <span style={{ fg: count() > 0 ? theme().success : theme().textMuted }}>⊙ </span>
+-            </Match>
+-          </Switch>
+-          {count()} MCP
+-        </text>
+-        <text fg={theme().textMuted}>/status</text>
+-      </box>
+-    </Show>
++    <box flexDirection="row" flexShrink={0} gap={1}>
++      <text fg={count() > 0 ? theme().success : theme().textMuted}>●</text>
++      <text fg={theme().textMuted}>{count()} sessions</text>
++    </box>
+   )
+ }
+
+-function Version(props: { api: TuiPluginApi }) {
++// Hivemind: per-TUI "● N subagents" pill. Counts the direct DB
++// children of THIS TUI's currently-focused session — not a global
++// aggregate. Refetched on focus change and on session.created /
++// session.deleted events whose parentID matches the focus. Renders
++// 0 on the home route (no focus).
++function Subagents(props: { api: TuiPluginApi; sessionID?: string }) {
+   const theme = () => props.api.theme.current
++  const [count, setCount] = createSignal(0)
++
++  async function refresh() {
++    const sid = props.sessionID
++    if (!sid) {
++      setCount(0)
++      return
++    }
++    try {
++      const result = await props.api.client.session.children({ sessionID: sid })
++      const data = (result as { data?: unknown }).data
++      setCount(Array.isArray(data) ? data.length : 0)
++    } catch {
++      // best-effort
++    }
++  }
++
++  onMount(refresh)
++
++  const unsubCreated = props.api.event.on("session.created", (event) => {
++    const created = event.properties as { info?: { parentID?: string | null } }
++    if (created.info?.parentID && created.info.parentID === props.sessionID) {
++      void refresh()
++    }
++  })
++  const unsubDeleted = props.api.event.on("session.deleted", (event) => {
++    const deleted = event.properties as { info?: { parentID?: string | null } }
++    if (deleted.info?.parentID && deleted.info.parentID === props.sessionID) {
++      void refresh()
++    }
++  })
++  onCleanup(unsubCreated)
++  onCleanup(unsubDeleted)
+
+   return (
+-    <box flexShrink={0}>
+-      <text fg={theme().textMuted}>{props.api.app.version}</text>
++    <box flexDirection="row" flexShrink={0} gap={1}>
++      <text fg={count() > 0 ? theme().success : theme().textMuted}>●</text>
++      <text fg={theme().textMuted}>{count()} subagents</text>
+     </box>
+   )
+ }
+
+-function View(props: { api: TuiPluginApi }) {
++function View(props: { api: TuiPluginApi; sessionID?: string }) {
+   return (
+     <box
+       width="100%"
+@@ -128,11 +157,10 @@ function View(props: { api: TuiPluginApi }) {
+       flexShrink={0}
+       gap={2}
+     >
+-      <Directory api={props.api} />
+-      <Mcp api={props.api} />
++      <Sessions api={props.api} />
++      <Subagents api={props.api} sessionID={props.sessionID} />
+       <HivemindStatus api={props.api} />
+       <box flexGrow={1} />
+-      <Version api={props.api} />
+     </box>
+   )
+ }
+@@ -142,14 +170,15 @@ const tui: TuiPlugin = async (api) => {
+     order: 100,
+     slots: {
+       home_footer() {
++        // No focused session on home — Subagents renders 0.
+         return <View api={api} />
+       },
+-      // Hivemind: same view rendered into the session route's
+-      // session_footer slot (routes/session/index.tsx). So live /
+-      // bg / MCP / hivemind / version indicators are visible while
+-      // a user is inside a session, not just on the home page.
+-      session_footer() {
+-        return <View api={api} />
++      // Hivemind: rendered while inside a session. The slot props
++      // include `session_id` (set by `routes/session/index.tsx`
++      // when invoking the slot), which feeds the per-TUI Subagents
++      // pill.
++      session_footer(_ctx, props) {
++        return <View api={api} sessionID={props.session_id} />
+       },
+     },
+   })
+diff --git a/packages/opencode/src/server/routes/global.ts b/packages/opencode/src/server/routes/global.ts
+index b4cfc32..5eb4a7f 100644
+--- a/packages/opencode/src/server/routes/global.ts
++++ b/packages/opencode/src/server/routes/global.ts
+@@ -13,6 +13,7 @@ import { lazy } from "../../util/lazy"
+ import { Config } from "../../config/config"
+ import { Agent } from "@/agent/agent"
+ import { SessionBackground } from "@/session/background"
++import { liveSessions } from "./presence"
+ import { errors } from "../error"
+
+ const log = Log.create({ service: "server" })
+@@ -297,6 +298,32 @@ export const GlobalRoutes = lazy(() =>
+         return c.json(result)
+       },
+     )
++    .get(
++      "/live-sessions",
++      describeRoute({
++        summary: "List live sessions",
++        description:
++          "Hivemind: return the deduplicated set of session IDs currently focused by at least one connected client (TUI). Each TUI opens a single WebSocket on `/presence` and signals its currently-attached session via JSON messages on that connection. The TUI footer's `● N sessions` pill reads `sessions.length`. Subagent counts are computed per-TUI from the focused session's direct DB children and do not flow through this endpoint.",
++        operationId: "global.liveSessions",
++        responses: {
++          200: {
++            description: "Live sessions",
++            content: {
++              "application/json": {
++                schema: resolver(
++                  z.object({
++                    sessions: z.array(z.string()),
++                  }),
++                ),
++              },
++            },
++          },
++        },
++      }),
++      async (c) => {
++        return c.json({ sessions: liveSessions() })
++      },
++    )
+     .get(
+       "/background-tasks",
+       describeRoute({
+diff --git a/packages/opencode/src/server/routes/presence.ts b/packages/opencode/src/server/routes/presence.ts
+new file mode 100644
+index 0000000..e7d024a
+--- /dev/null
++++ b/packages/opencode/src/server/routes/presence.ts
+@@ -0,0 +1,102 @@
++import { Hono } from "hono"
++import type { UpgradeWebSocket } from "hono/ws"
++import z from "zod"
++import { Log } from "@/util/log"
++import { BusEvent } from "@/bus/bus-event"
++import { Bus } from "@/bus"
++
++const log = Log.create({ service: "server" })
++
++// Hivemind: emitted whenever the per-client presence map changes — a TUI
++// connects/disconnects its `/presence` WebSocket or sends a focus update.
++// `sessions` is the deduplicated set of session IDs currently focused by
++// at least one connected client. The TUI footer's "● N sessions" pill
++// reads `sessions.length`. Subagent counts are computed per-TUI from
++// `client.session.children(focused)` and intentionally do not flow
++// through this event.
++export const LiveSessionsChanged = BusEvent.define(
++  "session.live.changed",
++  z.object({
++    sessions: z.array(z.string()),
++  }),
++)
++
++// Hivemind: per-client presence state. Each TUI process opens ONE
++// long-lived WebSocket on `/presence` for the life of the TUI. The
++// connection is the presence beacon — when it closes (clean exit,
++// SIGINT, kill, network drop), the WebSocket protocol's close frame
++// triggers `onClose` synchronously and the entry is removed.
++//
++// Keyed by the underlying `ServerWebSocket` (`wsContext.raw`). Hono
++// creates a *new* `WSContext` wrapper on each callback, so using the
++// wrapper itself as a Map key would fail to look up entries between
++// `onOpen` and `onMessage`. The raw socket is stable across callbacks
++// for the lifetime of the connection.
++//
++// Focus is signaled in-band over the same WebSocket via JSON messages:
++//   { "type": "focus", "sessionID": "ses_..." | null }
++// Updating focus is a single state mutation on the existing entry —
++// no separate POST endpoint, no race between the WebSocket handshake
++// and a subsequent focus call.
++const _clients = new Map<object, { focus: string | null }>()
++
++function _publishChange(): void {
++  Bus.publish(LiveSessionsChanged, { sessions: liveSessions() }).catch((err) =>
++    log.error("failed to publish LiveSessionsChanged", { err }),
++  )
++}
++
++/**
++ * Hivemind: deduplicated set of session IDs focused by at least one
++ * connected client. Drives the global "● N sessions" pill and is
++ * exposed as `GET /global/live-sessions`.
++ */
++export function liveSessions(): string[] {
++  const focused = new Set<string>()
++  for (const c of _clients.values()) {
++    if (c.focus) focused.add(c.focus)
++  }
++  return [...focused]
++}
++
++const FocusMessage = z.object({
++  type: z.literal("focus"),
++  sessionID: z.string().nullable(),
++})
++
++export function PresenceRoutes(upgradeWebSocket: UpgradeWebSocket) {
++  return new Hono().get(
++    "/presence",
++    upgradeWebSocket(() => ({
++      onOpen(_ev, ws) {
++        const key = (ws.raw ?? ws) as object
++        _clients.set(key, { focus: null })
++        _publishChange()
++        log.info("presence connected")
++      },
++      onMessage(ev, ws) {
++        const key = (ws.raw ?? ws) as object
++        const entry = _clients.get(key)
++        if (!entry) return
++        let parsed: { type: "focus"; sessionID: string | null }
++        try {
++          const raw = typeof ev.data === "string" ? ev.data : new TextDecoder().decode(ev.data as ArrayBuffer)
++          parsed = FocusMessage.parse(JSON.parse(raw))
++        } catch (err) {
++          log.error("presence: bad message", { err })
++          return
++        }
++        if (entry.focus === parsed.sessionID) return
++        entry.focus = parsed.sessionID
++        _publishChange()
++      },
++      onClose(_ev, ws) {
++        const key = (ws.raw ?? ws) as object
++        if (_clients.delete(key)) {
++          _publishChange()
++          log.info("presence disconnected")
++        }
++      },
++    })),
++  )
++}
+diff --git a/packages/opencode/src/server/server.ts b/packages/opencode/src/server/server.ts
+index 74f163e..da64bbc 100644
+--- a/packages/opencode/src/server/server.ts
++++ b/packages/opencode/src/server/server.ts
+@@ -14,6 +14,7 @@ import { ProviderID } from "../provider/schema"
+ import { WorkspaceRouterMiddleware } from "./router"
+ import { errors } from "./error"
+ import { GlobalRoutes } from "./routes/global"
++import { PresenceRoutes } from "./routes/presence"
+ import { MDNS } from "./mdns"
+ import { lazy } from "@/util/lazy"
+ import { errorHandler } from "./middleware"
+@@ -99,6 +100,14 @@ export namespace Server {
+         return zipped(c, next)
+       })
+       .route("/global", GlobalRoutes())
++      // Hivemind: presence WebSocket route. Each TUI opens one
++      // long-lived `/presence` WS; the connection itself is the
++      // presence beacon. Focus updates flow as JSON messages over the
++      // same channel. Server-side state lives in
++      // `routes/presence.ts:_clients` and feeds the
++      // `/global/live-sessions` GET endpoint and the
++      // `session.live.changed` bus event.
++      .route("/", PresenceRoutes(upgrade))
+       .put(
+         "/auth/:providerID",
+         describeRoute({
+diff --git a/packages/opencode/test/server/presence.test.ts b/packages/opencode/test/server/presence.test.ts
+new file mode 100644
+index 0000000..2fbd081
+--- /dev/null
++++ b/packages/opencode/test/server/presence.test.ts
+@@ -0,0 +1,252 @@
++import { afterEach, describe, expect, test } from "bun:test"
++import type { Server as BunServer } from "bun"
++import { createBunWebSocket } from "hono/bun"
++import { Instance } from "../../src/project/instance"
++import { Server } from "../../src/server/server"
++import { Log } from "../../src/util/log"
++import { tmpdir } from "../fixture/fixture"
++
++Log.init({ print: false })
++
++afterEach(async () => {
++  await Instance.disposeAll()
++})
++
++// Hivemind: presence WebSocket tests. Native Bun.serve is the
++// substrate (same as production), real `WebSocket` clients open
++// connections, real CLOSE frames trigger cleanup. The protocol's
++// explicit close handshake means same-process tests faithfully
++// exercise the production code path — no need for a cross-process
++// curl variant; killing a `ws` instance fires `onClose` server-side
++// just like a TUI quitting does.
++
++// Hivemind: hono/bun's `upgradeWebSocket` and `websocket` are module-level
++// singletons (see node_modules/hono/dist/adapter/bun/websocket.js), so the
++// `websocket` handler we hand to Bun.serve here matches the
++// `upgradeWebSocket` Server.create() registered against. Calling
++// createBunWebSocket() in two places returns references to the same
++// singletons.
++const { websocket } = createBunWebSocket()
++
++async function startServer(): Promise<{ url: string; wsURL: string; stop: () => Promise<void> }> {
++  const app = Server.Default().app
++  let server: BunServer
++  // eslint-disable-next-line prefer-const
++  server = Bun.serve({
++    fetch: (req: Request) => app.fetch(req, server),
++    websocket,
++    port: 0,
++    hostname: "127.0.0.1",
++  })
++  return {
++    url: `http://127.0.0.1:${server.port}`,
++    wsURL: `ws://127.0.0.1:${server.port}`,
++    stop: async () => {
++      await server.stop(true)
++    },
++  }
++}
++
++async function liveSessions(url: string) {
++  const res = await fetch(url + "/global/live-sessions")
++  expect(res.status).toBe(200)
++  return (await res.json()) as { sessions: string[] }
++}
++
++async function openWS(wsURL: string): Promise<WebSocket> {
++  const ws = new WebSocket(wsURL + "/presence")
++  await new Promise<void>((resolve, reject) => {
++    ws.onopen = () => resolve()
++    ws.onerror = (e) => reject(e)
++  })
++  return ws
++}
++
++describe("presence WebSocket", () => {
++  test("client appears in live set when it sends focus", async () => {
++    await using tmp = await tmpdir({ git: true })
++    await Instance.provide({
++      directory: tmp.path,
++      fn: async () => {
++        const { url, wsURL, stop } = await startServer()
++        try {
++          const ws = await openWS(wsURL)
++          await Bun.sleep(20)
++
++          expect((await liveSessions(url)).sessions).toEqual([])
++
++          ws.send(JSON.stringify({ type: "focus", sessionID: "ses_root_A" }))
++          await Bun.sleep(50)
++
++          expect((await liveSessions(url)).sessions).toEqual(["ses_root_A"])
++
++          ws.close()
++        } finally {
++          await stop()
++        }
++      },
++    })
++  })
++
++  test("focus update mutates the entry rather than creating a new one", async () => {
++    await using tmp = await tmpdir({ git: true })
++    await Instance.provide({
++      directory: tmp.path,
++      fn: async () => {
++        const { url, wsURL, stop } = await startServer()
++        try {
++          const ws = await openWS(wsURL)
++          ws.send(JSON.stringify({ type: "focus", sessionID: "ses_old" }))
++          await Bun.sleep(30)
++          expect((await liveSessions(url)).sessions).toEqual(["ses_old"])
++
++          ws.send(JSON.stringify({ type: "focus", sessionID: "ses_new" }))
++          await Bun.sleep(30)
++          // Same client, focus updated. Old session is gone, new is live.
++          expect((await liveSessions(url)).sessions).toEqual(["ses_new"])
++
++          ws.close()
++        } finally {
++          await stop()
++        }
++      },
++    })
++  })
++
++  test("focus = null blurs the client without disconnecting", async () => {
++    await using tmp = await tmpdir({ git: true })
++    await Instance.provide({
++      directory: tmp.path,
++      fn: async () => {
++        const { url, wsURL, stop } = await startServer()
++        try {
++          const ws = await openWS(wsURL)
++          ws.send(JSON.stringify({ type: "focus", sessionID: "ses_x" }))
++          await Bun.sleep(30)
++          expect((await liveSessions(url)).sessions).toEqual(["ses_x"])
++
++          ws.send(JSON.stringify({ type: "focus", sessionID: null }))
++          await Bun.sleep(30)
++          expect((await liveSessions(url)).sessions).toEqual([])
++
++          // Connection still alive — re-focus to confirm.
++          ws.send(JSON.stringify({ type: "focus", sessionID: "ses_y" }))
++          await Bun.sleep(30)
++          expect((await liveSessions(url)).sessions).toEqual(["ses_y"])
++
++          ws.close()
++        } finally {
++          await stop()
++        }
++      },
++    })
++  })
++
++  test("closing the WebSocket removes the client (the leak-catcher)", async () => {
++    await using tmp = await tmpdir({ git: true })
++    await Instance.provide({
++      directory: tmp.path,
++      fn: async () => {
++        const { url, wsURL, stop } = await startServer()
++        try {
++          const ws = await openWS(wsURL)
++          ws.send(JSON.stringify({ type: "focus", sessionID: "ses_root" }))
++          await Bun.sleep(30)
++          expect((await liveSessions(url)).sessions).toEqual(["ses_root"])
++
++          ws.close()
++          await Bun.sleep(100)
++
++          expect((await liveSessions(url)).sessions).toEqual([])
++        } finally {
++          await stop()
++        }
++      },
++    })
++  })
++
++  test("two clients with distinct focuses, one disconnects, only its focus drops", async () => {
++    await using tmp = await tmpdir({ git: true })
++    await Instance.provide({
++      directory: tmp.path,
++      fn: async () => {
++        const { url, wsURL, stop } = await startServer()
++        try {
++          const a = await openWS(wsURL)
++          const b = await openWS(wsURL)
++          a.send(JSON.stringify({ type: "focus", sessionID: "ses_A" }))
++          b.send(JSON.stringify({ type: "focus", sessionID: "ses_B" }))
++          await Bun.sleep(50)
++
++          expect((await liveSessions(url)).sessions.sort()).toEqual(["ses_A", "ses_B"])
++
++          a.close()
++          await Bun.sleep(100)
++
++          expect((await liveSessions(url)).sessions).toEqual(["ses_B"])
++
++          b.close()
++        } finally {
++          await stop()
++        }
++      },
++    })
++  })
++
++  test("two clients on the same session dedupe", async () => {
++    await using tmp = await tmpdir({ git: true })
++    await Instance.provide({
++      directory: tmp.path,
++      fn: async () => {
++        const { url, wsURL, stop } = await startServer()
++        try {
++          const a = await openWS(wsURL)
++          const b = await openWS(wsURL)
++          a.send(JSON.stringify({ type: "focus", sessionID: "ses_shared" }))
++          b.send(JSON.stringify({ type: "focus", sessionID: "ses_shared" }))
++          await Bun.sleep(50)
++
++          // Set semantics — one entry despite two clients.
++          expect((await liveSessions(url)).sessions).toEqual(["ses_shared"])
++
++          a.close()
++          await Bun.sleep(100)
++          // B is still attached; the session stays live.
++          expect((await liveSessions(url)).sessions).toEqual(["ses_shared"])
++
++          b.close()
++          await Bun.sleep(100)
++          expect((await liveSessions(url)).sessions).toEqual([])
++        } finally {
++          await stop()
++        }
++      },
++    })
++  })
++
++  test("malformed message is ignored, connection survives", async () => {
++    await using tmp = await tmpdir({ git: true })
++    await Instance.provide({
++      directory: tmp.path,
++      fn: async () => {
++        const { url, wsURL, stop } = await startServer()
++        try {
++          const ws = await openWS(wsURL)
++          ws.send("not json")
++          ws.send(JSON.stringify({ type: "focus" })) // missing sessionID
++          ws.send(JSON.stringify({ type: "wrong" }))
++          await Bun.sleep(30)
++          expect((await liveSessions(url)).sessions).toEqual([])
++
++          ws.send(JSON.stringify({ type: "focus", sessionID: "ses_x" }))
++          await Bun.sleep(30)
++          expect((await liveSessions(url)).sessions).toEqual(["ses_x"])
++
++          ws.close()
++        } finally {
++          await stop()
++        }
++      },
++    })
++  })
++})
+--
+2.50.1
