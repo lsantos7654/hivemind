@@ -203,7 +203,7 @@ opencode functions are module-level and importable directly.
    `regenerate_librarian()` → `fire_post_mutation()` → post-mutation
    listeners POST `/global/reload-agents` to refresh opencode's agent
    cache without disposing the in-flight session (custom endpoint
-   added by `//third_party/patches/0004-add-reload-agents-endpoint.patch`).
+   added by `//third_party/patches/0004-Non-destructive-agent-reload-endpoint.patch`).
 3. Librarian aggregates every `registry.enabled()` agent into
    `agents/librarian.md` via each body's `.librarian_entry()`.
 4. `HIVEMIND.md` is generated once at `bootstrap_workspace()` from
@@ -216,12 +216,78 @@ opencode functions are module-level and importable directly.
 - **`config.json`** (gitignored) — local overlay (`enabled`/`disabled`
   agent names on this machine).
 
+## Patched engine: runtime + presence
+
+The bundled engine is a patched opencode fork. Two things in
+`third_party/patches/` are non-obvious enough that future work
+should know about them up front:
+
+### Native `Bun.serve` HTTP listener (patch 0017)
+
+Upstream opencode runs Hono on `@hono/node-server` (Node http compat
+on Bun). The fork swaps it for native `Bun.serve` —
+`createBunWebSocket()` from `hono/bun` for WebSocket upgrades, and
+`Bun.serve({ fetch, websocket, port, hostname })` for the listener.
+Why: native uSockets/EPOLLRDHUP delivers `req.signal.abort` and
+WebSocket close events synchronously; the Node http compat layer
+batches socket-close events behind unrelated I/O and was the root
+cause of a long disconnect-detection iteration (eleven dead-end
+patches before the substrate switch).
+
+`MODULE.bazel:52` pins `ext.bun(version = "1.3.11")` and the
+adjacent `ext.opencode(version = "1.4.3", sha256 = ...)` pin the
+opencode source. Bump the two in lockstep — opencode's
+`package.json:packageManager` declares the Bun version it expects.
+
+### Per-client WebSocket presence (patches 0018 + 0019)
+
+Each connected TUI owns one long-lived WebSocket on `/presence`
+for the life of the process. The connection itself is the presence
+beacon — when it closes (clean exit, SIGINT, kill, network drop),
+the WebSocket protocol's CLOSE frame triggers `onClose` on the
+server synchronously and the entry is removed from `_clients`.
+Focus updates ride on the same channel as JSON messages:
+
+```
+client → server:  { "type": "focus", "sessionID": "ses_..." | null }
+```
+
+Server-side state lives in
+`packages/opencode/src/server/routes/presence.ts:_clients` (keyed
+by the underlying `ServerWebSocket`, not Hono's per-callback
+`WSContext` wrapper). Two consumers:
+
+- `GET /global/live-sessions` returns `{ sessions: string[] }` —
+  the deduplicated focus values across all clients. Used by the
+  TUI footer's "● N sessions" pill on mount.
+- `session.live.changed` bus event fires on every mutation. The
+  TUI footer subscribes for live updates.
+
+The "● N subagents" pill is **per-TUI**, not derived from
+`_clients`. The TUI fetches `client.session.children(focused)`
+on focus change and counts. Refetched on `session.created` /
+`session.deleted` events whose `parentID` matches the focused
+session.
+
+Patch 0018 (`dep_patches/`) regenerates the SDK to expose
+`client.global.liveSessions()` and the
+`EventSessionLiveChanged` type. Don't introduce a parallel
+non-WebSocket channel for presence — the substrate gives reliable
+disconnect detection and there's no leak class to mitigate.
+
+Tests for the presence model live at
+`packages/opencode/test/server/presence.test.ts`. They spin
+native `Bun.serve` with real `WebSocket` clients (no `app.request`
+fake-fetch) and exercise the close-frame path. If you add to the
+presence model, test against real `Bun.serve`; in-process
+fake-fetch hides the disconnect bugs.
+
 ## MCP mutation semantics
 
 Mutations via MCP return cleanly without interrupting the session. The
 hivemind engine is a patched fork of opencode that exposes
 `POST /global/reload-agents` (added by
-`//third_party/patches/0004-add-reload-agents-endpoint.patch`) which
+`//third_party/patches/0004-Non-destructive-agent-reload-endpoint.patch`) which
 re-reads `agents/*.md` for every active instance via
 `Config.invalidateState()` + `Agent.reload()` — neither calls
 `Instance.dispose()`, so MCP subprocesses survive.

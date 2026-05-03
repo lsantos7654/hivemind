@@ -11,3 +11,8 @@ Ordered top-to-bottom by what's most actionable. Drop or refile items that no lo
 - [ ] **Background agents via opencode `/plugins`** — depends on the plugin API surface.
 - [ ] **Jinja templates with editable AI-generated sections** — let templates evolve without re-analysing every expert.
 - [ ] **opencode file watcher on `agents/**/*.md`** — patch to enable `OPENCODE_EXPERIMENTAL_FILEWATCHER` scoped to agents/. Largely obviated by `/global/reload-agents`, but removes the HTTP poke.
+
+
+
+- [ ] `daemon` memory management background agent to manage short and long term memories
+- [ ] expose list sessions as a command `/list_sessions`

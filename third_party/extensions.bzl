@@ -128,6 +128,7 @@ _OPENCODE_CODE_PATCHES = [
     "0016-Wake-up-synthetic-message-becomes-a-directive.patch",
     "0017-Switch-HTTP-listener-to-native-Bun.serve.patch",
     "0019-Per-client-WebSocket-presence-focus-tracking.patch",
+    "0020-Broadcast-live-sessions-over-presence-WS-cross-direc.patch",
 ]
 external_engines = module_extension(
     implementation = _ext_impl,
