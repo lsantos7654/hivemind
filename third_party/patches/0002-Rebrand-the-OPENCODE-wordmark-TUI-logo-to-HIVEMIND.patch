@@ -1,7 +1,7 @@
-From 9591e28ec5b1615393dc80c32078ae8c52092901 Mon Sep 17 00:00:00 2001
+From b74eb5c1bf325f3d37a8f3bfb038e6d263a40b48 Mon Sep 17 00:00:00 2001
 From: Lucas Santos <lsantos7654@gmail.com>
 Date: Mon, 20 Apr 2026 21:22:13 -0400
-Subject: [PATCH 02/20] Rebrand the OPENCODE wordmark + TUI logo to HIVEMIND
+Subject: [PATCH 02/15] Rebrand the OPENCODE wordmark + TUI logo to HIVEMIND
 
 Replaces the two ASCII-art glyph sources in the opencode source tree
 that the user sees: the static `wordmark` array used by the exit screen
@@ -23,7 +23,7 @@ shadow-marker rendering still works on the empty strings (no-op).
  2 files changed, 16 insertions(+), 6 deletions(-)
 
 diff --git a/packages/opencode/src/cli/logo.ts b/packages/opencode/src/cli/logo.ts
-index 44fb93c..1708ce4 100644
+index 44fb93c..f5c1b40 100644
 --- a/packages/opencode/src/cli/logo.ts
 +++ b/packages/opencode/src/cli/logo.ts
 @@ -1,6 +1,16 @@
@@ -32,15 +32,15 @@ index 44fb93c..1708ce4 100644
 -  right: ["             ▄     ", "█▀▀▀ █▀▀█ █▀▀█ █▀▀█", "█___ █__█ █__█ █^^^", "▀▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀"],
 +  left: [
 +    "                   ",
-+    "█  █ ▀█▀  █  █ █▀▀█",
-+    "█^^█  █   █__█ █^^^",
-+    "▀~~▀ ▀▀▀   ▀▀  ▀▀▀▀",
++    "█  █ ▀█▀ █  █ █▀▀█",
++    "█^^█  █  █__█ █^^^",
++    "▀~~▀ ▀▀▀  ▀▀  ▀▀▀▀",
 +  ],
 +  right: [
 +    "                    ",
-+    "█▄ ▄█ ▀█▀  █▀▀▄ █▀▀▄",
-+    "█_█_█  █   █__█ █__█",
-+    "▀   ▀ ▀▀▀  ▀~~▀ ▀▀▀ ",
++    "█▄ ▄█ ▀█▀ █▀▀▄ █▀▀▄",
++    "█_█_█  █  █__█ █__█",
++    "▀   ▀ ▀▀▀ ▀~~▀ ▀▀▀ ",
 +  ],
  }
 

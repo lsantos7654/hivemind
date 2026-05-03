@@ -103,8 +103,8 @@ def _ext_impl(ctx):
 # //third_party/dep_patches/. Empty by default — most patches should be
 # code patches.
 _OPENCODE_DEP_PATCHES = [
-    "0012-SDK-gen-backgroundTasks-endpoint-SessionBackgroundCh.patch",
-    "0018-SDK-gen-liveSessions-endpoint-LiveSessionsChanged-ev.patch",
+    "0011-SDK-gen-backgroundTasks-endpoint-SessionBackgroundCh.patch",
+    "0014-SDK-gen-liveSessions-endpoint-LiveSessionsChanged-ev.patch",
 ]
 # Patches that modify only source files (no dep manifest changes). Applied
 # only in @opencode_src, after dep_patches, after install. Editing one
@@ -118,17 +118,12 @@ _OPENCODE_CODE_PATCHES = [
     "0005-Hardened-opencode-config-defaults.patch",
     "0006-Bake-bash.sudo-deny-into-Permission.fromConfig.patch",
     "0007-Per-session-inbox-with-deferred-delivery.patch",
-    "0008-Session.fork-accepts-optional-parentID.patch",
-    "0009-Session.fork-accepts-optional-permission.patch",
-    "0010-Task-tool-accepts-source_session_id.patch",
-    "0011-Background-Task-mode-cascade-cancellation.patch",
-    "0013-SessionPrompt.continue-bg-complete-wake-up.patch",
-    "0014-TUI-session_footer-slot-dual-slot-home-footer-plugin.patch",
-    "0015-Fix-SessionPrompt.continue-empty-user-message-API-re.patch",
-    "0016-Wake-up-synthetic-message-becomes-a-directive.patch",
-    "0017-Switch-HTTP-listener-to-native-Bun.serve.patch",
-    "0019-Per-client-WebSocket-presence-focus-tracking.patch",
-    "0020-Broadcast-live-sessions-over-presence-WS-cross-direc.patch",
+    "0008-Session.fork-accepts-optional-parentID-and-permissio.patch",
+    "0009-Task-tool-accepts-source_session_id.patch",
+    "0010-Background-Task-mode-and-lifecycle-Task-tool.patch",
+    "0012-TUI-session_footer-slot-dual-slot-home-footer-plugin.patch",
+    "0013-Switch-HTTP-listener-to-native-Bun.serve.patch",
+    "0015-Per-client-WebSocket-presence-and-focus-tracking.patch",
 ]
 external_engines = module_extension(
     implementation = _ext_impl,

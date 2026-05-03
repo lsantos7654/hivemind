@@ -1,59 +1,49 @@
-From 17f60acd2749c1d452c461c88d6bfec98b180f1d Mon Sep 17 00:00:00 2001
+From 0106e23d64eccd43aa9644d8f5712f804f07036a Mon Sep 17 00:00:00 2001
 From: Lucas Santos <lsantos7654@gmail.com>
 Date: Wed, 29 Apr 2026 00:41:30 -0400
-Subject: [PATCH 11/20] Background Task mode + cascade cancellation
+Subject: [PATCH 10/15] Background Task mode and lifecycle (Task tool)
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
-Adds `background: true` to the Task tool. When set, Task spawns the
-subagent with the same parentID/fork/resume logic as today, but returns
-immediately with `task_id` and `status: spawned (background)` instead
-of awaiting the prompt. The subagent runs to completion in its own
-session; the result is buffered in SessionBackground (a per-parent
-in-memory registry keyed by parentID) until the parent consumes it.
+Adds `background: true` to the built-in Task tool: spawns a subagent,
+returns immediately with a `task_id`, buffers the result on the
+session, and lets the parent pick it up via `read_task_result` on the
+next turn. Cancelling the parent cascades to running background
+children. New `GET /global/background-tasks` endpoint exposes the
+buffer for cross-session inspection.
 
-The parent picks up results in two steps:
-1. On its next turn, the system-array assembly in SessionPrompt scans
-   SessionBackground.pendingFor and injects a <system-reminder> listing
-   ready task_ids.
-2. The model calls a new `read_task_result(task_id)` tool to consume
-   each result. Strict pull — running tasks return a status indicator,
-   unknown tasks (consumed already or never spawned by this parent)
-   return an error.
+Includes the wake-up mechanism that lets the parent become aware of
+a finished background task without user input. `SessionPrompt.continue_`
+issues a minimal turn (one synthetic text part) when
+`SessionBackground.complete` schedules a wake-up.
 
-Cancellation cascade: SessionPrompt.cancel was extended to walk
-SessionBackground.runningFor(parentID) and call state.cancel for each
-running child, so aborting the parent (existing
-POST /:sessionID/abort route) kills running background workers without
-any new TUI keybind or HTTP route. Subagents cannot spawn subagents
-(task.ts:75,92-100,184-186 deny `task` permission to every Task-spawned
-child unless its definition explicitly grants it; no hivemind agent
-does), so the cascade is depth-1 — direct calls to state.cancel, no
-recursion.
+The synthetic wake-up message went through three iterations to reach
+its final form. Recording the history because the dead ends are
+non-obvious:
 
-A per-parent concurrency cap of 8 running background tasks is enforced
-in SessionBackground.register, which throws CapExceededError; the
-Task tool surfaces it as a fail Effect.
+  1. Empty text — dropped by `MessageV2.toModelMessagesEffect`, which
+     leaves the assistant message trailing. Claude rejected this as a
+     prefill.
+  2. Single dot "." — accepted by the API, but the model treated it
+     as a no-op user message, ignored the system-reminder, and replied
+     with generic continuation text instead of calling
+     `read_task_result`.
+  3. Explicit directive — "[Background task complete] Call
+     read_task_result(task_id=...)" — the model reliably calls the
+     tool. The synthetic flag still suppresses chat-UI render of the
+     wake-up message.
 
-New endpoint GET /global/background-tasks returns the active task set
-for the upcoming TUI footer indicator. New bus event
-session.background.changed fires on every register/complete/consume so
-the indicator can update reactively.
-
-Background runners die with the engine process, so the in-memory
-registry is consistent with runner lifetime — no persistence layer
-needed for v1.
-
-Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+Future iterations of synthetic-message flows should start from
+the directive form.
 ---
- packages/opencode/src/server/routes/global.ts |  33 ++++
- packages/opencode/src/session/background.ts   | 177 ++++++++++++++++++
- packages/opencode/src/session/prompt.ts       |  30 +++
- .../opencode/src/tool/read-task-result.ts     |  64 +++++++
+ packages/opencode/src/server/routes/global.ts |  33 +++
+ packages/opencode/src/session/background.ts   | 221 ++++++++++++++++++
+ packages/opencode/src/session/prompt.ts       |  86 +++++++
+ .../opencode/src/tool/read-task-result.ts     |  64 +++++
  packages/opencode/src/tool/registry.ts        |   3 +
- packages/opencode/src/tool/task.ts            |  94 ++++++++--
- 6 files changed, 384 insertions(+), 17 deletions(-)
+ packages/opencode/src/tool/task.ts            |  94 ++++++--
+ 6 files changed, 484 insertions(+), 17 deletions(-)
  create mode 100644 packages/opencode/src/session/background.ts
  create mode 100644 packages/opencode/src/tool/read-task-result.ts
 
@@ -110,10 +100,10 @@ index 8abef06..b4cfc32 100644
        describeRoute({
 diff --git a/packages/opencode/src/session/background.ts b/packages/opencode/src/session/background.ts
 new file mode 100644
-index 0000000..5f24b5a
+index 0000000..907fadb
 --- /dev/null
 +++ b/packages/opencode/src/session/background.ts
-@@ -0,0 +1,177 @@
+@@ -0,0 +1,221 @@
 +// Hivemind: in-memory registry of background-mode Task children, keyed by
 +// parent session. Pairs with the `background: true` parameter on the Task
 +// tool (tool/task.ts). When a background child is spawned the entry is
@@ -133,7 +123,10 @@ index 0000000..5f24b5a
 +import { Bus } from "@/bus"
 +import { BusEvent } from "@/bus/bus-event"
 +import { Log } from "../util/log"
++import { Session } from "."
 +import { SessionID } from "./schema"
++import { SessionPrompt } from "./prompt"
++import { SessionRunState } from "./run-state"
 +
 +export namespace SessionBackground {
 +  const log = Log.create({ service: "session.background" })
@@ -226,6 +219,11 @@ index 0000000..5f24b5a
 +   * Mark a running task complete. Stores `result` for later consumption
 +   * via `consume`. No-op if the task is unknown (e.g. cancelled before
 +   * the runner reached completion). Fires BackgroundTasksChanged.
++   *
++   * Hivemind: also schedules a wake-up — see `_scheduleWakeUp`. The
++   * intent is phone-notification semantics: when a bg task finishes,
++   * the parent becomes aware of the result and can act on it without
++   * waiting for the user to type something.
 +   */
 +  export function complete(parentID: SessionID, taskID: SessionID, result: string): void {
 +    const bucket = _registry.get(parentID)
@@ -239,6 +237,42 @@ index 0000000..5f24b5a
 +    entry.completedAt = Date.now()
 +    log.info("complete", { parentID, taskID, resultLength: result.length })
 +    _publishChange()
++    _scheduleWakeUp(parentID)
++  }
++
++  /**
++   * Hivemind: wake the parent if it's idle so the model sees the
++   * <system-reminder> announcing the ready task_id. If the parent is
++   * mid-turn, do nothing — its next loop step re-assembles the system
++   * prompt and picks up the reminder automatically (see prompt.ts
++   * around the "Background tasks ready" injection block).
++   *
++   * Fire-and-forget. Failures are logged and dropped because the
++   * registry mutation has already happened; the worst case is the
++   * user types something and the reminder lands then. We do not
++   * retry on failure.
++   */
++  function _scheduleWakeUp(parentID: SessionID): void {
++    void (async () => {
++      try {
++        await SessionRunState.assertNotBusy(parentID)
++      } catch (err) {
++        if (err instanceof Session.BusyError) return
++        log.error("wake-up busy-check failed", { parentID, err })
++        return
++      }
++      try {
++        await SessionPrompt.continue_(parentID)
++      } catch (err) {
++        if (err instanceof Session.BusyError) {
++          // Tiny race: parent went busy between our check and our call.
++          // Same outcome as the busy branch above — let the running
++          // turn pick up the reminder per-step.
++          return
++        }
++        log.error("wake-up prompt failed", { parentID, err })
++      }
++    })()
 +  }
 +
 +  /**
@@ -292,7 +326,7 @@ index 0000000..5f24b5a
 +  }
 +}
 diff --git a/packages/opencode/src/session/prompt.ts b/packages/opencode/src/session/prompt.ts
-index 7f0a014..4aaf957 100644
+index 7f0a014..b037d21 100644
 --- a/packages/opencode/src/session/prompt.ts
 +++ b/packages/opencode/src/session/prompt.ts
 @@ -48,6 +48,7 @@ import { InstanceState } from "@/effect/instance-state"
@@ -303,7 +337,15 @@ index 7f0a014..4aaf957 100644
 
  // @ts-ignore
  globalThis.AI_SDK_LOG_WARNINGS = false
-@@ -103,6 +104,17 @@ export namespace SessionPrompt {
+@@ -68,6 +69,7 @@ export namespace SessionPrompt {
+   export interface Interface {
+     readonly cancel: (sessionID: SessionID) => Effect.Effect<void>
+     readonly prompt: (input: PromptInput) => Effect.Effect<MessageV2.WithParts>
++    readonly continue_: (sessionID: SessionID) => Effect.Effect<MessageV2.WithParts>
+     readonly loop: (input: z.infer<typeof LoopInput>) => Effect.Effect<MessageV2.WithParts>
+     readonly shell: (input: ShellInput) => Effect.Effect<MessageV2.WithParts>
+     readonly command: (input: CommandInput) => Effect.Effect<MessageV2.WithParts>
+@@ -103,6 +105,17 @@ export namespace SessionPrompt {
        const cancel = Effect.fn("SessionPrompt.cancel")(function* (sessionID: SessionID) {
          log.info("cancel", { sessionID })
          yield* state.cancel(sessionID)
@@ -321,7 +363,62 @@ index 7f0a014..4aaf957 100644
        })
 
        const resolvePromptParts = Effect.fn("SessionPrompt.resolvePromptParts")(function* (template: string) {
-@@ -1471,6 +1483,24 @@ NOTE: At any point in time through this workflow you should feel free to ask the
+@@ -1287,6 +1300,54 @@ NOTE: At any point in time through this workflow you should feel free to ask the
+         },
+       )
+
++      // Hivemind: kick a turn for `sessionID` without injecting a
++      // visible user message. Used by SessionBackground.complete to
++      // wake an idle parent when one of its background-mode Task
++      // children finishes — the new turn's system-prompt assembly
++      // (this file, the per-step injection block) picks up the
++      // <system-reminder> listing the ready task_ids and the model
++      // calls read_task_result.
++      //
++      // We construct a minimal PromptInput with a single
++      // `synthetic: true` text part. The synthetic flag suppresses
++      // the per-step user-message wrap (see the loop body) so the
++      // assistant doesn't see "<system-reminder>The user sent the
++      // following message: </system-reminder>" wrapping an empty
++      // string. Defaults take over for `model`/`agent` (both pulled
++      // from the session's last assistant turn), so a stale wake-up
++      // can't accidentally switch the active model.
++      const continue_: (sessionID: SessionID) => Effect.Effect<MessageV2.WithParts> = Effect.fn(
++        "SessionPrompt.continue",
++      )(function* (sessionID: SessionID) {
++        return yield* prompt({
++          sessionID,
++          // Hivemind: directive synthetic user message. Earlier we used
++          // "." as a minimal non-empty placeholder so the API call
++          // wouldn't be rejected as "assistant message prefill", but
++          // the model treated the dot as a no-op and replied with
++          // generic continuation text ("Still waiting on the Bazel
++          // expert to finish..."). The system-reminder block injected
++          // alongside (see "Background tasks ready" in this file)
++          // wasn't enough on its own — the user-turn text needs to
++          // mirror the directive so the model can't miss it.
++          //
++          // The synthetic flag still suppresses the per-step
++          // user-message wrap and the chat-UI render, so this text
++          // is invisible to the user but visible to the model API.
++          parts: [
++            {
++              type: "text",
++              synthetic: true,
++              text:
++                "[Background task complete] " +
++                'Call read_task_result(task_id="...") for the task_id listed in the ' +
++                "<system-reminder> above to fetch the result, then respond to the user " +
++                "with what you learned. Do not say you are still waiting — the task has finished.",
++            },
++          ],
++        })
++      })
++
+       const lastAssistant = (sessionID: SessionID) =>
+         Effect.promise(async () => {
+           let latest: MessageV2.WithParts | undefined
+@@ -1471,6 +1532,24 @@ NOTE: At any point in time through this workflow you should feel free to ask the
                  MessageV2.toModelMessagesEffect(msgs, model),
                ])
                const system = [...env, ...(skills ? [skills] : []), ...instructions]
@@ -346,6 +443,27 @@ index 7f0a014..4aaf957 100644
                const format = lastUser.format ?? { type: "text" as const }
                if (format.type === "json_schema") system.push(STRUCTURED_OUTPUT_SYSTEM_PROMPT)
                const result = yield* handle.process({
+@@ -1657,6 +1736,7 @@ NOTE: At any point in time through this workflow you should feel free to ask the
+       return Service.of({
+         cancel,
+         prompt,
++        continue_,
+         loop,
+         shell,
+         command,
+@@ -1763,6 +1843,12 @@ NOTE: At any point in time through this workflow you should feel free to ask the
+     return runPromise((svc) => svc.prompt(PromptInput.parse(input)))
+   }
+
++  // Hivemind: see Interface.continue_ above. Named with the trailing
++  // underscore because `continue` is a reserved word in TypeScript.
++  export async function continue_(sessionID: SessionID) {
++    return runPromise((svc) => svc.continue_(SessionID.zod.parse(sessionID)))
++  }
++
+   export async function resolvePromptParts(template: string) {
+     return runPromise((svc) => svc.resolvePromptParts(z.string().parse(template)))
+   }
 diff --git a/packages/opencode/src/tool/read-task-result.ts b/packages/opencode/src/tool/read-task-result.ts
 new file mode 100644
 index 0000000..b5281a3

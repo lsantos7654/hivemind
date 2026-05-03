@@ -1,36 +1,28 @@
-From 9edd0b60dc496f3bc357bc01f1470272fca8635d Mon Sep 17 00:00:00 2001
+From 5a80f54255da9bed98e14e0956c05d51372e6ec8 Mon Sep 17 00:00:00 2001
 From: Lucas Santos <lsantos7654@gmail.com>
 Date: Mon, 27 Apr 2026 00:44:03 -0400
-Subject: [PATCH 08/20] Session.fork accepts optional parentID
-MIME-Version: 1.0
-Content-Type: text/plain; charset=UTF-8
-Content-Transfer-Encoding: 8bit
+Subject: [PATCH 08/15] Session.fork accepts optional parentID and permission
 
-Upstream Session.fork creates a sibling session with parent_id = null.
-Hivemind's cross-session MCP `fork_session` tool needs forks to be
-real subagents of the caller (so they show up under main's subagent
-tree) — this exposes the existing createNext parentID parameter on the
-fork path.
+Two related extensions to Session.fork's signature:
 
-Mechanism:
-  - Adds optional parentID to Session.Interface.fork's input shape, the
-    inner Effect.fn fork's params, and the public fn() schema.
-  - createNext already accepts parentID; the fork just forwards it.
-  - The POST /session/:sessionID/fork route's body validator
-    (`Session.fork.schema.omit({ sessionID: true })`) picks the new
-    field up automatically, so callers just include `parentID` in the
-    body when they want a subagent fork.
+- parentID: lets the cross-session Task tool fork a session as a
+  real subagent (a child of the calling session) instead of a
+  sibling at the root.
+- permission: lets the fork pre-set a permission ruleset so the
+  Task tool's child-hardening overlay stacks on top of the source
+  session's permissions.
 
-Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+Both are pure additions to the existing fork path; callers that
+don't pass them see no behavior change.
 ---
- packages/opencode/src/session/index.ts | 26 ++++++++++++++++++++++----
- 1 file changed, 22 insertions(+), 4 deletions(-)
+ packages/opencode/src/session/index.ts | 34 +++++++++++++++++++++++---
+ 1 file changed, 30 insertions(+), 4 deletions(-)
 
 diff --git a/packages/opencode/src/session/index.ts b/packages/opencode/src/session/index.ts
-index 2e68f22..e7f26d7 100644
+index 2e68f22..10f4ef4 100644
 --- a/packages/opencode/src/session/index.ts
 +++ b/packages/opencode/src/session/index.ts
-@@ -316,7 +316,11 @@ export namespace Session {
+@@ -316,7 +316,12 @@ export namespace Session {
        permission?: Permission.Ruleset
        workspaceID?: WorkspaceID
      }) => Effect.Effect<Info>
@@ -39,11 +31,12 @@ index 2e68f22..e7f26d7 100644
 +      sessionID: SessionID
 +      messageID?: MessageID
 +      parentID?: SessionID
++      permission?: Permission.Ruleset
 +    }) => Effect.Effect<Info>
      readonly touch: (sessionID: SessionID) => Effect.Effect<void>
      readonly get: (id: SessionID) => Effect.Effect<Info>
      readonly share: (id: SessionID) => Effect.Effect<{ url: string }>
-@@ -527,7 +531,11 @@ export namespace Session {
+@@ -527,7 +532,12 @@ export namespace Session {
          })
        })
 
@@ -52,11 +45,12 @@ index 2e68f22..e7f26d7 100644
 +        sessionID: SessionID
 +        messageID?: MessageID
 +        parentID?: SessionID
++        permission?: Permission.Ruleset
 +      }) {
          const directory = yield* InstanceState.directory
          const original = yield* get(input.sessionID)
          const title = getForkedTitle(original.title)
-@@ -535,6 +543,11 @@ export namespace Session {
+@@ -535,6 +545,16 @@ export namespace Session {
            directory,
            workspaceID: original.workspaceID,
            title,
@@ -65,10 +59,15 @@ index 2e68f22..e7f26d7 100644
 +          // default (parent_id = null). Used by the cross-session MCP tools
 +          // so a fork shows up under main's subagent tree.
 +          parentID: input.parentID,
++          // Hivemind: callers (e.g. the Task tool's source_session_id path)
++          // can pre-set the new session's permission ruleset. Without this,
++          // forks always start with no permission overlay regardless of
++          // what the source had.
++          permission: input.permission,
          })
          const msgs = yield* messages({ sessionID: input.sessionID })
          const idMap = new Map<string, MessageID>()
-@@ -699,8 +712,13 @@ export namespace Session {
+@@ -699,8 +719,14 @@ export namespace Session {
      (input) => runPromise((svc) => svc.create(input)),
    )
 
@@ -79,6 +78,7 @@ index 2e68f22..e7f26d7 100644
 +      sessionID: SessionID.zod,
 +      messageID: MessageID.zod.optional(),
 +      parentID: SessionID.zod.optional(),
++      permission: Permission.Ruleset.optional(),
 +    }),
 +    (input) => runPromise((svc) => svc.fork(input)),
    )
