@@ -124,6 +124,7 @@ _OPENCODE_CODE_PATCHES = [
     "0012-TUI-session_footer-slot-dual-slot-home-footer-plugin.patch",
     "0013-Switch-HTTP-listener-to-native-Bun.serve.patch",
     "0015-Per-client-WebSocket-presence-and-focus-tracking.patch",
+    "0016-Extend-reload-agents-to-invalidate-Skill-and-Command.patch",
 ]
 external_engines = module_extension(
     implementation = _ext_impl,

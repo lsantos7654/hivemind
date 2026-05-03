@@ -55,6 +55,7 @@ __all__ = [
     "OPENCODE_DIR",
     "REPOS_DIR",
     "REPOS_LINK",
+    "SKILLS_DIR",
     "STAGING_DIR",
     "TEAMS_DIR",
     "count_versions",
@@ -87,6 +88,7 @@ EXPERTS_DIR = HIVEMIND_ROOT / "experts"
 TEAMS_DIR = HIVEMIND_ROOT / "teams"
 HIVEMIND_MD = HIVEMIND_ROOT / "HIVEMIND.md"
 COMMANDS_DIR = OPENCODE_DIR / "commands"
+SKILLS_DIR = OPENCODE_DIR / "skills"
 
 # --- Subprocess timeouts (seconds) ---
 

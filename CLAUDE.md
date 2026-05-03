@@ -37,6 +37,25 @@ Lint/format/type-check tools (`ruff`, `mypy`, `pre-commit`) are pinned in
 `pyproject.toml` and locked in `uv.lock`, but not exposed as Bazel targets.
 Install them however you prefer (e.g., `brew install ruff mypy pre-commit`).
 
+### User-supplied opencode content
+
+Three slots under `opencode/` for user-authored content; see
+`opencode/README.md` for the full author-facing reference.
+
+- `opencode/commands/<name>.md` — slash commands invoked as `/<name>`.
+  Symlinked into `~/.config/opencode/commands/`.
+- `opencode/skills/<name>/SKILL.md` — LLM-discovered skills. Symlinked
+  into `~/.config/opencode/skills/`.
+- `opencode/agents/<name>.md` — hand-authored agent prompts. Auto-
+  registered in the catalog as `user_supplied` agents on every
+  redeploy; `enable_agent` deploys the file verbatim into
+  `~/.config/opencode/agents/<name>.md`.
+
+`hivemind redeploy` re-establishes the symlinks and reconciles the
+catalog with `opencode/agents/`. All three flows are idempotent —
+drop / edit / remove a file then redeploy, no separate `hivemind init`
+required.
+
 ### Patching opencode
 
 The bundled engine is a patched fork. Patches live in

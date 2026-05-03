@@ -34,7 +34,7 @@ from hivemind.templates import LIBRARIAN_DESCRIPTION
 
 log = logging.getLogger(__name__)
 
-Kind = Literal["git_analyzed", "roster_templated", "librarian"]
+Kind = Literal["git_analyzed", "roster_templated", "user_supplied", "librarian"]
 
 PROVIDER_NAME = "opencode"
 RULES_FILE_NAME = "AGENTS.md"
@@ -266,6 +266,11 @@ def format_agent(kind: Kind, name: str, description: str, body: str) -> str:
             extra_permissions=[f'"{teams_base_path()}/**": allow'],
             body=body,
         )
+    if kind == "user_supplied":
+        # The user owns the entire markdown including frontmatter.
+        # Pass it through untouched — `_build_frontmatter` would clobber
+        # whatever they wrote.
+        return body
     if kind == "librarian":
         return _build_frontmatter(
             name=name,
@@ -282,6 +287,8 @@ def agent_filename(kind: Kind, name: str) -> str:
         return f"expert-{name}.md"
     if kind == "roster_templated":
         return f"team-lead-{name}.md"
+    if kind == "user_supplied":
+        return f"{name}.md"
     if kind == "librarian":
         return "librarian.md"
     assert_never(kind)
@@ -480,20 +487,27 @@ def notify_instance_reload() -> bool:
     Provided by the //third_party/patches/0004-add-reload-agents-endpoint.patch
     patch in our opencode fork; not available against upstream opencode.
 
-    Fire-and-forget — returns False if no server is running.
+    Fire-and-forget — returns False when no server is reachable
+    (``detached`` or ``test`` modes).
     """
     from hivemind.runtime import current_context
 
     ctx = current_context()
-    if ctx.server_url is None:
+    if ctx.mode == "attached":
+        assert ctx.server_url is not None  # implied by mode; documents the invariant
+        try:
+            resp = httpx.post(f"{ctx.server_url}/global/reload-agents", timeout=5.0)
+            return resp.status_code == 200
+        except (httpx.ConnectError, httpx.TimeoutException):
+            log.debug("Failed to notify OpenCode server at %s", ctx.server_url)
+            return False
+    if ctx.mode == "detached":
+        # Mutation already persisted to disk; opencode picks it up on next launch.
         return False
-
-    try:
-        resp = httpx.post(f"{ctx.server_url}/global/reload-agents", timeout=5.0)
-        return resp.status_code == 200
-    except (httpx.ConnectError, httpx.TimeoutException):
-        log.debug("Failed to notify OpenCode server at %s", ctx.server_url)
+    if ctx.mode == "test":
+        # Tests don't run a real server; mock at the httpx layer if needed.
         return False
+    assert_never(ctx.mode)
 
 
 # ---------------------------------------------------------------------------
@@ -512,9 +526,14 @@ def _server_url() -> str:
     from hivemind.runtime import current_context
 
     ctx = current_context()
-    if ctx.server_url is None:
+    if ctx.mode == "attached":
+        assert ctx.server_url is not None  # implied by mode; documents the invariant
+        return ctx.server_url
+    if ctx.mode == "detached":
         raise RuntimeError("no opencode server is running — start one with `hivemind` first")
-    return ctx.server_url
+    if ctx.mode == "test":
+        raise RuntimeError("_server_url called in test mode — mock the HTTP layer instead of hitting it")
+    assert_never(ctx.mode)
 
 
 def session_list(roots: bool | None = None, limit: int | None = None) -> list[dict[str, Any]]:
@@ -602,15 +621,16 @@ def init_dirs(
     *,
     agents_dir: Path,
     commands_dir: Path,
+    skills_dir: Path,
     rules_source: Path,
     teams_dir: Path | None = None,
 ) -> list[InitResult]:
     """Initialize the opencode directory structure.
 
-    Sets up symlinks for agents/, commands/, rules, experts/ (real dir), and
-    teams/, then injects per-user runtime config (path-token permissions +
-    MCP server registration) into opencode.json and purges stale TUI plugins
-    from earlier hivemind installs.
+    Sets up symlinks for agents/, commands/, skills/, rules, experts/ (real
+    dir), and teams/, then injects per-user runtime config (path-token
+    permissions + MCP server registration) into opencode.json and purges
+    stale TUI plugins from earlier hivemind installs.
     """
     results: list[InitResult] = []
 
@@ -619,6 +639,7 @@ def init_dirs(
 
     results.append(_setup_symlink(agents_dir, home / "agents", "agents/"))
     results.append(_setup_symlink(commands_dir, home / "commands", "commands/"))
+    results.append(_setup_symlink(skills_dir, home / "skills", "skills/"))
     results.append(_setup_symlink(rules_source, home / RULES_FILE_NAME, RULES_FILE_NAME))
 
     experts = home / "experts"

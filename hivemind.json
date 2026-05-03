@@ -1,5 +1,4 @@
 {
-  "engine": "opencode run",
   "home_dir": "~/.config/opencode",
   "model": "anthropic/claude-sonnet-4-6",
   "tools": {
@@ -9,10 +8,6 @@
     "bash": false
   },
   "temperature": 0.1,
-  "server": {
-    "port": 4096,
-    "hostname": "127.0.0.1"
-  },
   "permissions": {
     "allow": [
       "Read(~/.cache/hivemind/**)",
@@ -25,712 +20,623 @@
       "kind": "git_analyzed",
       "body": {
         "remote": "https://github.com/bazelbuild/bazel.git",
-        "commit": "a3930898ad18310cbafc06a46d8c13fd75cf290c",
-        "ref_name": ""
+        "commit": "a3930898ad18310cbafc06a46d8c13fd75cf290c"
       }
     },
     "bazel-skylib": {
       "kind": "git_analyzed",
       "body": {
         "remote": "https://github.com/bazelbuild/bazel-skylib.git",
-        "commit": "f7718b7b8e2003b9359248e9632c875cb48a6e48",
-        "ref_name": ""
+        "commit": "f7718b7b8e2003b9359248e9632c875cb48a6e48"
       }
     },
     "rich-cli": {
       "kind": "git_analyzed",
       "body": {
         "remote": "https://github.com/Textualize/rich-cli.git",
-        "commit": "309b64b498eca1fa764991e9aa3f7a831a9b1b26",
-        "ref_name": ""
+        "commit": "309b64b498eca1fa764991e9aa3f7a831a9b1b26"
       }
     },
     "rich": {
       "kind": "git_analyzed",
       "body": {
         "remote": "https://github.com/Textualize/rich.git",
-        "commit": "0752ff047295131d98f24284e1d949300cd6f4c1",
-        "ref_name": ""
+        "commit": "0752ff047295131d98f24284e1d949300cd6f4c1"
       }
     },
     "bazel-lib": {
       "kind": "git_analyzed",
       "body": {
         "remote": "https://github.com/bazel-contrib/bazel-lib",
-        "commit": "c5fc1ca482274b832bc6de7b90711d1e38dbbf53",
-        "ref_name": ""
+        "commit": "c5fc1ca482274b832bc6de7b90711d1e38dbbf53"
       }
     },
     "bazel-central-registry": {
       "kind": "git_analyzed",
       "body": {
         "remote": "https://github.com/bazelbuild/bazel-central-registry.git",
-        "commit": "e6cefa3fda286425ac938661593f3f505d5cfe9a",
-        "ref_name": ""
+        "commit": "e6cefa3fda286425ac938661593f3f505d5cfe9a"
       }
     },
     "rules_distroless": {
       "kind": "git_analyzed",
       "body": {
         "remote": "https://github.com/bazel-contrib/rules_distroless.git",
-        "commit": "f553dfe82987b5d592bb83f5a6da8f11a51e66fc",
-        "ref_name": ""
+        "commit": "f553dfe82987b5d592bb83f5a6da8f11a51e66fc"
       }
     },
     "distroless": {
       "kind": "git_analyzed",
       "body": {
         "remote": "https://github.com/GoogleContainerTools/distroless.git",
-        "commit": "5d295a4971bcfdb49d243139ea32bbd6a1c12d6c",
-        "ref_name": ""
+        "commit": "5d295a4971bcfdb49d243139ea32bbd6a1c12d6c"
       }
     },
     "rules_img": {
       "kind": "git_analyzed",
       "body": {
         "remote": "https://github.com/bazel-contrib/rules_img.git",
-        "commit": "40ac347f5a72b01a82d5c5e72a8fa978fae89699",
-        "ref_name": ""
+        "commit": "40ac347f5a72b01a82d5c5e72a8fa978fae89699"
       }
     },
     "rules_multirun": {
       "kind": "git_analyzed",
       "body": {
         "remote": "https://github.com/keith/rules_multirun.git",
-        "commit": "e2245c6a4e1fb26cea7db6fac16d856693cf1ec1",
-        "ref_name": ""
+        "commit": "e2245c6a4e1fb26cea7db6fac16d856693cf1ec1"
       }
     },
     "textual": {
       "kind": "git_analyzed",
       "body": {
         "remote": "https://github.com/Textualize/textual.git",
-        "commit": "58168b05660300924994430a36fe4810d14378db",
-        "ref_name": ""
+        "commit": "58168b05660300924994430a36fe4810d14378db"
       }
     },
     "rules_py": {
       "kind": "git_analyzed",
       "body": {
         "remote": "https://github.com/aspect-build/rules_py.git",
-        "commit": "e39e990c44bc984616f9c6631b7d44589b9142d7",
-        "ref_name": ""
+        "commit": "e39e990c44bc984616f9c6631b7d44589b9142d7"
       }
     },
     "rules_python": {
       "kind": "git_analyzed",
       "body": {
         "remote": "https://github.com/bazel-contrib/rules_python.git",
-        "commit": "3aa6386c38c2ab4bc9c447ef6893ef216faa0131",
-        "ref_name": ""
+        "commit": "3aa6386c38c2ab4bc9c447ef6893ef216faa0131"
       }
     },
     "rules_testing": {
       "kind": "git_analyzed",
       "body": {
         "remote": "https://github.com/bazelbuild/rules_testing.git",
-        "commit": "4ad376dc71ef6c2df3dd59770305239157f058a7",
-        "ref_name": ""
+        "commit": "4ad376dc71ef6c2df3dd59770305239157f058a7"
       }
     },
     "rules_uv": {
       "kind": "git_analyzed",
       "body": {
         "remote": "https://github.com/bazel-contrib/rules_uv.git",
-        "commit": "1481b64a9873524af073df87a104ee646ab68877",
-        "ref_name": ""
+        "commit": "1481b64a9873524af073df87a104ee646ab68877"
       }
     },
     "metaflow": {
       "kind": "git_analyzed",
       "body": {
         "remote": "https://github.com/Netflix/metaflow.git",
-        "commit": "c834ed108e5b0e1feacb17ba2229cb8a0eb0b949",
-        "ref_name": ""
+        "commit": "c834ed108e5b0e1feacb17ba2229cb8a0eb0b949"
       }
     },
     "nocodb": {
       "kind": "git_analyzed",
       "body": {
         "remote": "https://github.com/nocodb/nocodb.git",
-        "commit": "9b7d311ec0e77f2b6651ae568443d9fb2c2deaf3",
-        "ref_name": ""
+        "commit": "9b7d311ec0e77f2b6651ae568443d9fb2c2deaf3"
       }
     },
     "crawl4ai": {
       "kind": "git_analyzed",
       "body": {
         "remote": "https://github.com/unclecode/crawl4ai.git",
-        "commit": "55de32d92594721e2ad4df59e74fe15769e0a978",
-        "ref_name": ""
+        "commit": "55de32d92594721e2ad4df59e74fe15769e0a978"
       }
     },
     "nocobase": {
       "kind": "git_analyzed",
       "body": {
         "remote": "https://github.com/nocobase/nocobase.git",
-        "commit": "c15920f910314a0ddd059a01b83aff36496f729b",
-        "ref_name": ""
+        "commit": "c15920f910314a0ddd059a01b83aff36496f729b"
       }
     },
     "formily": {
       "kind": "git_analyzed",
       "body": {
         "remote": "https://github.com/alibaba/formily.git",
-        "commit": "d9a46442a575aa5f0fc1bd945e34d9a85d191d0e",
-        "ref_name": ""
+        "commit": "d9a46442a575aa5f0fc1bd945e34d9a85d191d0e"
       }
     },
     "joi": {
       "kind": "git_analyzed",
       "body": {
         "remote": "https://github.com/hapijs/joi.git",
-        "commit": "481e270e6c4ff8728d6fda248fd83f6ff70f7ed9",
-        "ref_name": ""
+        "commit": "481e270e6c4ff8728d6fda248fd83f6ff70f7ed9"
       }
     },
     "openapi-diff": {
       "kind": "git_analyzed",
       "body": {
         "remote": "https://github.com/OpenAPITools/openapi-diff.git",
-        "commit": "60e6a9f347ace7fb46afc9f7350c508510064305",
-        "ref_name": ""
+        "commit": "60e6a9f347ace7fb46afc9f7350c508510064305"
       }
     },
     "nix.dev": {
       "kind": "git_analyzed",
       "body": {
         "remote": "https://github.com/NixOS/nix.dev.git",
-        "commit": "6a71db5c070ef55cf576ed582d2d85235629d241",
-        "ref_name": ""
+        "commit": "6a71db5c070ef55cf576ed582d2d85235629d241"
       }
     },
     "home-manager": {
       "kind": "git_analyzed",
       "body": {
         "remote": "https://github.com/nix-community/home-manager.git",
-        "commit": "5a75730e6f21ee624cbf86f4915c6e7489c74acc",
-        "ref_name": ""
+        "commit": "5a75730e6f21ee624cbf86f4915c6e7489c74acc"
       }
     },
     "nixvim": {
       "kind": "git_analyzed",
       "body": {
         "remote": "https://github.com/nix-community/nixvim.git",
-        "commit": "21ae25e13b01d3b4cdc750b5f9e7bad68b150c10",
-        "ref_name": ""
+        "commit": "21ae25e13b01d3b4cdc750b5f9e7bad68b150c10"
       }
     },
     "nixpkgs": {
       "kind": "git_analyzed",
       "body": {
         "remote": "https://github.com/NixOS/nixpkgs.git",
-        "commit": "75b4bddadce323c869c39e5020373c26e599cc8d",
-        "ref_name": ""
+        "commit": "75b4bddadce323c869c39e5020373c26e599cc8d"
       }
     },
     "plasma-manager": {
       "kind": "git_analyzed",
       "body": {
         "remote": "https://github.com/nix-community/plasma-manager.git",
-        "commit": "a4b33606111c9c5dcd10009042bb710307174f51",
-        "ref_name": ""
+        "commit": "a4b33606111c9c5dcd10009042bb710307174f51"
       }
     },
     "opencode": {
       "kind": "git_analyzed",
       "body": {
         "remote": "https://github.com/anomalyco/opencode.git",
-        "commit": "8ffadde85c89230bdca6b26a6e5b957cbfae7281",
-        "ref_name": ""
+        "commit": "8ffadde85c89230bdca6b26a6e5b957cbfae7281"
       }
     },
     "Krohnkite": {
       "kind": "git_analyzed",
       "body": {
         "remote": "https://codeberg.org/anametologin/Krohnkite.git",
-        "commit": "2e7f71d263c6b35db116315823867ebc64299638",
-        "ref_name": ""
+        "commit": "2e7f71d263c6b35db116315823867ebc64299638"
       }
     },
     "dendritic": {
       "kind": "git_analyzed",
       "body": {
         "remote": "https://github.com/mightyiam/dendritic.git",
-        "commit": "c48c223e253acf15d8dbc8847e70158b0e593626",
-        "ref_name": ""
+        "commit": "c48c223e253acf15d8dbc8847e70158b0e593626"
       }
     },
     "flake-parts": {
       "kind": "git_analyzed",
       "body": {
         "remote": "https://github.com/hercules-ci/flake-parts.git",
-        "commit": "f20dc5d9b8027381c474144ecabc9034d6a839a3",
-        "ref_name": ""
+        "commit": "f20dc5d9b8027381c474144ecabc9034d6a839a3"
       }
     },
     "import-tree": {
       "kind": "git_analyzed",
       "body": {
         "remote": "https://github.com/vic/import-tree.git",
-        "commit": "10fda59eee7d7970ec443b925f32a1bc7526648c",
-        "ref_name": ""
+        "commit": "10fda59eee7d7970ec443b925f32a1bc7526648c"
       }
     },
     "claude-agent-sdk-python": {
       "kind": "git_analyzed",
       "body": {
         "remote": "https://github.com/anthropics/claude-agent-sdk-python.git",
-        "commit": "302ceb6788633d934cbe7ad6142448477234da68",
-        "ref_name": ""
+        "commit": "302ceb6788633d934cbe7ad6142448477234da68"
       }
     },
     "OpenViking": {
       "kind": "git_analyzed",
       "body": {
         "remote": "https://github.com/volcengine/OpenViking.git",
-        "commit": "20b5dabed82317c4c9b66e4b9e12a7d1c3080041",
-        "ref_name": ""
+        "commit": "20b5dabed82317c4c9b66e4b9e12a7d1c3080041"
       }
     },
     "MiroFish": {
       "kind": "git_analyzed",
       "body": {
         "remote": "https://github.com/666ghj/MiroFish.git",
-        "commit": "985f89f49acbb44ee14d9d680682c741a44eeebe",
-        "ref_name": ""
+        "commit": "985f89f49acbb44ee14d9d680682c741a44eeebe"
       }
     },
     "trogon": {
       "kind": "git_analyzed",
       "body": {
         "remote": "https://github.com/Textualize/trogon",
-        "commit": "eaa9e68c403cae6aff0a80957d8876b284fd76b0",
-        "ref_name": ""
+        "commit": "eaa9e68c403cae6aff0a80957d8876b284fd76b0"
       }
     },
     "toolong": {
       "kind": "git_analyzed",
       "body": {
         "remote": "https://github.com/Textualize/toolong",
-        "commit": "5aa22ee878026f46d4d265905c4e1df4d37842ae",
-        "ref_name": ""
+        "commit": "5aa22ee878026f46d4d265905c4e1df4d37842ae"
       }
     },
     "posting": {
       "kind": "git_analyzed",
       "body": {
         "remote": "https://github.com/darrenburns/posting",
-        "commit": "e56508f71b01353220902cf8bba96aad1188b07f",
-        "ref_name": ""
+        "commit": "e56508f71b01353220902cf8bba96aad1188b07f"
       }
     },
     "typer": {
       "kind": "git_analyzed",
       "body": {
         "remote": "https://github.com/fastapi/typer",
-        "commit": "f47d887d4c3ecc7f3b8e7cc92ce8cc1d56914e3f",
-        "ref_name": ""
+        "commit": "f47d887d4c3ecc7f3b8e7cc92ce8cc1d56914e3f"
       }
     },
     "click": {
       "kind": "git_analyzed",
       "body": {
         "remote": "https://github.com/pallets/click",
-        "commit": "cdab890e57a30a9f437b88ce9652f7bfce980c1f",
-        "ref_name": ""
+        "commit": "cdab890e57a30a9f437b88ce9652f7bfce980c1f"
       }
     },
     "opencode-background-agents": {
       "kind": "git_analyzed",
       "body": {
         "remote": "https://github.com/kdcokenny/opencode-background-agents.git",
-        "commit": "6f7bf4bf1a8248ecacf7c8dd35d1bdf86b9b1e9c",
-        "ref_name": ""
+        "commit": "6f7bf4bf1a8248ecacf7c8dd35d1bdf86b9b1e9c"
       }
     },
     "ocx": {
       "kind": "git_analyzed",
       "body": {
         "remote": "https://github.com/kdcokenny/ocx.git",
-        "commit": "fa5dc7db1a44ac05a66529a1334649a4f00c3e3b",
-        "ref_name": ""
+        "commit": "fa5dc7db1a44ac05a66529a1334649a4f00c3e3b"
       }
     },
     "vitest": {
       "kind": "git_analyzed",
       "body": {
         "remote": "https://github.com/vitest-dev/vitest.git",
-        "commit": "75e8216f332823cb44f24d4ef7f6c39c0f1a2c4b",
-        "ref_name": ""
+        "commit": "75e8216f332823cb44f24d4ef7f6c39c0f1a2c4b"
       }
     },
     "uv": {
       "kind": "git_analyzed",
       "body": {
         "remote": "https://github.com/astral-sh/uv.git",
-        "commit": "49ad87eb7d4062ceb4e49c8aeae5b3901e0b171f",
-        "ref_name": ""
+        "commit": "49ad87eb7d4062ceb4e49c8aeae5b3901e0b171f"
       }
     },
     "neovim": {
       "kind": "git_analyzed",
       "body": {
         "remote": "https://github.com/neovim/neovim.git",
-        "commit": "1b2b715389c5a34f323001f34e4b78b86c9cff8d",
-        "ref_name": ""
+        "commit": "1b2b715389c5a34f323001f34e4b78b86c9cff8d"
       }
     },
     "pi-mono": {
       "kind": "git_analyzed",
       "body": {
         "remote": "https://github.com/badlogic/pi-mono.git",
-        "commit": "970774ec3ce2756f45b892ec1208bc73ba6f612d",
-        "ref_name": ""
+        "commit": "970774ec3ce2756f45b892ec1208bc73ba6f612d"
       }
     },
     "marked": {
       "kind": "git_analyzed",
       "body": {
         "remote": "https://github.com/markedjs/marked",
-        "commit": "3993763cf535d941e7252852a6342919e0e6ca96",
-        "ref_name": ""
+        "commit": "3993763cf535d941e7252852a6342919e0e6ca96"
       }
     },
     "jsdiff": {
       "kind": "git_analyzed",
       "body": {
         "remote": "https://github.com/kpdecker/jsdiff",
-        "commit": "af7393ac3404565dc8da655c2e7aeeed28c01ff7",
-        "ref_name": ""
+        "commit": "af7393ac3404565dc8da655c2e7aeeed28c01ff7"
       }
     },
     "chalk": {
       "kind": "git_analyzed",
       "body": {
         "remote": "https://github.com/chalk/chalk",
-        "commit": "aa06bb5ac3f14df9fda8cfb54274dfc165ddfdef",
-        "ref_name": ""
+        "commit": "aa06bb5ac3f14df9fda8cfb54274dfc165ddfdef"
       }
     },
     "biome": {
       "kind": "git_analyzed",
       "body": {
         "remote": "https://github.com/biomejs/biome",
-        "commit": "81b530c51264a17ce8bac73f2d932bcbf1c03c6c",
-        "ref_name": ""
+        "commit": "81b530c51264a17ce8bac73f2d932bcbf1c03c6c"
       }
     },
     "openai-node": {
       "kind": "git_analyzed",
       "body": {
         "remote": "https://github.com/openai/openai-node",
-        "commit": "d95158f4b01ab416a168fcbc863952bf02558baf",
-        "ref_name": ""
+        "commit": "d95158f4b01ab416a168fcbc863952bf02558baf"
       }
     },
     "typebox": {
       "kind": "git_analyzed",
       "body": {
         "remote": "https://github.com/sinclairzx81/typebox",
-        "commit": "4f0832d2f0e4b94c84d9f94c1318a5fc9d5015f4",
-        "ref_name": ""
+        "commit": "4f0832d2f0e4b94c84d9f94c1318a5fc9d5015f4"
       }
     },
     "anthropic-sdk-typescript": {
       "kind": "git_analyzed",
       "body": {
         "remote": "https://github.com/anthropics/anthropic-sdk-typescript",
-        "commit": "0f8153b3a15212dc2e71eaa042ea28ee6efca348",
-        "ref_name": ""
+        "commit": "0f8153b3a15212dc2e71eaa042ea28ee6efca348"
       }
     },
     "node": {
       "kind": "git_analyzed",
       "body": {
         "remote": "https://github.com/nodejs/node",
-        "commit": "5d900bed775e29d94336206eee1139e6f2de55c3",
-        "ref_name": ""
+        "commit": "5d900bed775e29d94336206eee1139e6f2de55c3"
       }
     },
     "sequelize": {
       "kind": "git_analyzed",
       "body": {
         "remote": "https://github.com/sequelize/sequelize.git",
-        "commit": "cb8ea88c9aa37b14c908fd34dff1afc603de2ea7",
-        "ref_name": ""
+        "commit": "cb8ea88c9aa37b14c908fd34dff1afc603de2ea7"
       }
     },
     "bun": {
       "kind": "git_analyzed",
       "body": {
         "remote": "https://github.com/oven-sh/bun.git",
-        "commit": "3ed4186bc8db8357c670307f192991bfc263f141",
-        "ref_name": ""
+        "commit": "3ed4186bc8db8357c670307f192991bfc263f141"
       }
     },
     "system-design-primer": {
       "kind": "git_analyzed",
       "body": {
         "remote": "https://github.com/donnemartin/system-design-primer.git",
-        "commit": "ae9bbd7b02d90b9866215de185217d33f39ab733",
-        "ref_name": ""
+        "commit": "ae9bbd7b02d90b9866215de185217d33f39ab733"
       }
     },
     "design-patterns-for-humans": {
       "kind": "git_analyzed",
       "body": {
         "remote": "https://github.com/kamranahmedse/design-patterns-for-humans.git",
-        "commit": "7023f30d183b6502fe8945d705f2eafdd07dcf4a",
-        "ref_name": ""
+        "commit": "7023f30d183b6502fe8945d705f2eafdd07dcf4a"
       }
     },
     "api-guidelines": {
       "kind": "git_analyzed",
       "body": {
         "remote": "https://github.com/microsoft/api-guidelines.git",
-        "commit": "577874dc49093ae8f6c4a5996a8f030d3ffbda7b",
-        "ref_name": ""
+        "commit": "577874dc49093ae8f6c4a5996a8f030d3ffbda7b"
       }
     },
     "architecture-center": {
       "kind": "git_analyzed",
       "body": {
         "remote": "https://github.com/MicrosoftDocs/architecture-center.git",
-        "commit": "a477d65415614f66d7e58e573837efe980c2c9e9",
-        "ref_name": ""
+        "commit": "a477d65415614f66d7e58e573837efe980c2c9e9"
       }
     },
     "jinja": {
       "kind": "git_analyzed",
       "body": {
         "remote": "https://github.com/pallets/jinja.git",
-        "commit": "5ef70112a1ff19c05324ff889dd30405b1002044",
-        "ref_name": ""
+        "commit": "5ef70112a1ff19c05324ff889dd30405b1002044"
       }
     },
     "pre-commit": {
       "kind": "git_analyzed",
       "body": {
         "remote": "https://github.com/pre-commit/pre-commit.git",
-        "commit": "129a1f5ca1eaee0c952a5e7a07faae305c5e15bc",
-        "ref_name": ""
+        "commit": "129a1f5ca1eaee0c952a5e7a07faae305c5e15bc"
       }
     },
     "mypy": {
       "kind": "git_analyzed",
       "body": {
         "remote": "https://github.com/python/mypy.git",
-        "commit": "d7e3268ddd200ff390989d7359dd1e1b42bb94df",
-        "ref_name": ""
+        "commit": "d7e3268ddd200ff390989d7359dd1e1b42bb94df"
       }
     },
     "ruff": {
       "kind": "git_analyzed",
       "body": {
         "remote": "https://github.com/astral-sh/ruff.git",
-        "commit": "ee9084695ec4d70bc66083ac2b3cf598cc45101a",
-        "ref_name": ""
+        "commit": "ee9084695ec4d70bc66083ac2b3cf598cc45101a"
       }
     },
     "koa": {
       "kind": "git_analyzed",
       "body": {
         "remote": "https://github.com/koajs/koa.git",
-        "commit": "e0ba8ef39d27fe5dae5492f9fe753d155124f994",
-        "ref_name": ""
+        "commit": "e0ba8ef39d27fe5dae5492f9fe753d155124f994"
       }
     },
     "ant-design": {
       "kind": "git_analyzed",
       "body": {
         "remote": "https://github.com/ant-design/ant-design.git",
-        "commit": "d0cbac08855bc00fe918fafe782d3a9cbb26ac1a",
-        "ref_name": ""
+        "commit": "d0cbac08855bc00fe918fafe782d3a9cbb26ac1a"
       }
     },
     "react": {
       "kind": "git_analyzed",
       "body": {
         "remote": "https://github.com/facebook/react.git",
-        "commit": "1b45e2439289fd8e094c44161c89e06c5488671e",
-        "ref_name": ""
+        "commit": "1b45e2439289fd8e094c44161c89e06c5488671e"
       }
     },
     "TypeScript": {
       "kind": "git_analyzed",
       "body": {
         "remote": "https://github.com/microsoft/TypeScript.git",
-        "commit": "7b8cb3bdf82f400642b73173f941335775d6f730",
-        "ref_name": ""
+        "commit": "7b8cb3bdf82f400642b73173f941335775d6f730"
       }
     },
     "pydantic": {
       "kind": "git_analyzed",
       "body": {
         "remote": "https://github.com/pydantic/pydantic.git",
-        "commit": "46dea928844edfdbee5ca1f36cbc3b042e2a8abd",
-        "ref_name": ""
+        "commit": "46dea928844edfdbee5ca1f36cbc3b042e2a8abd"
       }
     },
     "awesome-design-patterns": {
       "kind": "git_analyzed",
       "body": {
         "remote": "https://github.com/DovAmir/awesome-design-patterns",
-        "commit": "9006287f27e720000cc8763ae4cd150789b8571d",
-        "ref_name": ""
+        "commit": "9006287f27e720000cc8763ae4cd150789b8571d"
       }
     },
     "awesome-software-architecture": {
       "kind": "git_analyzed",
       "body": {
         "remote": "https://github.com/mehdihadeli/awesome-software-architecture",
-        "commit": "45708a3144490e81f2f5249e845bc591675a9a7e",
-        "ref_name": ""
+        "commit": "45708a3144490e81f2f5249e845bc591675a9a7e"
       }
     },
     "code": {
       "kind": "git_analyzed",
       "body": {
         "remote": "https://github.com/cosmicpython/code",
-        "commit": "14c84797ffa77255d53cf1a02fe6aafda2b68aeb",
-        "ref_name": ""
+        "commit": "14c84797ffa77255d53cf1a02fe6aafda2b68aeb"
       }
     },
     "python-patterns": {
       "kind": "git_analyzed",
       "body": {
         "remote": "https://github.com/faif/python-patterns",
-        "commit": "74151cfec27663a968f44185adada7c2a1f38165",
-        "ref_name": ""
+        "commit": "74151cfec27663a968f44185adada7c2a1f38165"
       }
     },
     "domain-driven-hexagon": {
       "kind": "git_analyzed",
       "body": {
         "remote": "https://github.com/Sairyss/domain-driven-hexagon",
-        "commit": "5c2d15a7e2d69e83dfddf28468ee9f30e02c30de",
-        "ref_name": ""
+        "commit": "5c2d15a7e2d69e83dfddf28468ee9f30e02c30de"
       }
     },
     "firecrawl": {
       "kind": "git_analyzed",
       "body": {
         "remote": "https://github.com/firecrawl/firecrawl",
-        "commit": "1c28293b266315d2429364cf65e395ff1c34863a",
-        "ref_name": ""
+        "commit": "1c28293b266315d2429364cf65e395ff1c34863a"
       }
     },
     "spider": {
       "kind": "git_analyzed",
       "body": {
         "remote": "https://github.com/spider-rs/spider",
-        "commit": "72a3fb5834076169ed941e40213122ae0ed99e51",
-        "ref_name": ""
+        "commit": "72a3fb5834076169ed941e40213122ae0ed99e51"
       }
     },
     "Scrapegraph-ai": {
       "kind": "git_analyzed",
       "body": {
         "remote": "https://github.com/ScrapeGraphAI/Scrapegraph-ai",
-        "commit": "7b5733daec918c8087b09b6282a52bb41e138956",
-        "ref_name": ""
+        "commit": "7b5733daec918c8087b09b6282a52bb41e138956"
       }
     },
     "markdowner": {
       "kind": "git_analyzed",
       "body": {
         "remote": "https://github.com/supermemoryai/markdowner",
-        "commit": "f8878349d74dc17dfb938479a68948a12c39b724",
-        "ref_name": ""
+        "commit": "f8878349d74dc17dfb938479a68948a12c39b724"
       }
     },
     "markdown-crawler": {
       "kind": "git_analyzed",
       "body": {
         "remote": "https://github.com/paulpierre/markdown-crawler",
-        "commit": "50307cc92e520f147e9ee12740b78ed112b1548a",
-        "ref_name": ""
+        "commit": "50307cc92e520f147e9ee12740b78ed112b1548a"
       }
     },
     "llm-scraper": {
       "kind": "git_analyzed",
       "body": {
         "remote": "https://github.com/mishushakov/llm-scraper",
-        "commit": "6b277da033a32f4577468c4d9e92f0dc42b17cf9",
-        "ref_name": ""
+        "commit": "6b277da033a32f4577468c4d9e92f0dc42b17cf9"
       }
     },
     "cpython": {
       "kind": "git_analyzed",
       "body": {
         "remote": "https://github.com/python/cpython.git",
-        "commit": "d6e044512c59ab7b83f14e00e7047756a31ac3e3",
-        "ref_name": ""
+        "commit": "d6e044512c59ab7b83f14e00e7047756a31ac3e3"
       }
     },
     "claude-code": {
       "kind": "git_analyzed",
       "body": {
         "remote": "https://github.com/anthropics/claude-code.git",
-        "commit": "9772e13f820002c9730af67a2409702799c7ddc6",
-        "ref_name": ""
+        "commit": "9772e13f820002c9730af67a2409702799c7ddc6"
       }
     },
     "trafilatura": {
       "kind": "git_analyzed",
       "body": {
         "remote": "https://github.com/adbar/trafilatura",
-        "commit": "ee1865b22f03e8c52922b3274df621d2f56fe79d",
-        "ref_name": ""
+        "commit": "ee1865b22f03e8c52922b3274df621d2f56fe79d"
       }
     },
     "pydoll": {
       "kind": "git_analyzed",
       "body": {
         "remote": "https://github.com/autoscrape-labs/pydoll",
-        "commit": "fd27c9268ae5f957e40a7a9ec148538316ff04df",
-        "ref_name": ""
+        "commit": "fd27c9268ae5f957e40a7a9ec148538316ff04df"
       }
     },
     "markitdown": {
       "kind": "git_analyzed",
       "body": {
         "remote": "https://github.com/microsoft/markitdown",
-        "commit": "63cbbd9de6afa01ee3b97127e4945c5706a29472",
-        "ref_name": ""
+        "commit": "63cbbd9de6afa01ee3b97127e4945c5706a29472"
       }
     },
     "curl_cffi": {
       "kind": "git_analyzed",
       "body": {
         "remote": "https://github.com/lexiforest/curl_cffi",
-        "commit": "f8f88fd04ccb5acf1142aaa97ee00e12ac7881f9",
-        "ref_name": ""
+        "commit": "f8f88fd04ccb5acf1142aaa97ee00e12ac7881f9"
       }
     },
     "Scrapling": {
       "kind": "git_analyzed",
       "body": {
         "remote": "https://github.com/D4Vinci/Scrapling",
-        "commit": "2046527575c879a0586b953966387eacad2b3aff",
-        "ref_name": ""
+        "commit": "2046527575c879a0586b953966387eacad2b3aff"
       }
     },
     "crawlee-python": {
       "kind": "git_analyzed",
       "body": {
         "remote": "https://github.com/apify/crawlee-python",
-        "commit": "2eda2802144e9c11e90c5f1ff9bf2cfcebbc5761",
-        "ref_name": ""
+        "commit": "2eda2802144e9c11e90c5f1ff9bf2cfcebbc5761"
       }
     },
     "reader": {
       "kind": "git_analyzed",
       "body": {
         "remote": "https://github.com/jina-ai/reader",
-        "commit": "5f07900eabe07b1dd0e8d09e6c8ea022e6b2c176",
-        "ref_name": ""
+        "commit": "5f07900eabe07b1dd0e8d09e6c8ea022e6b2c176"
       }
     }
   }

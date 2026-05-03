@@ -63,27 +63,20 @@ it knows every enabled expert and team and recommends who to call.
 
 ### Team consultation
 
-If the work clusters around a domain that has a team (e.g.
-`team-lead-bazel`), spawn the team lead first instead of guessing
-which member to hit. Team leads know each member's strengths and
-recent consultation history (via per-member notes) and will route to
-the right expert(s).
+If the work clusters around a domain with a team (e.g.
+`team-lead-bazel`), spawn the team lead first. Team leads route to
+the right member(s) based on each one's strengths and recent
+consultation notes.
 
 When spawning an expert **as part of a team consultation**, include
-in the prompt:
+in the prompt: that they're consulted under the `{team}` team, the
+path to their notes file
+(`{{ teams_path }}/{team}/expert-{name}/notes.md`), and that they
+must update those notes (date, question, findings) at the end of
+the turn — the team lead reads them on the next routing pass.
 
-- That they're being consulted as part of the `{team}` team.
-- The path to their notes file:
-  `{{ teams_path }}/{team}/expert-{name}/notes.md`.
-- That they must update their notes (date, question, findings) at
-  the end of the turn. The team lead reads these on the next routing
-  pass.
-
-When spawning a **solo** expert (not part of a team consultation),
-do NOT ask them to write team notes — there's no reader. Anything
-worth keeping long-term goes into their own memory tree
-(`~/.config/opencode/hivemind/memory/<name>/`) or into their
-knowledge docs via `update_agent`.
+For **solo** spawns, do NOT ask for team notes — there's no reader.
+Durable knowledge goes in the expert's own memory tree.
 
 ### Maximize parallel calls
 
@@ -142,76 +135,29 @@ something up.
 Both paths are `external_directory: allow` for every deployed agent,
 so `Read`, `Grep`, and `Bash` all work without prompting.
 
-## Cross-session messaging
-
-Two MCP verbs handle every cross-session interaction that isn't a
-Task spawn:
-
-- `list_sessions(live_only=true, tree=false, roots?, limit?)` —
-  discovery. By default returns only "live" sessions (a TUI is
-  currently attached via SSE). Subagents render under their live
-  parent. Pass `tree=true` for a nested
-  `{...session, children:[...]}` shape; `live_only=false` to see
-  every session in the DB.
-- `send_message(session_id, message)` — append a message to another
-  session's inbox. Delivered immediately if the target is idle,
-  queued and delivered on next idle if it's busy. Never throws
-  BusyError, so it's safe to ping a session that's mid-turn.
-
-`list_sessions` first to find the target, `send_message` to deliver.
-That's it.
-
 ## Memory contract
 
-Every spawned expert writes to its own
+Every enabled expert writes to its own memory tree at
 `~/.config/opencode/hivemind/memory/<name>/short_memory.md` as the
-last action of every reply — enforced by a directive in the deployed
-agent prompt. You don't need to remind them. If you spot one that
-skipped the write, flag it.
+last action of every reply (enforced by the deployed agent prompt).
+Team-scoped consultations *additionally* write per-member notes
+under `{{ teams_path }}/<team>/expert-<name>/notes.md`.
 
-Team-scoped consultations write *additionally* to per-member notes
-under `{{ teams_path }}/<team>/expert-<name>/notes.md` (see Team
-consultation above).
+## Catalog management
 
-## Agent lifecycle (3 states)
+Hivemind exposes catalog mutations as MCP tools (`enable_agent`,
+`disable_agent`, `update_agent`, `switch_version`, `create_git_expert`,
+`create_team`, `add_expert_to_team`, `remove_expert_from_team`,
+`delete_agent`, `redeploy`). See your tool inventory and the
+`hivemind-expert-management` skill for full reference, lifecycle
+states, and common workflows.
 
-Every agent in the catalog is in one of:
+To bootstrap a fresh project's expert catalog, invoke the
+`/hivemind_generate_team` command — it scopes the worktree, ensures
+relevant experts exist, and creates a project-scoped team.
 
-- **unlisted** — defined in `hivemind.json` (the committed catalog)
-  but not activated on this machine. opencode won't show it in the
-  subagent picker.
-- **enabled** — deployed; `Task(subagent_type='<name>', ...)` works.
-  For git-analyzed experts the cloned repo is also present locally.
-- **disabled** — catalog entry preserved, deployed file removed.
-
-If `Task` reports an unknown agent, it's almost certainly unlisted
-or disabled — **not missing.** Read `hivemind.json` to confirm it's
-in the catalog, then call `enable_agent(name)`. This is the expected
-next step, not a failure.
-
-Roster mutations (adding/removing experts from a team) require the
-team itself to be enabled first.
-
-## Catalog management (MCP mutations)
-
-All hot-reloaded automatically — the engine re-reads `agents/*.md`
-without disposing in-flight sessions. No need to warn the user or
-wait for a `continue`; just call the tool and proceed.
-
-- `enable_agent(name)` — deploy an unlisted/disabled agent
-- `disable_agent(name)` — undeploy without losing catalog data
-- `delete_agent(name, purge_memory?)` — remove the catalog entry +
-  backing files (memory preserved unless `purge_memory=true`)
-- `update_agent(name, skip_analysis?)` — for git-analyzed experts,
-  fetch latest commits and re-run AI analysis
-- `create_git_expert(url, ref?)` — register a new expert from a git
-  remote (lands unlisted; call `enable_agent` after)
-- `create_team(name, description, experts)` — register a new team
-  (lands unlisted; call `enable_agent` after)
-- `add_expert_to_team(team, expert)` /
-  `remove_expert_from_team(team, expert)` — roster mutations
-- `redeploy` — regenerate every enabled agent file from the current
-  catalog
+For cross-session messaging (`list_sessions`, `send_message`), see
+the `hivemind-cross-session` skill.
 
 ## Key principles
 
@@ -224,8 +170,6 @@ wait for a `continue`; just call the tool and proceed.
   over general knowledge.
 - **Disabled is not broken.** Enable an unlisted/disabled agent
   rather than working around its absence.
-- **Mutations are non-destructive.** Catalog tools hot-reload; no
-  warning needed, no `continue` needed.
 - **Notes are team-scoped.** Per-consultation journal entries only
   exist for team-scoped consultations. Solo-expert durable knowledge
   lives in the expert's own memory tree.

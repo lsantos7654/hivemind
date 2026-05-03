@@ -116,6 +116,27 @@ TOOLS: list[Tool] = [
             "required": ["name"],
         },
     ),
+    Tool(
+        name="switch_version",
+        description=(
+            "Switch a git_analyzed agent to a specific commit. Re-uses cached analysis "
+            "(description.md / expertise.md / agent.md) under that commit if present; "
+            "otherwise checks out the commit, runs AI analysis, and stores the result. "
+            "Updates the HEAD symlink so the deployed agent body comes from this commit. "
+            "Use show_agent first to see which commits are already analysed locally."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "description": "Git-analyzed agent name"},
+                "commit": {
+                    "type": "string",
+                    "description": "Target commit SHA (full or short) reachable in the cloned repo.",
+                },
+            },
+            "required": ["name", "commit"],
+        },
+    ),
     # --- Kind-specific creators ---
     Tool(
         name="create_git_expert",
@@ -302,6 +323,30 @@ async def _handle_update_agent(name: str, skip_analysis: bool) -> list[TextConte
     return _text(f"Error: update not supported for agent kind '{agent.kind}'")
 
 
+async def _handle_switch_version(name: str, commit: str) -> list[TextContent]:
+    from hivemind.agents import registry
+    from hivemind.agents.git_analyzed import switch_version
+    from hivemind.config import AGENTS_DIR
+    from hivemind.deployment import regenerate_librarian
+
+    agent = registry.get(name)
+    if agent is None:
+        return _text(f"Error: agent '{name}' not found")
+    if agent.kind != "git_analyzed":
+        return _text(f"Error: switch_version is only supported for git_analyzed agents (got '{agent.kind}')")
+
+    result = await switch_version(name=name, target_commit=commit)
+    if not result.success:
+        return _text(f"Error: {result.error}")
+    if result.already_up_to_date:
+        return _text(f"Agent '{name}' is already at {result.new_commit[:12]}.")
+    if agent.enabled:
+        agent.deploy(agents_dir=AGENTS_DIR)
+        regenerate_librarian()
+    old_display = result.old_commit[:12] if result.old_commit else "none"
+    return _text(f"Agent '{name}' switched from {old_display} to {result.new_commit[:12]}.")
+
+
 # ---------------------------------------------------------------------------
 # Handlers — kind-specific creators
 # ---------------------------------------------------------------------------
@@ -473,6 +518,7 @@ TOOL_HANDLERS: dict[str, ToolHandler] = {
     "disable_agent": _handle_disable_agent,
     "delete_agent": _handle_delete_agent,
     "update_agent": _handle_update_agent,
+    "switch_version": _handle_switch_version,
     "create_git_expert": _handle_create_git_expert,
     "create_team": _handle_create_team,
     "add_expert_to_team": _handle_add_expert_to_team,
@@ -489,6 +535,7 @@ _ARG_EXTRACTORS: dict[str, Callable[[dict[str, Any]], tuple[Any, ...]]] = {
     "disable_agent": lambda a: (a["name"],),
     "delete_agent": lambda a: (a["name"], bool(a.get("purge_memory", False))),
     "update_agent": lambda a: (a["name"], bool(a.get("skip_analysis", False))),
+    "switch_version": lambda a: (a["name"], a["commit"]),
     "create_git_expert": lambda a: (a["url"], a.get("ref", "")),
     "create_team": lambda a: (a["name"], a["description"], a["experts"]),
     "add_expert_to_team": lambda a: (a["team"], a["expert"]),

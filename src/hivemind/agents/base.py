@@ -94,10 +94,19 @@ class Agent:
         return self.body.description()
 
     def render_for_deploy(self) -> str:
-        """Body + appended memory-instructions section."""
+        """Body + appended memory-instructions section.
+
+        ``user_supplied`` agents skip the memory append because the
+        user owns the entire markdown — injecting hivemind's memory
+        rules into a hand-authored agent file would clobber the
+        author's intent. They can opt in by writing the rules into
+        their file directly.
+        """
         from hivemind.agents.memory import render_memory_section
 
         body = self.body.render()
+        if self.kind == "user_supplied":
+            return body
         memory_section = render_memory_section(self.name, self.kind)
         return body.rstrip() + "\n\n" + memory_section
 
@@ -107,7 +116,12 @@ class Agent:
 
         from hivemind.agents.memory import ensure_agent_memory
 
-        ensure_agent_memory(self.name)
+        # Memory tree is hivemind-managed; ``user_supplied`` agents are
+        # external to hivemind's expert/team mental model, so we don't
+        # scaffold one for them. They can manage their own state under
+        # whatever path they prefer.
+        if self.kind != "user_supplied":
+            ensure_agent_memory(self.name)
 
         content = opencode.format_agent(
             self.kind,  # type: ignore[arg-type]

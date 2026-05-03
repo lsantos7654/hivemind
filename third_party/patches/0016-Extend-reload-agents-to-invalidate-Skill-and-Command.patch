@@ -1,0 +1,253 @@
+From c1bed29f7223af3c6c166cc50fb7d5a9f4f9256c Mon Sep 17 00:00:00 2001
+From: Lucas Santos <lsantos7654@gmail.com>
+Date: Sun, 3 May 2026 19:29:56 -0400
+Subject: [PATCH 16/16] Extend reload-agents to invalidate Skill and Command
+ state
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Patch 0004 added `POST /global/reload-agents` to invalidate the
+per-instance Agent registry without disposing InstanceState. That
+fixed agents/*.md hot-reload but left the parallel filesystem
+catalogs untouched: Skill state (skills/**/SKILL.md) and Command
+state (commands/*.md) both also live in InstanceState and stay
+cached for the life of the engine.
+
+Adding a SKILL.md to ~/.config/opencode/skills/ and running
+`hivemind redeploy` therefore had no visible effect — the skill
+wouldn't appear until the engine restarted. Same for new commands.
+
+Extends the existing endpoint to invalidate all three registries:
+
+  - `Skill.reload()` / `Skill.reloadAll()` mirror the Agent pattern.
+  - `Command.reload()` / `Command.reloadAll()` mirror the Agent
+    pattern. Order matters in the route handler: reload Skill BEFORE
+    Command, because Command's init reads `skill.all()` to auto-
+    promote skills to slash commands.
+  - The `/reload-agents` route handler now calls all three
+    reloadAlls. Endpoint name kept (renaming would break the caller
+    in `src/hivemind/opencode.py:notify_instance_reload`); the
+    summary/description/event schema are extended so the OpenAPI
+    doc is honest about the wider scope.
+
+`AgentsReloadedEvent` schema now carries `{instances, agents,
+skills, commands}` instead of `{instances, agents}`.
+---
+ packages/opencode/src/command/index.ts        | 43 ++++++++++++++++++-
+ packages/opencode/src/server/routes/global.ts | 26 +++++++++--
+ packages/opencode/src/skill/index.ts          | 41 +++++++++++++++++-
+ 3 files changed, 104 insertions(+), 6 deletions(-)
+
+diff --git a/packages/opencode/src/command/index.ts b/packages/opencode/src/command/index.ts
+index 088d7c5..866f1a4 100644
+--- a/packages/opencode/src/command/index.ts
++++ b/packages/opencode/src/command/index.ts
+@@ -1,4 +1,5 @@
+ import { BusEvent } from "@/bus/bus-event"
++import { Instance } from "@/project/instance"
+ import { InstanceState } from "@/effect/instance-state"
+ import { makeRuntime } from "@/effect/run-service"
+ import { SessionID, MessageID } from "@/session/schema"
+@@ -68,6 +69,7 @@ export namespace Command {
+   export interface Interface {
+     readonly get: (name: string) => Effect.Effect<Info | undefined>
+     readonly list: () => Effect.Effect<Info[]>
++    readonly reload: () => Effect.Effect<{ count: number }>
+   }
+
+   export class Service extends ServiceMap.Service<Service, Interface>()("@opencode/Command") {}
+@@ -177,7 +179,18 @@ export namespace Command {
+         return Object.values(s.commands)
+       })
+
+-      return Service.of({ get, list })
++      // Hivemind: invalidate the per-instance Command cache so the next
++      // get/list call re-runs the `init` effect, picking up newly-added
++      // commands/*.md files, MCP-registered prompts, and (importantly)
++      // any Skill changes that have been reloaded since the last access.
++      // Used by the `POST /global/reload-agents` route.
++      const reload = Effect.fn("Command.reload")(function* () {
++        yield* InstanceState.invalidate(state)
++        const s = yield* InstanceState.get(state)
++        return { count: Object.keys(s.commands).length }
++      })
++
++      return Service.of({ get, list, reload })
+     }),
+   )
+
+@@ -192,4 +205,32 @@ export namespace Command {
+   export async function list() {
+     return runPromise((svc) => svc.list())
+   }
++
++  /**
++   * Hivemind: reload the command registry for every active instance.
++   * Mirrors `Agent.reloadAll` and `Skill.reloadAll` — iterates
++   * `Instance.directories()`, provides each context, and runs
++   * `reload()` so commands/*.md changes (and downstream Skill changes
++   * that flow into the auto-promoted command list) are picked up
++   * without disposing the InstanceState.
++   *
++   * Used by the `POST /global/reload-agents` route. Must run AFTER
++   * `Skill.reloadAll` because Command's init reads `skill.all()`.
++   */
++  export async function reloadAll(): Promise<{ instances: number; commands: number }> {
++    const dirs = Instance.directories()
++    let commands = 0
++    for (const directory of dirs) {
++      try {
++        const result = await Instance.provide({
++          directory,
++          fn: () => runPromise((svc) => svc.reload()),
++        })
++        commands += result.count
++      } catch {
++        // Skip instances that failed to load; the dispose path skips them too.
++      }
++    }
++    return { instances: dirs.length, commands }
++  }
+ }
+diff --git a/packages/opencode/src/server/routes/global.ts b/packages/opencode/src/server/routes/global.ts
+index 5eb4a7f..0929612 100644
+--- a/packages/opencode/src/server/routes/global.ts
++++ b/packages/opencode/src/server/routes/global.ts
+@@ -12,6 +12,8 @@ import { Log } from "../../util/log"
+ import { lazy } from "../../util/lazy"
+ import { Config } from "../../config/config"
+ import { Agent } from "@/agent/agent"
++import { Skill } from "@/skill"
++import { Command } from "@/command"
+ import { SessionBackground } from "@/session/background"
+ import { liveSessions } from "./presence"
+ import { errors } from "../error"
+@@ -25,6 +27,8 @@ export const AgentsReloadedEvent = BusEvent.define(
+   z.object({
+     instances: z.number(),
+     agents: z.number(),
++    skills: z.number(),
++    commands: z.number(),
+   }),
+ )
+
+@@ -266,19 +270,21 @@ export const GlobalRoutes = lazy(() =>
+     .post(
+       "/reload-agents",
+       describeRoute({
+-        summary: "Reload agent registry",
++        summary: "Reload agent, skill, and command registries",
+         description:
+-          "Hivemind: re-read agents/*.md for every active instance without disposing the InstanceState. Unlike /global/dispose, this does not SIGTERM MCP subprocesses, so an in-flight tool call survives the reload.",
++          "Hivemind: re-read agents/*.md, skills/**/SKILL.md, and commands/*.md for every active instance without disposing the InstanceState. Endpoint name is historical; reload covers all three filesystem-backed catalogs that hivemind redeploy can mutate. Unlike /global/dispose, this does not SIGTERM MCP subprocesses, so an in-flight tool call survives the reload.",
+         operationId: "global.reloadAgents",
+         responses: {
+           200: {
+-            description: "Agents reloaded",
++            description: "Agents, skills, and commands reloaded",
+             content: {
+               "application/json": {
+                 schema: resolver(
+                   z.object({
+                     instances: z.number(),
+                     agents: z.number(),
++                    skills: z.number(),
++                    commands: z.number(),
+                   }),
+                 ),
+               },
+@@ -287,7 +293,19 @@ export const GlobalRoutes = lazy(() =>
+         },
+       }),
+       async (c) => {
+-        const result = await Agent.reloadAll()
++        // Order matters: Skill before Command, because Command's
++        // init reads `skill.all()`. Agent is independent and can run
++        // in parallel with Skill, but sequencing is simpler to reason
++        // about and the cost is negligible.
++        const agentResult = await Agent.reloadAll()
++        const skillResult = await Skill.reloadAll()
++        const commandResult = await Command.reloadAll()
++        const result = {
++          instances: agentResult.instances,
++          agents: agentResult.agents,
++          skills: skillResult.skills,
++          commands: commandResult.commands,
++        }
+         GlobalBus.emit("event", {
+           directory: "global",
+           payload: {
+diff --git a/packages/opencode/src/skill/index.ts b/packages/opencode/src/skill/index.ts
+index cde36dd..f167b56 100644
+--- a/packages/opencode/src/skill/index.ts
++++ b/packages/opencode/src/skill/index.ts
+@@ -6,6 +6,7 @@ import { Effect, Layer, ServiceMap } from "effect"
+ import { NamedError } from "@opencode-ai/util/error"
+ import type { Agent } from "@/agent/agent"
+ import { Bus } from "@/bus"
++import { Instance } from "@/project/instance"
+ import { InstanceState } from "@/effect/instance-state"
+ import { makeRuntime } from "@/effect/run-service"
+ import { Flag } from "@/flag/flag"
+@@ -61,6 +62,7 @@ export namespace Skill {
+     readonly all: () => Effect.Effect<Info[]>
+     readonly dirs: () => Effect.Effect<string[]>
+     readonly available: (agent?: Agent.Info) => Effect.Effect<Info[]>
++    readonly reload: () => Effect.Effect<{ count: number }>
+   }
+
+   const add = Effect.fnUntraced(function* (state: State, match: string, bus: Bus.Interface) {
+@@ -226,7 +228,17 @@ export namespace Skill {
+         return list.filter((skill) => Permission.evaluate("skill", skill.name, agent.permission).action !== "deny")
+       })
+
+-      return Service.of({ get, all, dirs, available })
++      // Hivemind: invalidate the per-instance Skill cache so the next
++      // get/all/dirs/available call re-runs `loadSkills` and picks up
++      // any SKILL.md files added or removed since the last access.
++      // Used by the `POST /global/reload-agents` route.
++      const reload = Effect.fn("Skill.reload")(function* () {
++        yield* InstanceState.invalidate(state)
++        const s = yield* InstanceState.get(state)
++        return { count: Object.keys(s.skills).length }
++      })
++
++      return Service.of({ get, all, dirs, available, reload })
+     }),
+   )
+
+@@ -280,4 +292,31 @@ export namespace Skill {
+   export async function available(agent?: Agent.Info) {
+     return runPromise((skill) => skill.available(agent))
+   }
++
++  /**
++   * Hivemind: reload the skill registry for every active instance.
++   * Mirrors `Agent.reloadAll` — iterates `Instance.directories()`,
++   * provides each context, and runs `reload()` so SKILL.md changes
++   * are picked up without disposing the InstanceState (which would
++   * SIGTERM MCP subprocesses and kill in-flight sessions).
++   *
++   * Used by the `POST /global/reload-agents` route alongside
++   * `Agent.reloadAll` and `Command.reloadAll`.
++   */
++  export async function reloadAll(): Promise<{ instances: number; skills: number }> {
++    const dirs = Instance.directories()
++    let skills = 0
++    for (const directory of dirs) {
++      try {
++        const result = await Instance.provide({
++          directory,
++          fn: () => runPromise((svc) => svc.reload()),
++        })
++        skills += result.count
++      } catch {
++        // Skip instances that failed to load; the dispose path skips them too.
++      }
++    }
++    return { instances: dirs.length, skills }
++  }
+ }
+--
+2.50.1

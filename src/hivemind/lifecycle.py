@@ -34,6 +34,7 @@ from hivemind.config import (
     AGENTS_DIR,
     COMMANDS_DIR,
     HIVEMIND_ROOT,
+    SKILLS_DIR,
     TEAMS_DIR,
     ensure_external_docs_link,
     ensure_repos_link,
@@ -170,7 +171,30 @@ async def update_agent(
 
 
 def redeploy_all_agents() -> RedeployResult:
-    """Redeploy every enabled agent from its current catalog state."""
+    """Redeploy every enabled agent from its current catalog state.
+
+    Also re-runs ``opencode.init_dirs`` so the user-supplied
+    ``opencode/commands/`` and ``opencode/skills/`` directories are
+    re-symlinked into the opencode home on every redeploy. ``init_dirs``
+    is idempotent — adding/removing files in those directories then
+    running ``hivemind redeploy`` is enough to make them live without a
+    separate ``hivemind init`` step.
+
+    Also syncs ``opencode/agents/<name>.md`` files into the catalog as
+    ``user_supplied`` entries. Drop a markdown file in that directory
+    and it lands as an unlisted agent the user can ``enable_agent`` to
+    deploy.
+    """
+    from hivemind.agents.user_supplied import sync_user_supplied_agents
+
+    opencode.init_dirs(
+        agents_dir=AGENTS_DIR,
+        commands_dir=COMMANDS_DIR,
+        skills_dir=SKILLS_DIR,
+        rules_source=HIVEMIND_ROOT / "HIVEMIND.md",
+        teams_dir=TEAMS_DIR,
+    )
+    sync_user_supplied_agents()
 
     failed: list[str] = []
     teams_failed: list[str] = []
@@ -232,6 +256,7 @@ def bootstrap_workspace(  # noqa: C901 — orchestrates distinct init phases; sp
     init_events = opencode.init_dirs(
         agents_dir=AGENTS_DIR,
         commands_dir=COMMANDS_DIR,
+        skills_dir=SKILLS_DIR,
         rules_source=HIVEMIND_ROOT / "HIVEMIND.md",
         teams_dir=TEAMS_DIR,
     )
@@ -249,6 +274,16 @@ def bootstrap_workspace(  # noqa: C901 — orchestrates distinct init phases; sp
     ensure_orchestrator_memory()
     emit("orchestrator memory", "ready")
 
+    # Reconcile user-supplied agents in opencode/agents/ before deploying.
+    # Newly-discovered files land in the catalog as unlisted; removed
+    # files drop their catalog entry. Existing user_supplied entries are
+    # preserved (so a previously-enabled agent stays enabled across
+    # bootstraps).
+    from hivemind.agents.user_supplied import sync_user_supplied_agents
+
+    sync_user_supplied_agents()
+    emit("opencode/agents/", "synced")
+
     # Deploy every enabled agent
     for agent in registry.enabled():
         try:
@@ -262,6 +297,7 @@ def bootstrap_workspace(  # noqa: C901 — orchestrates distinct init phases; sp
     # Sweep stale agent files from the agents/ dir
     if AGENTS_DIR.exists():
         enabled_names = {a.name for a in registry.enabled()}
+        user_supplied_enabled = {a.name for a in registry.enabled() if a.kind == "user_supplied"}
         for f in AGENTS_DIR.glob("expert-*.md"):
             agent_name = f.name.removeprefix("expert-").removesuffix(".md")
             if agent_name not in enabled_names:
@@ -270,6 +306,16 @@ def bootstrap_workspace(  # noqa: C901 — orchestrates distinct init phases; sp
         for f in AGENTS_DIR.glob("team-lead-*.md"):
             team_name = f.name.removeprefix("team-lead-").removesuffix(".md")
             if team_name not in enabled_names:
+                f.unlink()
+                emit(f.name, "removed (stale)")
+        # User-supplied agents land as ``<name>.md`` (no prefix). Sweep
+        # any unprefixed *.md that's not in the enabled-user_supplied set
+        # and not the librarian.
+        for f in AGENTS_DIR.glob("*.md"):
+            if f.name.startswith(("expert-", "team-lead-")) or f.name == "librarian.md":
+                continue
+            stem = f.stem
+            if stem not in user_supplied_enabled:
                 f.unlink()
                 emit(f.name, "removed (stale)")
 

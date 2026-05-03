@@ -122,7 +122,21 @@ class RosterTemplatedParams(BaseModel):
     experts: list[str] = []
 
 
-BodyParams = GitAnalyzedParams | RosterTemplatedParams
+class UserSuppliedParams(BaseModel):
+    """Catalog params for the ``user_supplied`` body kind.
+
+    The agent body is a markdown file the user dropped into
+    ``opencode/agents/``. Hivemind copies the file through verbatim on
+    deploy — no AI analysis, no template merging. ``filename`` is the
+    basename relative to ``opencode/agents/``.
+    """
+
+    model_config = ConfigDict(extra="forbid", validate_assignment=True)
+
+    filename: str
+
+
+BodyParams = GitAnalyzedParams | RosterTemplatedParams | UserSuppliedParams
 
 
 class CatalogEntry(BaseModel):
@@ -152,6 +166,9 @@ class CatalogEntry(BaseModel):
         elif kind == "roster_templated":
             data = dict(data)
             data["body"] = RosterTemplatedParams.model_validate(body)
+        elif kind == "user_supplied":
+            data = dict(data)
+            data["body"] = UserSuppliedParams.model_validate(body)
         return data
 
 
