@@ -200,12 +200,12 @@ TOOLS: list[Tool] = [
         description=(
             "Stage 1 of the git_analyzed create pipeline. Clones the repo, "
             "resolves the commit, builds a staging directory, and returns "
-            "the analysis prompt the analyzer (subagent or human) should "
-            "follow to write the 6 expected files into commit_dir. Fast — "
-            "no AI invoked here. Pair with finalize_create_expert (stage 3) "
-            "to land the catalog entry. Prefer spawning the "
-            "`hivemind-expert-curator` subagent (background=true) which "
-            "performs all three stages in-session — no MCP timeout risk."
+            "the staging metadata (name, url, ref_name, commit, repo_dir, "
+            "commit_dir, staging_root). Fast — no AI invoked here. Intended "
+            "for use by the `hivemind-expert-curator` subagent (which has "
+            "the analysis instructions baked into its own prompt and writes "
+            "the 6 expected files into commit_dir). Pair with "
+            "finalize_create_expert (stage 3) to land the catalog entry."
         ),
         inputSchema={
             "type": "object",
@@ -547,6 +547,11 @@ async def _handle_prep_create_expert(url: str, ref: str, name: str) -> list[Text
     if not result.success:
         return _text(f"Error: {result.error}")
 
+    # ``analysis_prompt`` deliberately omitted: the curator subagent
+    # has the analysis instructions baked into its own deployed body
+    # (via the system_templated template's `{% include %}` of
+    # prompts/create_expert.md.j2). Shipping the prompt back here would
+    # be redundant — the curator just needs the path metadata.
     return _json_text(
         {
             "name": result.name,
@@ -556,7 +561,6 @@ async def _handle_prep_create_expert(url: str, ref: str, name: str) -> list[Text
             "repo_dir": str(result.repo_dir),
             "commit_dir": str(result.commit_dir),
             "staging_root": str(result.staging_root),
-            "analysis_prompt": result.analysis_prompt,
         }
     )
 

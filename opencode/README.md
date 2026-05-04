@@ -78,8 +78,7 @@ section pointing at `~/.config/opencode/hivemind/memory/<name>/`) would
 clobber a hand-authored prompt. Set `memory: true` in the frontmatter to
 opt in: hivemind will scaffold the memory directory on enable AND append
 the memory section to the deployed agent file. `memory: false` is the
-default; it's accepted explicitly for clarity (e.g. on stateless tool
-agents like `hivemind-expert-curator`).
+default; it's accepted explicitly for clarity on stateless tool agents.
 
 Different from `git_analyzed` and `roster_templated`: no git clone,
 no AI analysis, memory is opt-in (vs always-on), no `expert-` /

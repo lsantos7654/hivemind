@@ -136,7 +136,23 @@ class UserSuppliedParams(BaseModel):
     filename: str
 
 
-BodyParams = GitAnalyzedParams | RosterTemplatedParams | UserSuppliedParams
+class SystemTemplatedParams(BaseModel):
+    """Catalog params for the ``system_templated`` body kind.
+
+    The agent body is rendered at deploy time from a Jinja template
+    under ``src/hivemind/templates/``. Used for hivemind-managed worker
+    agents (today: ``hivemind-expert-curator``) that are deployed
+    alongside user-facing experts and teams but whose markdown is
+    generated, not authored. ``template`` is the path passed to
+    :func:`hivemind.templates.render` — typically ``"agents/<name>.md.j2"``.
+    """
+
+    model_config = ConfigDict(extra="forbid", validate_assignment=True)
+
+    template: str
+
+
+BodyParams = GitAnalyzedParams | RosterTemplatedParams | UserSuppliedParams | SystemTemplatedParams
 
 
 class CatalogEntry(BaseModel):
@@ -169,6 +185,9 @@ class CatalogEntry(BaseModel):
         elif kind == "user_supplied":
             data = dict(data)
             data["body"] = UserSuppliedParams.model_validate(body)
+        elif kind == "system_templated":
+            data = dict(data)
+            data["body"] = SystemTemplatedParams.model_validate(body)
         return data
 
 

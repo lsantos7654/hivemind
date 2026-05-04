@@ -34,7 +34,7 @@ from hivemind.templates import LIBRARIAN_DESCRIPTION
 
 log = logging.getLogger(__name__)
 
-Kind = Literal["git_analyzed", "roster_templated", "user_supplied", "librarian"]
+Kind = Literal["git_analyzed", "roster_templated", "user_supplied", "system_templated", "librarian"]
 
 PROVIDER_NAME = "opencode"
 RULES_FILE_NAME = "AGENTS.md"
@@ -271,6 +271,11 @@ def format_agent(kind: Kind, name: str, description: str, body: str) -> str:
         # Pass it through untouched — `_build_frontmatter` would clobber
         # whatever they wrote.
         return body
+    if kind == "system_templated":
+        # The Jinja template owns the entire markdown including
+        # frontmatter (description, mode, model, tools, permissions).
+        # Same pass-through treatment as user_supplied.
+        return body
     if kind == "librarian":
         return _build_frontmatter(
             name=name,
@@ -288,6 +293,8 @@ def agent_filename(kind: Kind, name: str) -> str:
     if kind == "roster_templated":
         return f"team-lead-{name}.md"
     if kind == "user_supplied":
+        return f"{name}.md"
+    if kind == "system_templated":
         return f"{name}.md"
     if kind == "librarian":
         return "librarian.md"

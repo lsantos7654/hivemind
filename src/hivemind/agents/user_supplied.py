@@ -14,9 +14,9 @@ disable still flows through ``config.json`` like every other agent.
 from __future__ import annotations
 
 import logging
-import re
 from typing import TYPE_CHECKING, Any
 
+from hivemind.agents._frontmatter import frontmatter_field
 from hivemind.config import OPENCODE_DIR
 from hivemind.models import UserSuppliedParams
 
@@ -83,7 +83,7 @@ class UserSuppliedBody:
         callers, so we surface it here.
         """
         text = self._read()
-        return _frontmatter_field(text, "description") or ""
+        return frontmatter_field(text, "description") or ""
 
     def render(self) -> str:
         """Return the file content verbatim."""
@@ -100,7 +100,7 @@ class UserSuppliedBody:
         ``Agent.render_for_deploy`` to append the memory section to the
         agent's prompt).
         """
-        flag = _frontmatter_field(self._read(), "memory")
+        flag = frontmatter_field(self._read(), "memory")
         if flag is None:
             return False
         return flag.strip().lower() in ("true", "yes", "on", "1")
@@ -182,31 +182,3 @@ def sync_user_supplied_agents() -> None:
     for agent in registry.by_kind("user_supplied"):
         if agent.name not in on_disk:
             registry.remove(agent.name)
-
-
-# ---------------------------------------------------------------------------
-# Frontmatter helper
-# ---------------------------------------------------------------------------
-
-
-_FRONTMATTER_RE = re.compile(r"\A---\s*\n(?P<body>.*?)\n---\s*\n", re.DOTALL)
-
-
-def _frontmatter_field(text: str, field: str) -> str | None:
-    """Extract a single top-level YAML field from the frontmatter.
-
-    Tolerates simple ``key: value`` entries (no nested structures).
-    Multi-line scalar values are not supported — keep the description
-    on one line. Returns ``None`` if no frontmatter or no matching
-    field is found.
-    """
-    m = _FRONTMATTER_RE.match(text)
-    if not m:
-        return None
-    for line in m.group("body").splitlines():
-        if ":" not in line:
-            continue
-        key, _, value = line.partition(":")
-        if key.strip() == field:
-            return value.strip().strip("'\"")
-    return None

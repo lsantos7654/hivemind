@@ -283,21 +283,41 @@ def bootstrap_workspace(  # noqa: C901 — orchestrates distinct init phases; sp
     sync_user_supplied_agents()
     emit("opencode/agents/", "synced")
 
-    # Auto-enable the curator subagent so the chat-TUI orchestrator can
-    # always Task() it without an extra manual `enable_agent` step. The
-    # curator is a user_supplied agent shipped under opencode/agents/;
-    # it lands in the catalog via sync_user_supplied_agents() above and
-    # we flip it to enabled here. Idempotent — set_enabled is a no-op
-    # when already enabled.
+    # Seed the curator system_templated agent. It's hivemind-managed
+    # (rendered from src/hivemind/templates/agents/hivemind-expert-curator.md.j2),
+    # not user-authored, so we register it directly rather than dropping
+    # a file into opencode/agents/. Auto-enabled on first seed; subsequent
+    # bootstraps respect any explicit disable the user has done.
+    #
+    # Migration: earlier revisions shipped the curator as a user_supplied
+    # agent under opencode/agents/. If a stale catalog entry of that
+    # kind exists, drop it before re-seeding as system_templated.
     _curator_name = "hivemind-expert-curator"
     _curator = registry.get(_curator_name)
-    if _curator is not None and not _curator.enabled:
+    if _curator is not None and _curator.kind != "system_templated":
         try:
-            registry.set_enabled(_curator_name, True)
-            emit(_curator_name, "auto-enabled")
+            registry.remove(_curator_name)
+            emit(_curator_name, "migrated (dropped stale entry)")
+            _curator = None
         except Exception as exc:
-            log.exception("failed to auto-enable %s", _curator_name)
-            emit(_curator_name, f"auto-enable failed: {exc}")
+            log.exception("failed to drop stale %s entry", _curator_name)
+            emit(_curator_name, f"migration failed: {exc}")
+    if _curator is None:
+        try:
+            from hivemind.agents.base import Agent
+            from hivemind.agents.system_templated import SystemTemplatedBody
+            from hivemind.models import SystemTemplatedParams
+
+            body = SystemTemplatedBody(
+                name=_curator_name,
+                params=SystemTemplatedParams(template="agents/hivemind-expert-curator.md.j2"),
+            )
+            registry.add(Agent(name=_curator_name, body=body))
+            registry.set_enabled(_curator_name, enabled=True)
+            emit(_curator_name, "seeded + auto-enabled")
+        except Exception as exc:
+            log.exception("failed to seed %s", _curator_name)
+            emit(_curator_name, f"seed failed: {exc}")
 
     # Deploy every enabled agent. ``Agent.deploy`` handles memory tree
     # scaffolding internally per the agent's ``memory_enabled`` flag —
@@ -313,7 +333,10 @@ def bootstrap_workspace(  # noqa: C901 — orchestrates distinct init phases; sp
     # Sweep stale agent files from the agents/ dir
     if AGENTS_DIR.exists():
         enabled_names = {a.name for a in registry.enabled()}
-        user_supplied_enabled = {a.name for a in registry.enabled() if a.kind == "user_supplied"}
+        # Both user_supplied and system_templated agents deploy as
+        # ``<name>.md`` (no prefix), so the unprefixed-sweep needs to
+        # know both kinds' enabled names to avoid deleting them.
+        unprefixed_enabled = {a.name for a in registry.enabled() if a.kind in ("user_supplied", "system_templated")}
         for f in AGENTS_DIR.glob("expert-*.md"):
             agent_name = f.name.removeprefix("expert-").removesuffix(".md")
             if agent_name not in enabled_names:
@@ -324,14 +347,14 @@ def bootstrap_workspace(  # noqa: C901 — orchestrates distinct init phases; sp
             if team_name not in enabled_names:
                 f.unlink()
                 emit(f.name, "removed (stale)")
-        # User-supplied agents land as ``<name>.md`` (no prefix). Sweep
-        # any unprefixed *.md that's not in the enabled-user_supplied set
-        # and not the librarian.
+        # Unprefixed agents (user_supplied + system_templated) land as
+        # ``<name>.md``. Sweep any not in ``unprefixed_enabled`` (and not
+        # the librarian).
         for f in AGENTS_DIR.glob("*.md"):
             if f.name.startswith(("expert-", "team-lead-")) or f.name == "librarian.md":
                 continue
             stem = f.stem
-            if stem not in user_supplied_enabled:
+            if stem not in unprefixed_enabled:
                 f.unlink()
                 emit(f.name, "removed (stale)")
 

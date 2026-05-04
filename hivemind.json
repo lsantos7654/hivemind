@@ -638,12 +638,6 @@
         "remote": "https://github.com/jina-ai/reader",
         "commit": "5f07900eabe07b1dd0e8d09e6c8ea022e6b2c176"
       }
-    },
-    "hivemind-expert-curator": {
-      "kind": "user_supplied",
-      "body": {
-        "filename": "hivemind-expert-curator.md"
-      }
     }
   }
 }

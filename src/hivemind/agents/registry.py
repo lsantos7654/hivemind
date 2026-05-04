@@ -22,6 +22,7 @@ from hivemind.models import (
     CatalogEntry,
     GitAnalyzedParams,
     RosterTemplatedParams,
+    SystemTemplatedParams,
     UserSuppliedParams,
 )
 
@@ -55,6 +56,10 @@ def _body_from_catalog(name: str, entry: CatalogEntry) -> AgentBody:
         from hivemind.agents.user_supplied import UserSuppliedBody
 
         return UserSuppliedBody(name=name, params=entry.body)
+    if isinstance(entry.body, SystemTemplatedParams):
+        from hivemind.agents.system_templated import SystemTemplatedBody
+
+        return SystemTemplatedBody(name=name, params=entry.body)
     assert_never(entry.body)
 
 
