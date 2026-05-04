@@ -572,6 +572,28 @@ def session_inbox(session_id: str, text: str) -> dict[str, Any]:
     return data
 
 
+def session_archive(session_id: str) -> dict[str, Any]:
+    """PATCH /session/:id with ``{time: {archived: <ms>}}`` — soft-remove a session.
+
+    Sets the archived timestamp on the session row. Archived sessions
+    drop out of the live-sessions list and the default session picker
+    but remain in SQLite (resumable via ``hivemind -- -s ses_xxx``).
+    Used by the ``archive_session`` MCP tool to let the orchestrator
+    prune unused subagents from its view without permanent loss.
+    """
+    import time
+
+    body = {"time": {"archived": int(time.time() * 1000)}}
+    resp = httpx.patch(
+        f"{_server_url()}/session/{session_id}",
+        json=body,
+        timeout=SESSION_HTTP_TIMEOUT,
+    )
+    resp.raise_for_status()
+    data: dict[str, Any] = resp.json()
+    return data
+
+
 def live_session_ids() -> set[str]:
     """GET /global/live-sessions — sessions a TUI is currently attached to.
 

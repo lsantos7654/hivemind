@@ -29,7 +29,4 @@ Ordered top-to-bottom by what's most actionable. Drop or refile items that no lo
 - ~~**opencode file watcher on `agents/**/*.md`**~~ — superseded. `/global/reload-agents` (patch 0004) handles the use case. If "enable without restart" turns out to be regressed (see active item above), fix it there rather than introducing a watcher.
 
 
-
-okay forget thread 5 keep as is
-thread 4 - this has already been decomposed to skills, take a look at current state
-thread 3 - option b, no external dependencies, all providers need to be managed by opencode only. how we should implement this gets interesting. The subagent model is preferable because nothing runs without proper insight. If the daemon is tied to a session I can look into it and kill if necessary. Otherwise I really like option c, my fear is that we have a rogue agent doing stuff without our knowledge managed by another background daemon the server. I guess this is fine if it has very explicit commands and can't execute anything. I would want this to be launched in an event based way. like if short term memory exceeds x size trigger the daemon agent.
+add way to remove subagents

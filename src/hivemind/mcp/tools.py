@@ -256,6 +256,26 @@ TOOLS: list[Tool] = [
             "required": ["session_id", "message"],
         },
     ),
+    Tool(
+        name="archive_session",
+        description=(
+            "Archive a session — typically a subagent that's no longer needed. The session "
+            "drops out of the live-sessions list and the default picker, but stays in the "
+            "database (resumable via task_id or `hivemind -- -s ses_xxx`). Use to prune "
+            "unused subagents from an orchestrator's view without losing their history. "
+            "Call once per session; for bulk archival, call in parallel."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "session_id": {
+                    "type": "string",
+                    "description": "Session ID to archive (ses_...)",
+                },
+            },
+            "required": ["session_id"],
+        },
+    ),
     # --- System ---
     Tool(
         name="redeploy",
@@ -486,6 +506,18 @@ async def _handle_send_message(session_id: str, message: str) -> list[TextConten
     return _text(f"Message {state} to {session_id} (queue depth: {result.get('depth', 0)}).")
 
 
+async def _handle_archive_session(session_id: str) -> list[TextContent]:
+    from hivemind import opencode
+
+    try:
+        opencode.session_archive(session_id)
+    except RuntimeError as exc:
+        return _text(f"Error: {exc}")
+    return _text(
+        f"Archived {session_id}. Session preserved in DB; resume with task_id or `hivemind -- -s {session_id}`."
+    )
+
+
 # ---------------------------------------------------------------------------
 # Handlers — system
 # ---------------------------------------------------------------------------
@@ -525,6 +557,7 @@ TOOL_HANDLERS: dict[str, ToolHandler] = {
     "remove_expert_from_team": _handle_remove_expert_from_team,
     "list_sessions": _handle_list_sessions,
     "send_message": _handle_send_message,
+    "archive_session": _handle_archive_session,
     "redeploy": _handle_redeploy,
 }
 
@@ -547,6 +580,7 @@ _ARG_EXTRACTORS: dict[str, Callable[[dict[str, Any]], tuple[Any, ...]]] = {
         int(a.get("limit", 50)),
     ),
     "send_message": lambda a: (a["session_id"], a["message"]),
+    "archive_session": lambda a: (a["session_id"],),
 }
 
 
