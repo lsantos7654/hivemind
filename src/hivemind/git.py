@@ -11,6 +11,7 @@ from uuid import uuid4
 
 from hivemind.config import (
     GIT_CLONE_TIMEOUT,
+    GIT_FETCH_TIMEOUT,
     GIT_LOCAL_TIMEOUT,
     REPOS_DIR,
     STAGING_DIR,
@@ -26,6 +27,7 @@ __all__ = [
     "create_staging_dir",
     "read_analysis_error",
     "resolve_latest_commit",
+    "resolve_ref",
     "revert_checkout",
     "stage_for_analysis",
 ]
@@ -125,6 +127,47 @@ async def resolve_latest_commit(repo_dir: Path) -> str | None:
         if proc.returncode == 0:
             return stdout.decode().strip()
     return None
+
+
+async def resolve_ref(repo_dir: Path, ref: str, *, fetch: bool = True) -> str | None:
+    """Resolve a ref (tag, branch, full or short SHA) to a full commit SHA.
+
+    When ``fetch`` is True, fetches tags first so freshly-pushed tags resolve
+    even if the local clone is stale. Network failures during fetch are
+    swallowed — local refs may still resolve. The ``^{commit}`` suffix
+    dereferences annotated tags to their underlying commit object. Returns
+    the full SHA on success, ``None`` on failure.
+    """
+    if fetch:
+        proc = await asyncio.create_subprocess_exec(
+            "git",
+            "fetch",
+            "--tags",
+            "--quiet",
+            cwd=str(repo_dir),
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+        with contextlib.suppress(TimeoutError, OSError):
+            await asyncio.wait_for(proc.wait(), timeout=GIT_FETCH_TIMEOUT)
+
+    proc = await asyncio.create_subprocess_exec(
+        "git",
+        "rev-parse",
+        "--verify",
+        f"{ref}^{{commit}}",
+        cwd=str(repo_dir),
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.DEVNULL,
+    )
+    try:
+        stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=GIT_LOCAL_TIMEOUT)
+    except (TimeoutError, OSError):
+        return None
+    if proc.returncode != 0:
+        return None
+    sha = stdout.decode().strip()
+    return sha or None
 
 
 _STALE_STAGING_HOURS = 6

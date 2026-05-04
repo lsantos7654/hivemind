@@ -553,6 +553,30 @@ def session_list(roots: bool | None = None, limit: int | None = None) -> list[di
     return data
 
 
+def session_delete(session_id: str) -> None:
+    """DELETE /session/:sessionID — hard-remove a session and its descendants.
+
+    Best-effort aborts the session first (so an in-flight prompt stops
+    streaming into a row that's about to vanish), then DELETEs. The
+    engine recurses into child sessions, fires ``session.deleted`` on
+    the bus (the TUI subagents pill subscribes to this), and removes
+    the SQLite row. Not recoverable. Idempotent — calling on an
+    already-deleted ID returns success silently because upstream's
+    ``Session.remove`` swallows not-found at session.ts:471-473.
+    """
+    with contextlib.suppress(httpx.HTTPError):
+        httpx.post(
+            f"{_server_url()}/session/{session_id}/abort",
+            timeout=SESSION_HTTP_TIMEOUT,
+        )
+
+    resp = httpx.delete(
+        f"{_server_url()}/session/{session_id}",
+        timeout=SESSION_HTTP_TIMEOUT,
+    )
+    resp.raise_for_status()
+
+
 def session_inbox(session_id: str, text: str) -> dict[str, Any]:
     """POST /session/:id/inbox — queue-on-busy message delivery.
 
@@ -564,28 +588,6 @@ def session_inbox(session_id: str, text: str) -> dict[str, Any]:
     body = {"parts": [{"type": "text", "text": text}]}
     resp = httpx.post(
         f"{_server_url()}/session/{session_id}/inbox",
-        json=body,
-        timeout=SESSION_HTTP_TIMEOUT,
-    )
-    resp.raise_for_status()
-    data: dict[str, Any] = resp.json()
-    return data
-
-
-def session_archive(session_id: str) -> dict[str, Any]:
-    """PATCH /session/:id with ``{time: {archived: <ms>}}`` — soft-remove a session.
-
-    Sets the archived timestamp on the session row. Archived sessions
-    drop out of the live-sessions list and the default session picker
-    but remain in SQLite (resumable via ``hivemind -- -s ses_xxx``).
-    Used by the ``archive_session`` MCP tool to let the orchestrator
-    prune unused subagents from its view without permanent loss.
-    """
-    import time
-
-    body = {"time": {"archived": int(time.time() * 1000)}}
-    resp = httpx.patch(
-        f"{_server_url()}/session/{session_id}",
         json=body,
         timeout=SESSION_HTTP_TIMEOUT,
     )

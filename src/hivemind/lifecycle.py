@@ -26,7 +26,6 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 from hivemind.agents import registry
 from hivemind.agents.memory import (
-    ensure_agent_memory,
     ensure_orchestrator_memory,
     remove_agent_memory,
 )
@@ -85,7 +84,7 @@ def enable_agent(name: str) -> OperationResult:
     if not already_enabled:
         registry.set_enabled(name, enabled=True)
 
-    ensure_agent_memory(name)
+    # ``Agent.deploy`` scaffolds memory itself (gated on memory_enabled).
     agent.deploy(agents_dir=AGENTS_DIR)
     regenerate_librarian()
     fire_post_mutation()
@@ -284,10 +283,27 @@ def bootstrap_workspace(  # noqa: C901 — orchestrates distinct init phases; sp
     sync_user_supplied_agents()
     emit("opencode/agents/", "synced")
 
-    # Deploy every enabled agent
+    # Auto-enable the curator subagent so the chat-TUI orchestrator can
+    # always Task() it without an extra manual `enable_agent` step. The
+    # curator is a user_supplied agent shipped under opencode/agents/;
+    # it lands in the catalog via sync_user_supplied_agents() above and
+    # we flip it to enabled here. Idempotent — set_enabled is a no-op
+    # when already enabled.
+    _curator_name = "hivemind-expert-curator"
+    _curator = registry.get(_curator_name)
+    if _curator is not None and not _curator.enabled:
+        try:
+            registry.set_enabled(_curator_name, True)
+            emit(_curator_name, "auto-enabled")
+        except Exception as exc:
+            log.exception("failed to auto-enable %s", _curator_name)
+            emit(_curator_name, f"auto-enable failed: {exc}")
+
+    # Deploy every enabled agent. ``Agent.deploy`` handles memory tree
+    # scaffolding internally per the agent's ``memory_enabled`` flag —
+    # no explicit ``ensure_agent_memory`` call needed here.
     for agent in registry.enabled():
         try:
-            ensure_agent_memory(agent.name)
             agent.deploy(agents_dir=AGENTS_DIR)
             emit(agent.name, "deployed")
         except Exception as exc:

@@ -230,6 +230,28 @@ class UpdateResult(OperationResult):
     cancelled: bool = False
 
 
+class PrepCreateResult(OperationResult):
+    """Result of stage 1 (prep) of the git_analyzed create pipeline.
+
+    The create pipeline has three stages: prep (clone + staging), analyze
+    (generate the 6 knowledge files), and finalize (move staging into the
+    catalog). Stage 1 returns this object so any of three analyzers can
+    perform stage 2: the in-process subprocess (`run_async_analysis`), an
+    opencode subagent that does the work in-session, or a human writing
+    the files by hand. Pass this object back to ``finalize_create_expert``
+    to land the agent in the catalog as *unlisted*.
+    """
+
+    name: str = ""
+    url: str = ""
+    ref_name: str = ""
+    commit: str = ""
+    repo_dir: Path | None = None
+    commit_dir: Path | None = None
+    staging_root: Path | None = None
+    analysis_prompt: str = ""
+
+
 class EnableResult(OperationResult):
     already_enabled: bool = False
 

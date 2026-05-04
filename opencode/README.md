@@ -52,12 +52,13 @@ well-written skill is invokable both ways.
 ---
 description: One-paragraph hook used by the librarian and by anyone routing tasks. Be specific about what scenarios should invoke this agent.
 mode: subagent
+memory: false        # optional; default false for user-supplied agents
 ---
 
 # Agent body
 
 Whatever you write becomes the agent's system prompt verbatim — no AI
-analysis, no Jinja templating, no memory section appended.
+analysis, no Jinja templating.
 ```
 
 Lifecycle:
@@ -68,8 +69,20 @@ Lifecycle:
 - Edit source → `hivemind redeploy` → re-deployed.
 - Remove source → `hivemind redeploy` → catalog entry swept.
 
+### Memory opt-in
+
+By default, user-supplied agents have **no memory tree scaffolded** and
+**no memory section appended** to their prompt — your file is the entire
+deployment, and hivemind's memory contract (which adds a `## Memory`
+section pointing at `~/.config/opencode/hivemind/memory/<name>/`) would
+clobber a hand-authored prompt. Set `memory: true` in the frontmatter to
+opt in: hivemind will scaffold the memory directory on enable AND append
+the memory section to the deployed agent file. `memory: false` is the
+default; it's accepted explicitly for clarity (e.g. on stateless tool
+agents like `hivemind-expert-curator`).
+
 Different from `git_analyzed` and `roster_templated`: no git clone,
-no AI analysis, no memory tree scaffolded, no `expert-` /
+no AI analysis, memory is opt-in (vs always-on), no `expert-` /
 `team-lead-` prefix in the deployed filename.
 
 ## When to choose which

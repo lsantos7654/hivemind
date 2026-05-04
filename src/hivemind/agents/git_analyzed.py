@@ -20,7 +20,9 @@ Module-level creators / mutators:
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -28,6 +30,7 @@ from typing import TYPE_CHECKING, Any
 
 from hivemind import opencode
 from hivemind.analysis import (
+    expected_analysis_files,
     handle_async_cancellation,
     make_cancellation_checker,
     run_async_analysis,
@@ -37,6 +40,7 @@ from hivemind.config import (
     GIT_FETCH_TIMEOUT,
     GIT_LOCAL_TIMEOUT,
     REPOS_DIR,
+    STAGING_DIR,
     ensure_repos_link,
     get_expert_dir,
     get_head_commit,
@@ -48,6 +52,7 @@ from hivemind.git import (
     commit_analysis_results,
     create_staging_dir,
     resolve_latest_commit,
+    resolve_ref,
     revert_checkout,
     stage_for_analysis,
 )
@@ -56,6 +61,7 @@ from hivemind.models import (
     CancellationToken,
     GitAnalyzedParams,
     OperationResult,
+    PrepCreateResult,
     ProgressCallback,
     UpdatePhase,
     UpdateResult,
@@ -74,10 +80,20 @@ __all__ = [
     "GitAnalyzedBody",
     "commit_exists_in_repo",
     "create_git_expert",
+    "finalize_create_expert",
+    "find_staged_prep",
     "get_git_versions",
+    "load_prep_result",
+    "prep_create_expert",
     "switch_version",
     "update_git_expert",
 ]
+
+
+_PREP_META_FILENAME = "prep.json"
+
+
+_SHA_RE = re.compile(r"^[0-9a-f]{4,40}$", re.IGNORECASE)
 
 
 # ---------------------------------------------------------------------------
@@ -204,35 +220,43 @@ class GitAnalyzedBody:
 # ---------------------------------------------------------------------------
 
 
-async def create_git_expert(
+async def prep_create_expert(
     name: str,
     url: str,
     *,
     ref_name: str = "",
     on_progress: ProgressCallback | None = None,
-) -> OperationResult:
-    """Clone, analyze, and register a new git-analyzed expert (unlisted).
+) -> PrepCreateResult:
+    """Stage 1 of the git_analyzed create pipeline: clone + staging.
 
-    All work happens in temp directories; nothing visible until success.
-    Adds the agent to the catalog in the *unlisted* state — the caller
-    is expected to call ``lifecycle.enable_agent(name)`` afterwards to
-    deploy it.
+    The create pipeline is intentionally split into three stages so the
+    AI-analysis step (stage 2) is pluggable. Stage 1 (here) does the
+    deterministic plumbing: validate the name is free, resolve a ref to
+    a commit, clone the repo into a staging tree, and render the analysis
+    prompt. Stage 2 — performed by ``run_async_analysis`` (subprocess),
+    by an opencode subagent in-session, or by a human writing files
+    directly — populates the 6 expected files in
+    ``commit_dir``. Stage 3 (:func:`finalize_create_expert`) moves
+    everything into the catalog.
+
+    The staging dir persists across the call so the analyzer can write to
+    it. ``finalize_create_expert`` removes it on success;
+    ``git._cleanup_stale_staging`` reaps abandoned ones after 6h.
     """
     from hivemind.agents import registry
-    from hivemind.agents.base import Agent
 
     if registry.get(name) is not None:
-        return OperationResult(success=False, error=f"Agent '{name}' already exists")
-
-    emit = make_emit(name, on_progress)
+        return PrepCreateResult(success=False, error=f"Agent '{name}' already exists")
 
     expert_dir = EXPERTS_DIR / name
     if expert_dir.is_dir():
-        return OperationResult(success=False, error=f"experts/{name}/ already exists on disk")
+        return PrepCreateResult(success=False, error=f"experts/{name}/ already exists on disk")
 
     validation = opencode.validate_engine()
     if not validation.success:
-        return OperationResult(success=False, error=validation.error)
+        return PrepCreateResult(success=False, error=validation.error)
+
+    emit = make_emit(name, on_progress)
 
     # Resolve commit from ref if provided
     commit = ""
@@ -250,10 +274,11 @@ async def create_git_expert(
         output = stdout.decode().strip()
         commit = output.split()[0] if output else ref_name
 
-    tmpdir = str(create_staging_dir(name))
-    tmp_repo = Path(tmpdir) / "repo"
-    tmp_expert = Path(tmpdir) / "expert"
+    tmpdir = create_staging_dir(name)
+    tmp_repo = tmpdir / "repo"
+    tmp_expert = tmpdir / "expert"
     tmp_expert.mkdir()
+    succeeded = False
 
     try:
         emit(UpdatePhase.CLONING, f"Cloning {name}...")
@@ -267,7 +292,7 @@ async def create_git_expert(
             )
             await asyncio.wait_for(proc.wait(), timeout=300)
             if proc.returncode != 0:
-                return OperationResult(success=False, error="Failed to clone repository")
+                return PrepCreateResult(success=False, error="Failed to clone repository")
             proc = await asyncio.create_subprocess_exec(
                 "git",
                 "checkout",
@@ -288,7 +313,7 @@ async def create_git_expert(
             )
             await asyncio.wait_for(proc.wait(), timeout=300)
             if proc.returncode != 0:
-                return OperationResult(success=False, error="Failed to clone repository")
+                return PrepCreateResult(success=False, error="Failed to clone repository")
         else:
             proc = await asyncio.create_subprocess_exec(
                 "git",
@@ -299,7 +324,7 @@ async def create_git_expert(
             )
             await asyncio.wait_for(proc.wait(), timeout=300)
             if proc.returncode != 0:
-                return OperationResult(success=False, error="Failed to clone repository")
+                return PrepCreateResult(success=False, error="Failed to clone repository")
 
         if not commit:
             proc = await asyncio.create_subprocess_exec(
@@ -316,48 +341,208 @@ async def create_git_expert(
         tmp_commit_dir = tmp_expert / commit
         tmp_commit_dir.mkdir(parents=True, exist_ok=True)
 
-        emit(UpdatePhase.ANALYZING, f"Analyzing {name} (this may take 2-5 minutes)...")
         prompt = create_expert_prompt(name, commit, tmp_repo, tmp_commit_dir)
 
+        # Persist for cross-process finalize (CLI / subagent path).
+        # The in-process composition path uses the returned object directly,
+        # but a separate `hivemind expert finalize <name>` invocation needs
+        # to reconstruct the prep state from disk.
+        (tmpdir / _PREP_META_FILENAME).write_text(
+            json.dumps(
+                {
+                    "name": name,
+                    "url": url,
+                    "ref_name": ref_name,
+                    "commit": commit,
+                    "repo_dir": str(tmp_repo),
+                    "commit_dir": str(tmp_commit_dir),
+                    "analysis_prompt": prompt,
+                },
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+
+        succeeded = True
+        return PrepCreateResult(
+            success=True,
+            name=name,
+            url=url,
+            ref_name=ref_name,
+            commit=commit,
+            repo_dir=tmp_repo,
+            commit_dir=tmp_commit_dir,
+            staging_root=tmpdir,
+            analysis_prompt=prompt,
+        )
+    finally:
+        if not succeeded:
+            shutil.rmtree(str(tmpdir), ignore_errors=True)
+
+
+def find_staged_prep(name: str) -> Path | None:
+    """Locate the staging dir for an in-flight prep of ``name``.
+
+    Returns the staging root path or ``None`` if no staging dir matches.
+    Raises ``ValueError`` if multiple stagings exist for the same name —
+    the caller must clean up stale ones first.
+    """
+    if not STAGING_DIR.is_dir():
+        return None
+    candidates = sorted(p for p in STAGING_DIR.glob(f"{name}-*") if p.is_dir())
+    if not candidates:
+        return None
+    if len(candidates) > 1:
+        msg = f"Multiple staging dirs match '{name}-*': {[c.name for c in candidates]}. Remove stale ones and retry."
+        raise ValueError(msg)
+    return candidates[0]
+
+
+def load_prep_result(staging_root: Path) -> PrepCreateResult:
+    """Reconstruct a ``PrepCreateResult`` from a staging dir's prep.json."""
+    meta_path = staging_root / _PREP_META_FILENAME
+    if not meta_path.is_file():
+        return PrepCreateResult(
+            success=False,
+            error=f"No prep metadata at {meta_path}",
+        )
+    meta = json.loads(meta_path.read_text(encoding="utf-8"))
+    return PrepCreateResult(
+        success=True,
+        name=meta["name"],
+        url=meta["url"],
+        ref_name=meta.get("ref_name", ""),
+        commit=meta["commit"],
+        repo_dir=Path(meta["repo_dir"]),
+        commit_dir=Path(meta["commit_dir"]),
+        staging_root=staging_root,
+        analysis_prompt=meta.get("analysis_prompt", ""),
+    )
+
+
+async def finalize_create_expert(prep: PrepCreateResult) -> OperationResult:
+    """Stage 3 of the git_analyzed create pipeline: validate + register.
+
+    Validates that the analyzer wrote all expected files into
+    ``prep.commit_dir``, moves the staged repo and expert dir to their
+    final cache locations, creates the HEAD symlink, registers the
+    catalog entry as *unlisted*, fires the post-mutation hook, and
+    cleans up the staging dir. Leaves staging in place if validation
+    fails so the caller can inspect / retry.
+    """
+    from hivemind.agents import registry
+    from hivemind.agents.base import Agent
+
+    if not prep.success:
+        return OperationResult(success=False, error=prep.error or "prep failed")
+    if (
+        prep.repo_dir is None
+        or prep.commit_dir is None
+        or prep.staging_root is None
+        or not prep.name
+        or not prep.commit
+        or not prep.url
+    ):
+        return OperationResult(success=False, error="prep result is missing required fields")
+
+    expected = expected_analysis_files(is_update=False)
+    missing = [f for f in expected if not (prep.commit_dir / f).is_file()]
+    if missing:
+        return OperationResult(
+            success=False,
+            error=(
+                f"Analysis incomplete — missing {missing} in {prep.commit_dir}. "
+                "Re-run the analyzer or write the missing files by hand, then retry."
+            ),
+        )
+
+    # Re-check the catalog — another process might have added the same name
+    # between prep and finalize.
+    if registry.get(prep.name) is not None:
+        return OperationResult(success=False, error=f"Agent '{prep.name}' already exists")
+
+    ensure_repos_link()
+    final_repo = REPOS_DIR / prep.name
+    if final_repo.exists():
+        shutil.rmtree(final_repo)
+    shutil.move(str(prep.repo_dir), str(final_repo))
+
+    EXPERTS_DIR.mkdir(parents=True, exist_ok=True)
+    final_expert = EXPERTS_DIR / prep.name
+    if final_expert.exists():
+        shutil.rmtree(final_expert)
+    shutil.move(str(prep.commit_dir.parent), str(final_expert))
+
+    head_link = final_expert / "HEAD"
+    head_link.symlink_to(prep.commit)
+
+    body = GitAnalyzedBody(
+        name=prep.name,
+        params=GitAnalyzedParams(
+            remote=prep.url,
+            commit=prep.commit,
+            ref_name=prep.ref_name,
+        ),
+    )
+    agent = Agent(name=prep.name, body=body, enabled=False)
+    registry.add(agent)
+
+    await afire_post_mutation()
+
+    # repo and expert dirs are gone; only prep.json remains
+    shutil.rmtree(str(prep.staging_root), ignore_errors=True)
+
+    return OperationResult(success=True)
+
+
+async def create_git_expert(
+    name: str,
+    url: str,
+    *,
+    ref_name: str = "",
+    on_progress: ProgressCallback | None = None,
+) -> OperationResult:
+    """Clone, analyze (subprocess), and register a new git-analyzed expert.
+
+    Composition of :func:`prep_create_expert` (stage 1),
+    :func:`run_async_analysis` (stage 2 — subprocess), and
+    :func:`finalize_create_expert` (stage 3). Identical externally-
+    observable behavior to before the prep / finalize seam was
+    introduced. Suitable for the CLI and the Textual TUI. From a
+    chat-TUI orchestrator session, prefer spawning the
+    ``hivemind-expert-curator`` subagent — it performs stage 2 in-session
+    via Read/Grep/Glob/Write, avoiding the nested-subprocess overhead and
+    the MCP request timeout.
+    """
+    prep = await prep_create_expert(name, url, ref_name=ref_name, on_progress=on_progress)
+    if not prep.success:
+        return OperationResult(success=False, error=prep.error)
+    # Narrowing for mypy: prep.success=True implies the path fields are populated.
+    assert prep.commit_dir is not None
+    assert prep.repo_dir is not None
+
+    try:
+        emit = make_emit(name, on_progress)
+        emit(UpdatePhase.ANALYZING, f"Analyzing {name} (this may take 2-5 minutes)...")
         analysis_result = await run_async_analysis(
             name,
-            commit,
-            prompt,
-            tmp_expert,
-            tmp_repo,
+            prep.commit,
+            prep.analysis_prompt,
+            prep.commit_dir.parent,
+            prep.repo_dir,
             emit,
-            commit_dir=tmp_commit_dir,
+            commit_dir=prep.commit_dir,
             is_update=False,
         )
         if not analysis_result.success:
             return OperationResult(success=False, error=analysis_result.error or "AI analysis failed")
-
-        # Success — move to final locations
-        ensure_repos_link()
-        final_repo = REPOS_DIR / name
-        if final_repo.exists():
-            shutil.rmtree(final_repo)
-        shutil.move(str(tmp_repo), str(final_repo))
-
-        EXPERTS_DIR.mkdir(parents=True, exist_ok=True)
-        final_expert = EXPERTS_DIR / name
-        shutil.move(str(tmp_expert), str(final_expert))
-
-        head_link = final_expert / "HEAD"
-        head_link.symlink_to(commit)
-
-        body = GitAnalyzedBody(
-            name=name,
-            params=GitAnalyzedParams(remote=url, commit=commit, ref_name=ref_name),
-        )
-        agent = Agent(name=name, body=body, enabled=False)
-        registry.add(agent)
-
-        await afire_post_mutation()
-        return OperationResult(success=True)
-
+        return await finalize_create_expert(prep)
     finally:
-        shutil.rmtree(tmpdir, ignore_errors=True)
+        # Match pre-refactor behavior: convenience wrapper always GCs the
+        # staging dir, regardless of outcome. finalize may have already
+        # removed it; ignore_errors=True absorbs the missing-dir case.
+        if prep.staging_root:
+            shutil.rmtree(str(prep.staging_root), ignore_errors=True)
 
 
 async def update_git_expert(
@@ -531,6 +716,20 @@ async def switch_version(
     old_commit: str | None = None
 
     try:
+        # Resolve a tag/branch/short-SHA input to a full commit SHA. Skip the
+        # fetch+rev-parse round-trip for full-or-short SHAs that are already
+        # in the local repo — that's the common case from the TUI version
+        # picker. Anything else (tag like "8.5.1", branch like "main",
+        # foreign ref like "origin/feat/x") gets resolved.
+        if not (_SHA_RE.match(target_commit) and await commit_exists_in_repo(name, target_commit)):
+            resolved = await resolve_ref(repo_dir, target_commit)
+            if resolved is None:
+                return UpdateResult(
+                    success=False,
+                    error=f"Could not resolve ref '{target_commit}' in repo for agent '{name}'",
+                )
+            target_commit = resolved
+
         old_commit = get_head_commit(expert_dir)
         if old_commit == target_commit:
             return UpdateResult(

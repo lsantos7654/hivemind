@@ -89,6 +89,22 @@ class UserSuppliedBody:
         """Return the file content verbatim."""
         return self._read()
 
+    def memory_enabled(self) -> bool:
+        """Whether hivemind should scaffold + reference a memory tree for this agent.
+
+        Reads ``memory:`` from the file's YAML frontmatter. Defaults to
+        ``False`` — user_supplied agents are external to hivemind's
+        expert/team mental model (see ``Agent.deploy`` docstring), so the
+        memory tree is opt-in rather than opt-out for this kind. Set
+        ``memory: true`` in the frontmatter to opt in (which also causes
+        ``Agent.render_for_deploy`` to append the memory section to the
+        agent's prompt).
+        """
+        flag = _frontmatter_field(self._read(), "memory")
+        if flag is None:
+            return False
+        return flag.strip().lower() in ("true", "yes", "on", "1")
+
     def librarian_entry(self) -> str:
         desc = self.description() or "(no description)"
         return (

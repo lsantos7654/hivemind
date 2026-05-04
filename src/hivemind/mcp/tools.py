@@ -1,18 +1,22 @@
 """MCP tool definitions and handlers for hivemind.
 
-The MCP surface is intentionally minimal. Listing/inspecting/status
-tools were dropped because opencode discovers agents natively from
-``agents/*.md`` and surfaces them in its UI; knowledge access was
-dropped because experts can read or grep their own knowledge tree
+The MCP surface is intentionally minimal. Knowledge access is *not*
+exposed because experts can read or grep their own knowledge tree
 directly via the standard file tools (``~/.config/opencode/experts/<name>/HEAD/*.md``
 and ``~/.cache/hivemind/repos/<name>/`` are both
 ``external_directory: allow``).
 
 Tools that remain:
 
+* **Read/query** — ``list_agents``, ``show_agent``, ``status``.
 * **Lifecycle mutations** — ``enable_agent``, ``disable_agent``,
   ``delete_agent``, ``update_agent``, ``redeploy``.
-* **Kind-specific creators** — ``create_git_expert``, ``create_team``.
+* **Kind-specific creators** —
+  ``prep_create_expert`` + ``finalize_create_expert`` (the create
+  pipeline split into stage 1 and stage 3 so the analysis stage is
+  pluggable; the orchestrator typically spawns the
+  ``hivemind-expert-curator`` subagent which performs all three stages
+  in-session via Bash + Read/Grep/Write — no MCP timeout), ``create_team``.
 * **Roster mutations** — ``add_expert_to_team``, ``remove_expert_from_team``.
 * **Cross-session** — ``list_sessions``, ``send_message``.
 
@@ -42,6 +46,8 @@ if TYPE_CHECKING:
 
     from mcp.server import Server
 
+    from hivemind.models import AppConfig
+
     ToolHandler = Callable[..., Awaitable[list[TextContent]]]
 
 log = logging.getLogger(__name__)
@@ -57,11 +63,55 @@ def _json_text(data: Any) -> list[TextContent]:
     return _text(json.dumps(data, indent=2, default=str))
 
 
+def _agent_state(name: str, app_cfg: AppConfig) -> str:
+    """Resolve enabled / disabled / unlisted from the local overlay."""
+    if name in app_cfg.enabled:
+        return "enabled"
+    if name in app_cfg.disabled:
+        return "disabled"
+    return "unlisted"
+
+
 # ---------------------------------------------------------------------------
 # Tool definitions
 # ---------------------------------------------------------------------------
 
 TOOLS: list[Tool] = [
+    # --- Read/query ---
+    Tool(
+        name="list_agents",
+        description="List agents in the catalog with their state (enabled / disabled / unlisted).",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "state": {
+                    "type": "string",
+                    "enum": ["enabled", "disabled", "unlisted", "all"],
+                    "description": "Filter by state (default: all)",
+                },
+                "kind": {
+                    "type": "string",
+                    "enum": ["git_analyzed", "roster_templated", "user_supplied"],
+                    "description": "Filter by agent kind",
+                },
+            },
+            "required": [],
+        },
+    ),
+    Tool(
+        name="show_agent",
+        description="Show detail for a single agent (kind, state, kind-specific body params).",
+        inputSchema={
+            "type": "object",
+            "properties": {"name": {"type": "string", "description": "Agent name"}},
+            "required": ["name"],
+        },
+    ),
+    Tool(
+        name="status",
+        description="Catalog summary: total / enabled / disabled / unlisted counts plus per-kind breakdown.",
+        inputSchema={"type": "object", "properties": {}, "required": []},
+    ),
     # --- Lifecycle mutations (kind-agnostic) ---
     Tool(
         name="enable_agent",
@@ -119,11 +169,14 @@ TOOLS: list[Tool] = [
     Tool(
         name="switch_version",
         description=(
-            "Switch a git_analyzed agent to a specific commit. Re-uses cached analysis "
-            "(description.md / expertise.md / agent.md) under that commit if present; "
-            "otherwise checks out the commit, runs AI analysis, and stores the result. "
-            "Updates the HEAD symlink so the deployed agent body comes from this commit. "
-            "Use show_agent first to see which commits are already analysed locally."
+            "Switch a git_analyzed agent to a specific commit, tag, or branch. Refs "
+            "(e.g. '8.5.1', 'main', 'origin/feat/x') are resolved against the cloned "
+            "repo — tags are fetched first so freshly-pushed releases work. Re-uses "
+            "cached analysis (description.md / expertise.md / agent.md) under the "
+            "resolved commit if present; otherwise checks out the commit, runs AI "
+            "analysis, and stores the result. Updates the HEAD symlink so the deployed "
+            "agent body comes from this commit. Use show_agent first to see which "
+            "commits are already analysed locally."
         ),
         inputSchema={
             "type": "object",
@@ -131,7 +184,11 @@ TOOLS: list[Tool] = [
                 "name": {"type": "string", "description": "Git-analyzed agent name"},
                 "commit": {
                     "type": "string",
-                    "description": "Target commit SHA (full or short) reachable in the cloned repo.",
+                    "description": (
+                        "Target commit SHA (full or short), tag name, or branch name. "
+                        "If not a valid SHA in the local clone, resolved as a git ref "
+                        "(tags fetched first)."
+                    ),
                 },
             },
             "required": ["name", "commit"],
@@ -139,19 +196,49 @@ TOOLS: list[Tool] = [
     ),
     # --- Kind-specific creators ---
     Tool(
-        name="create_git_expert",
+        name="prep_create_expert",
         description=(
-            "Register a new git-analyzed expert from a remote URL. Clones the repo, runs "
-            "AI analysis, and adds the agent to the catalog in the *unlisted* state. "
-            "Call `enable_agent` afterwards to deploy it."
+            "Stage 1 of the git_analyzed create pipeline. Clones the repo, "
+            "resolves the commit, builds a staging directory, and returns "
+            "the analysis prompt the analyzer (subagent or human) should "
+            "follow to write the 6 expected files into commit_dir. Fast — "
+            "no AI invoked here. Pair with finalize_create_expert (stage 3) "
+            "to land the catalog entry. Prefer spawning the "
+            "`hivemind-expert-curator` subagent (background=true) which "
+            "performs all three stages in-session — no MCP timeout risk."
         ),
         inputSchema={
             "type": "object",
             "properties": {
                 "url": {"type": "string", "description": "Git remote URL"},
                 "ref": {"type": "string", "description": "Tag, branch, or commit (optional)"},
+                "name": {
+                    "type": "string",
+                    "description": "Expert name (defaults to repo basename)",
+                },
             },
             "required": ["url"],
+        },
+    ),
+    Tool(
+        name="finalize_create_expert",
+        description=(
+            "Stage 3 of the git_analyzed create pipeline. Locates the "
+            "staging dir for `name` (created by prep_create_expert), "
+            "validates that all 6 expected analysis files exist in it, "
+            "moves the cloned repo + expert dir to their final cache "
+            "locations, and registers the catalog entry as *unlisted*. "
+            "Fast — no AI invoked. Call enable_agent afterwards to deploy."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "description": "Expert name (must match a staging dir from prep_create_expert)",
+                },
+            },
+            "required": ["name"],
         },
     ),
     Tool(
@@ -257,20 +344,22 @@ TOOLS: list[Tool] = [
         },
     ),
     Tool(
-        name="archive_session",
+        name="delete_session",
         description=(
-            "Archive a session — typically a subagent that's no longer needed. The session "
-            "drops out of the live-sessions list and the default picker, but stays in the "
-            "database (resumable via task_id or `hivemind -- -s ses_xxx`). Use to prune "
-            "unused subagents from an orchestrator's view without losing their history. "
-            "Call once per session; for bulk archival, call in parallel."
+            "Hard-delete a session — typically a subagent that's no longer needed. "
+            "Recursively deletes any descendant sessions. Aborts an in-flight prompt "
+            "first so it stops cleanly. Updates the parent's footer subagent pill and "
+            "drops the session from `list_sessions` automatically (fires `session.deleted` "
+            "on the engine bus). Not recoverable. Idempotent — safe to re-issue. "
+            "Intended for cleaning up stale/done subagents; deleting your own session "
+            "mid-turn will orphan the conversation."
         ),
         inputSchema={
             "type": "object",
             "properties": {
                 "session_id": {
                     "type": "string",
-                    "description": "Session ID to archive (ses_...)",
+                    "description": "Session ID to delete (ses_...)",
                 },
             },
             "required": ["session_id"],
@@ -283,6 +372,82 @@ TOOLS: list[Tool] = [
         inputSchema={"type": "object", "properties": {}, "required": []},
     ),
 ]
+
+
+# ---------------------------------------------------------------------------
+# Handlers — read/query
+# ---------------------------------------------------------------------------
+
+
+async def _handle_list_agents(state: str, kind: str) -> list[TextContent]:
+    from hivemind.agents import registry
+    from hivemind.config import load_config
+
+    app_cfg = load_config()
+    rows: list[dict[str, str]] = []
+    for agent in registry.all_agents():
+        agent_state = _agent_state(agent.name, app_cfg)
+        if state != "all" and agent_state != state:
+            continue
+        if kind and agent.kind != kind:
+            continue
+        rows.append({"name": agent.name, "kind": agent.kind, "state": agent_state})
+    rows.sort(key=lambda r: r["name"])
+    return _json_text(rows)
+
+
+async def _handle_show_agent(name: str) -> list[TextContent]:
+    from hivemind.agents import registry
+    from hivemind.agents.git_analyzed import GitAnalyzedBody
+    from hivemind.agents.roster_templated import RosterTemplatedBody
+    from hivemind.agents.user_supplied import UserSuppliedBody
+    from hivemind.config import load_config
+
+    agent = registry.get(name)
+    if agent is None:
+        return _text(f"Error: agent '{name}' not found")
+
+    app_cfg = load_config()
+    detail: dict[str, Any] = {
+        "name": agent.name,
+        "kind": agent.kind,
+        "state": _agent_state(agent.name, app_cfg),
+    }
+    body = agent.body
+    if isinstance(body, GitAnalyzedBody):
+        detail["remote"] = body.params.remote
+        if body.params.commit:
+            detail["commit"] = body.params.commit
+        if body.params.ref_name:
+            detail["ref_name"] = body.params.ref_name
+    elif isinstance(body, RosterTemplatedBody):
+        detail["description"] = body.params.description
+        detail["experts"] = list(body.params.experts)
+    elif isinstance(body, UserSuppliedBody):
+        detail["filename"] = body.params.filename
+    return _json_text(detail)
+
+
+async def _handle_status() -> list[TextContent]:
+    from hivemind.agents import registry
+    from hivemind.config import load_config
+
+    app_cfg = load_config()
+    agents = registry.all_agents()
+    counts = {"enabled": 0, "disabled": 0, "unlisted": 0}
+    by_kind: dict[str, int] = {}
+    for agent in agents:
+        counts[_agent_state(agent.name, app_cfg)] += 1
+        by_kind[agent.kind] = by_kind.get(agent.kind, 0) + 1
+    return _json_text(
+        {
+            "total": len(agents),
+            "enabled": counts["enabled"],
+            "disabled": counts["disabled"],
+            "unlisted": counts["unlisted"],
+            "by_kind": by_kind,
+        }
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -372,14 +537,54 @@ async def _handle_switch_version(name: str, commit: str) -> list[TextContent]:
 # ---------------------------------------------------------------------------
 
 
-async def _handle_create_git_expert(url: str, ref: str) -> list[TextContent]:
-    from hivemind.agents.git_analyzed import create_git_expert
+async def _handle_prep_create_expert(url: str, ref: str, name: str) -> list[TextContent]:
+    from hivemind.agents.git_analyzed import prep_create_expert
 
-    name = url.rstrip("/").split("/")[-1].removesuffix(".git")
-    result = await create_git_expert(name, url, ref_name=ref)
+    if not name:
+        name = url.rstrip("/").split("/")[-1].removesuffix(".git")
+
+    result = await prep_create_expert(name, url, ref_name=ref)
     if not result.success:
         return _text(f"Error: {result.error}")
-    return _text(f"Agent '{name}' added to catalog (unlisted). Call enable_agent to deploy it.")
+
+    return _json_text(
+        {
+            "name": result.name,
+            "url": result.url,
+            "ref_name": result.ref_name,
+            "commit": result.commit,
+            "repo_dir": str(result.repo_dir),
+            "commit_dir": str(result.commit_dir),
+            "staging_root": str(result.staging_root),
+            "analysis_prompt": result.analysis_prompt,
+        }
+    )
+
+
+async def _handle_finalize_create_expert(name: str) -> list[TextContent]:
+    from hivemind.agents.git_analyzed import (
+        finalize_create_expert,
+        find_staged_prep,
+        load_prep_result,
+    )
+
+    try:
+        staging_root = find_staged_prep(name)
+    except ValueError as exc:
+        return _text(f"Error: {exc}")
+
+    if staging_root is None:
+        return _text(f"Error: no staging dir for '{name}' — call prep_create_expert first.")
+
+    prep = load_prep_result(staging_root)
+    if not prep.success:
+        return _text(f"Error: {prep.error}")
+
+    result = await finalize_create_expert(prep)
+    if not result.success:
+        return _text(f"Error: {result.error}")
+
+    return _text(f"Expert '{name}' registered at {prep.commit[:12]}. Run enable_agent to deploy.")
 
 
 async def _handle_create_team(name: str, description: str, experts: list[str]) -> list[TextContent]:
@@ -506,16 +711,18 @@ async def _handle_send_message(session_id: str, message: str) -> list[TextConten
     return _text(f"Message {state} to {session_id} (queue depth: {result.get('depth', 0)}).")
 
 
-async def _handle_archive_session(session_id: str) -> list[TextContent]:
+async def _handle_delete_session(session_id: str) -> list[TextContent]:
+    import httpx
+
     from hivemind import opencode
 
     try:
-        opencode.session_archive(session_id)
+        opencode.session_delete(session_id)
     except RuntimeError as exc:
         return _text(f"Error: {exc}")
-    return _text(
-        f"Archived {session_id}. Session preserved in DB; resume with task_id or `hivemind -- -s {session_id}`."
-    )
+    except httpx.HTTPStatusError as exc:
+        return _text(f"Error: {exc}")
+    return _text(f"Deleted session {session_id}.")
 
 
 # ---------------------------------------------------------------------------
@@ -546,30 +753,38 @@ async def _handle_redeploy() -> list[TextContent]:
 
 
 TOOL_HANDLERS: dict[str, ToolHandler] = {
+    "list_agents": _handle_list_agents,
+    "show_agent": _handle_show_agent,
+    "status": _handle_status,
     "enable_agent": _handle_enable_agent,
     "disable_agent": _handle_disable_agent,
     "delete_agent": _handle_delete_agent,
     "update_agent": _handle_update_agent,
     "switch_version": _handle_switch_version,
-    "create_git_expert": _handle_create_git_expert,
+    "prep_create_expert": _handle_prep_create_expert,
+    "finalize_create_expert": _handle_finalize_create_expert,
     "create_team": _handle_create_team,
     "add_expert_to_team": _handle_add_expert_to_team,
     "remove_expert_from_team": _handle_remove_expert_from_team,
     "list_sessions": _handle_list_sessions,
     "send_message": _handle_send_message,
-    "archive_session": _handle_archive_session,
+    "delete_session": _handle_delete_session,
     "redeploy": _handle_redeploy,
 }
 
 
 _ARG_EXTRACTORS: dict[str, Callable[[dict[str, Any]], tuple[Any, ...]]] = {
+    "list_agents": lambda a: (str(a.get("state", "all")), str(a.get("kind", ""))),
+    "show_agent": lambda a: (a["name"],),
+    "status": lambda a: (),
     "redeploy": lambda a: (),
     "enable_agent": lambda a: (a["name"],),
     "disable_agent": lambda a: (a["name"],),
     "delete_agent": lambda a: (a["name"], bool(a.get("purge_memory", False))),
     "update_agent": lambda a: (a["name"], bool(a.get("skip_analysis", False))),
     "switch_version": lambda a: (a["name"], a["commit"]),
-    "create_git_expert": lambda a: (a["url"], a.get("ref", "")),
+    "prep_create_expert": lambda a: (a["url"], str(a.get("ref", "")), str(a.get("name", ""))),
+    "finalize_create_expert": lambda a: (a["name"],),
     "create_team": lambda a: (a["name"], a["description"], a["experts"]),
     "add_expert_to_team": lambda a: (a["team"], a["expert"]),
     "remove_expert_from_team": lambda a: (a["team"], a["expert"]),
@@ -580,7 +795,7 @@ _ARG_EXTRACTORS: dict[str, Callable[[dict[str, Any]], tuple[Any, ...]]] = {
         int(a.get("limit", 50)),
     ),
     "send_message": lambda a: (a["session_id"], a["message"]),
-    "archive_session": lambda a: (a["session_id"],),
+    "delete_session": lambda a: (a["session_id"],),
 }
 
 

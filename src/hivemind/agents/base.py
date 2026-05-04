@@ -93,19 +93,33 @@ class Agent:
     def description(self) -> str:
         return self.body.description()
 
-    def render_for_deploy(self) -> str:
-        """Body + appended memory-instructions section.
+    @property
+    def memory_enabled(self) -> bool:
+        """Whether to scaffold an opencode memory tree and append the memory section.
 
-        ``user_supplied`` agents skip the memory append because the
-        user owns the entire markdown — injecting hivemind's memory
-        rules into a hand-authored agent file would clobber the
-        author's intent. They can opt in by writing the rules into
-        their file directly.
+        Bodies opt out (or in) by exposing a ``memory_enabled`` callable
+        or boolean. ``UserSuppliedBody`` reads ``memory:`` from its
+        frontmatter and defaults to ``False`` (user-authored agents are
+        external to hivemind's expert/team memory model). Bodies that
+        don't expose the attribute default to ``True`` — this preserves
+        current behavior for ``git_analyzed`` and ``roster_templated``.
+        """
+        flag = getattr(self.body, "memory_enabled", True)
+        return bool(flag() if callable(flag) else flag)
+
+    def render_for_deploy(self) -> str:
+        """Body + (optionally) appended memory-instructions section.
+
+        Memory section is appended only when ``self.memory_enabled`` is
+        true — see :pyattr:`memory_enabled`. By default ``user_supplied``
+        agents skip the append (their author owns the prompt verbatim),
+        but a user can opt in by writing ``memory: true`` in their
+        frontmatter.
         """
         from hivemind.agents.memory import render_memory_section
 
         body = self.body.render()
-        if self.kind == "user_supplied":
+        if not self.memory_enabled:
             return body
         memory_section = render_memory_section(self.name, self.kind)
         return body.rstrip() + "\n\n" + memory_section
@@ -116,11 +130,7 @@ class Agent:
 
         from hivemind.agents.memory import ensure_agent_memory
 
-        # Memory tree is hivemind-managed; ``user_supplied`` agents are
-        # external to hivemind's expert/team mental model, so we don't
-        # scaffold one for them. They can manage their own state under
-        # whatever path they prefer.
-        if self.kind != "user_supplied":
+        if self.memory_enabled:
             ensure_agent_memory(self.name)
 
         content = opencode.format_agent(

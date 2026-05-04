@@ -125,6 +125,7 @@ _OPENCODE_CODE_PATCHES = [
     "0013-Switch-HTTP-listener-to-native-Bun.serve.patch",
     "0015-Per-client-WebSocket-presence-and-focus-tracking.patch",
     "0016-Extend-reload-agents-to-invalidate-Skill-and-Command.patch",
+    "0017-TUI-SSE-loop-catch-transient-errors-and-reconnect.patch",
 ]
 external_engines = module_extension(
     implementation = _ext_impl,

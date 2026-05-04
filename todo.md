@@ -2,31 +2,58 @@
 
 Ordered top-to-bottom by what's most actionable. Drop or refile items that no longer match reality.
 
-- [ ] **MCP `switch_version(name, commit)` tool** — wrap the existing async `switch_version` in `agents/git_analyzed.py:502` with a thin tool in `mcp/tools.py`. Plumbing only.
-- [ ] **Finish `RuntimeContext` dispatch** — `runtime.py` defines three modes (`attached` / `detached` / `test`), but the two callers at `opencode.py:488` and `opencode.py:515` still branch on `ctx.server_url is None`. Convert to explicit `ctx.mode` dispatch so test mode is distinguishable from detached.
-- [ ] **User-supplied agents in `opencode/agents/`** — drop a markdown file in `/Users/santos/projects/hivemind_opencode/opencode/agents/`, run `hivemind redeploy`, and the agent gets symlinked into opencode's `agents/` and tracked in the catalog. Likely a third agent kind alongside `git_analyzed` and `roster_templated` — body-type "user_supplied" or similar — that just copies the file through with no AI analysis.
-- [ ] **Verify "enable without restart" still works end-to-end** — `notify_instance_reload()` POSTs `/global/reload-agents` (patch 0004) which calls `Agent.reloadAll()` and re-scans `agents/*.md`. Both CLI (`cli.py:64-68`) and TUI (`tui/app.py:80-92`) register listeners that fire on every mutation. User reports they recall this working previously and may now be regressed; needs an end-to-end test (enable expert via `hivemind tui`, immediately call `Task(subagent_type=...)` in an attached opencode TUI without restarting).
+- [ ] **Verify "enable without restart" works end-to-end** — patch 0016 (`Extend reload-agents to invalidate Skill and Command state`) extends `/global/reload-agents` so it now also invalidates Skill + Command caches in addition to Agent state. The new engine binary is in place. To verify, restart your current opencode session, then drop a SKILL.md / command / agent file in `opencode/{skills,commands,agents}/`, run `hivemind redeploy`, and confirm it shows up without another restart.
 
 ---
 
 ## Larger conversations needed
 
-- [ ] **Memory architecture** — orchestrator memory rules, memory daemon/compaction, expert memory hygiene. Need a planning conversation before action. Touches: `_orchestrator/` directory scaffolding (currently created by `lifecycle.py:249` but no rules text in `HIVEMIND.md` instructs the orchestrator to use it), expert memory directives in deployed `agent.md` files, possible background agent for memory consolidation.
+- [ ] **Memory architecture** — orchestrator memory rules, memory daemon/compaction, expert memory hygiene. Decisions surfaced so far:
+  - Provider model: option (b) "no external deps, all providers managed by opencode only." Subagent model preferred over external daemon — nothing runs without orchestrator insight, and a session-tied daemon can be inspected/killed via the TUI.
+  - Concern: a rogue agent doing work without our knowledge. Mitigations: explicit-commands-only, no shell execution, event-triggered (not always-on).
+  - Trigger model: event-based, e.g. "short-term memory exceeds N lines → spawn the daemon agent for compaction."
+  - Touches: `_orchestrator/` directory scaffolding (created by `lifecycle.py:249`, no rules text in `HIVEMIND.md` instructs the orchestrator to use it yet); expert memory directives in deployed `agent.md` files; possible background agent for memory consolidation.
+  - Still need: full design conversation before implementation.
 
 ---
 
 ## Closed
 
-- [x] **MCP cross-session reference tool** — done. `send_message` MCP tool at `mcp/tools.py:222` POSTs to per-session inbox (patch 0007). Inbox queues if busy, delivers when idle. `list_sessions` finds targets.
-- [x] **Background agents** — done via `Task(background=true)` in patch 0010 (formerly 0011). Result buffered on parent session, retrieved via `read_task_result` tool. Cascade cancellation when parent is cancelled.
-- [x] **Jinja templates with editable AI-generated sections** — done via `expertise.md` and `description.md`. Both are preserved across `hivemind expert update` runs (`git.py:163-171`, `analysis.py:46`). Edit them by hand, the next AI re-analysis won't overwrite.
+### Patch hygiene
+
+- [x] **Phase 1 patch consolidation** — squashed 18 code patches → 13 (commit `7d40f1d`). 0019+0020 → WS presence; 0008+0009 → Session.fork extensions; 0011+0013+0015+0016 → Background Task lifecycle.
+
+### Skills / commands / user agents
+
+- [x] **Skills wiring (`opencode/skills/`)** — drop `<name>/SKILL.md`, run `hivemind redeploy`, opencode picks it up. Symlinked into `~/.config/opencode/skills/` on every redeploy. (`fab5b1e`)
+- [x] **Commands deployed by `redeploy`** — was previously only deployed by `hivemind init`. Now `redeploy_all_agents()` re-runs `init_dirs()` so commands stay in sync. (`fab5b1e`)
+- [x] **User-supplied agents in `opencode/agents/`** — drop a markdown file, run `hivemind redeploy`, agent lands as a `user_supplied` catalog entry (unlisted). `enable_agent` to deploy. (`fab5b1e`)
+- [x] **`hivemind-cross-session` skill** — pulled cross-session messaging out of HIVEMIND.md into a load-on-demand skill.
+- [x] **`hivemind-expert-management` skill** — catalog states + mutations + workflows pulled out of HIVEMIND.md into a skill. HIVEMIND.md now points to it.
+- [x] **`/hivemind_generate_team` slash command** — scopes a worktree, finds tech deps, ensures relevant experts exist + enabled, bundles them into a project team.
+- [x] **`/hivemind_sync` slash command** — lighter sibling of `/hivemind_generate_team`: scopes the worktree (including single-tool version pins like `.bazelversion`), proposes which experts to enable, create, or `switch_version` so the catalog matches the project's pinned versions; executes only on confirmation. No team is created.
+- [x] **`/list_sessions` slash command** — renders a tree of live sessions and their subagents on demand.
+- [x] **HIVEMIND.md trim** — 231 → ~175 lines after extracting cross-session and catalog mechanics into the two skills above.
+
+### MCP tools
+
+- [x] **MCP `switch_version(name, commit)` tool** — wraps the existing async `switch_version` in `agents/git_analyzed.py`. (`fab5b1e`)
+- [x] **MCP cross-session reference tool** — done via `send_message` (`mcp/tools.py:222`) backed by per-session inbox (patch 0007).
+- [x] **MCP `delete_session(session_id)` tool** — hard-removes a subagent session (recursively, after aborting any in-flight prompt). Fires `session.deleted` so the parent's footer subagent pill auto-decrements and `list_sessions` no longer shows it. Replaces the broken `archive_session` design that only flipped a never-read flag.
+
+### Engine
+
+- [x] **`/global/reload-agents` covers skills + commands** — patch 0016 extends the endpoint so adding a SKILL.md / commands/*.md doesn't require an opencode restart.
+- [x] **Background agents** — `Task(background=true)` in patch 0010, results buffered on parent session and pulled via `read_task_result`. Cascade cancellation when parent aborts.
+
+### Code quality
+
+- [x] **Finish `RuntimeContext` dispatch** — `opencode.py:notify_instance_reload()` and `_server_url()` now dispatch on `ctx.mode` with `assert_never` exhaustiveness instead of branching on `ctx.server_url is None`. Test mode is now distinguishable from detached.
+- [x] **Jinja templates with editable AI-generated sections** — `description.md` and `expertise.md` are preserved across `update_agent` runs (`git.py:163-171`).
 
 ---
 
 ## Dropped / reframed
 
-- ~~**Rename `commands` → `skills`**~~ — these are NOT the same thing in opencode. `Command` (`dev/opencode/.../command/index.ts`) is the slash-command system loaded from `/.opencode/command*/`. `Skill` (`dev/opencode/.../skill/index.ts`) is a separate system loaded from `skills/**/SKILL.md`. Renaming would lose the distinction. If the goal is to expose hivemind agents as either user-invocable, file a fresh item for "expose hivemind agents as opencode skills" or "as opencode commands."
-- ~~**opencode file watcher on `agents/**/*.md`**~~ — superseded. `/global/reload-agents` (patch 0004) handles the use case. If "enable without restart" turns out to be regressed (see active item above), fix it there rather than introducing a watcher.
-
-
-add way to remove subagents
+- ~~**Rename `commands` → `skills`**~~ — these are NOT the same thing in opencode. `Command` is the slash-command system loaded from `/.opencode/command*/`. `Skill` is a separate system loaded from `**/SKILL.md`. Renaming would lose the distinction.
+- ~~**opencode file watcher on `agents/**/*.md`**~~ — superseded. `/global/reload-agents` (patch 0004 + 0016 extension) handles the use case across agents, skills, and commands. If a regression appears, fix it there rather than introducing a watcher.

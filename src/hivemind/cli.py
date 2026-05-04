@@ -10,6 +10,7 @@ scattered ``notify_opencode_reload()`` calls the pre-refactor CLI had.
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 from datetime import UTC
 from typing import Any
@@ -390,6 +391,100 @@ def expert_add(
     console.print(
         Panel(
             f"[success]Expert '{name}' added to catalog.[/success]\n"
+            "Run [heading]hivemind expert enable " + name + "[/heading] to deploy it.",
+            border_style="green",
+        )
+    )
+
+
+@expert_app.command("prep")
+def expert_prep(
+    url: str = typer.Argument(..., help="Git remote URL"),
+    ref: str | None = typer.Option(None, "--ref", help="Tag, branch, or commit (optional)"),
+    name: str | None = typer.Option(None, "--name", help="Expert name (defaults to repo basename)"),
+) -> None:
+    """Stage 1: clone the repo and render the analysis prompt.
+
+    Outputs a JSON blob with the staging paths and the prompt text. The
+    caller — an opencode subagent doing the analysis in-session, or a
+    human writing the 6 expected files by hand — populates ``commit_dir``,
+    then runs ``hivemind expert finalize <name>`` to land the catalog
+    entry. For the standard one-shot create flow use ``hivemind expert
+    add`` instead — it composes prep + subprocess analysis + finalize in
+    a single call.
+    """
+    from hivemind.agents.git_analyzed import prep_create_expert
+
+    if name is None:
+        name = url.rstrip("/").split("/")[-1].removesuffix(".git")
+
+    result = asyncio.run(prep_create_expert(name, url, ref_name=ref or ""))
+
+    if not result.success:
+        console.print(f"[error]Error: {escape(str(result.error))}[/error]")
+        raise typer.Exit(1)
+
+    # Plain stdout — subagents parse this, no Rich markup.
+    print(  # noqa: T201 — intentional: machine-readable stdout for subagent consumption
+        json.dumps(
+            {
+                "name": result.name,
+                "url": result.url,
+                "ref_name": result.ref_name,
+                "commit": result.commit,
+                "repo_dir": str(result.repo_dir),
+                "commit_dir": str(result.commit_dir),
+                "staging_root": str(result.staging_root),
+                "analysis_prompt": result.analysis_prompt,
+            },
+            indent=2,
+        )
+    )
+
+
+@expert_app.command("finalize")
+def expert_finalize(
+    name: str = typer.Argument(..., help="Expert name (must match a staging dir from `expert prep`)"),
+) -> None:
+    """Stage 3: validate the staged files, move them into place, register.
+
+    Locates the staging dir for ``name`` (created by ``hivemind expert
+    prep``), validates that all 6 expected analysis files were written
+    into it, then moves the cloned repo + expert dir to their final
+    cache locations and registers the catalog entry as *unlisted*. Run
+    ``hivemind expert enable <name>`` afterwards to deploy.
+    """
+    from hivemind.agents.git_analyzed import (
+        finalize_create_expert,
+        find_staged_prep,
+        load_prep_result,
+    )
+
+    try:
+        staging_root = find_staged_prep(name)
+    except ValueError as exc:
+        console.print(f"[error]Error: {escape(str(exc))}[/error]")
+        raise typer.Exit(1) from exc
+
+    if staging_root is None:
+        console.print(
+            f"[error]Error: no staging dir for '{name}' — run `hivemind expert prep <url> --name {name}` first.[/error]"
+        )
+        raise typer.Exit(1)
+
+    prep = load_prep_result(staging_root)
+    if not prep.success:
+        console.print(f"[error]Error: {escape(str(prep.error))}[/error]")
+        raise typer.Exit(1)
+
+    result = asyncio.run(finalize_create_expert(prep))
+    if not result.success:
+        console.print(f"[error]Error: {escape(str(result.error))}[/error]")
+        raise typer.Exit(1)
+
+    console.print(
+        Panel(
+            f"[success]Expert '{name}' registered at {prep.commit[:12]}.[/success]\n"
             "Run [heading]hivemind expert enable " + name + "[/heading] to deploy it.",
             border_style="green",
         )
