@@ -145,74 +145,138 @@ under `{{ teams_path }}/<team>/expert-<name>/notes.md`.
 
 ## Catalog management
 
-Hivemind exposes the catalog through MCP tools. For read-only
-inspection: `list_agents` (filterable by state and kind), `show_agent`
-(per-agent detail including kind-specific body params), and `status`
-(catalog totals and per-kind breakdown). Mutations: `enable_agent`,
-`disable_agent`, `update_agent`, `switch_version`, `create_team`,
-`add_expert_to_team`, `remove_expert_from_team`, `delete_agent`,
-`redeploy`. See your tool inventory and the
-`hivemind-expert-management` skill for full reference, lifecycle
-states, and common workflows.
+Hivemind exposes the catalog through MCP tools.
 
-The create pipeline (`prep_create_expert` + `finalize_create_expert`)
-is also exposed as MCP tools, but they're scoped to the
-`hivemind-expert-curator` subagent — see "Adding a git-analyzed expert"
-below for how the orchestrator drives that flow.
+**Read-only**: `list_agents` (filterable by state and kind),
+`show_agent` (per-agent detail including kind-specific body params),
+`status` (catalog totals and per-kind breakdown).
 
-## Adding a git-analyzed expert
+**Fast lifecycle mutations** (no AI, sub-second): `enable_agent`,
+`disable_agent`, `delete_agent`, `redeploy`.
 
-Two paths, depending on where you're invoking from:
+**Team roster mutations** (fast, no AI): `add_expert_to_team`,
+`remove_expert_from_team`.
 
-### From a real terminal — `hivemind expert add` (CLI / Textual TUI)
+**Slow operations** — adding an expert, updating an expert, switching
+an expert's version, and creating a new team — are not direct MCP
+tools. They go through the `hivemind-expert-curator` subagent. See
+"Adding, updating, or switching a git-analyzed expert; creating a
+team" below. The underlying prep/finalize MCP tools (four pairs, one
+per operation) are scoped to the curator's permission allowlist; you
+don't call them yourself.
 
-```bash
-hivemind expert add https://github.com/foo/bar [--ref v1.2.3]
-```
+See the `hivemind-expert-management` skill for full reference,
+lifecycle states, and common workflows.
 
-One-shot. Clones the repo, runs the AI analysis as a subprocess, and
-registers the catalog entry. Use from a real shell — works without any
-opencode session running. Best for scripted bulk imports and CI.
+## Adding, updating, or switching a git-analyzed expert; creating a team
 
-**Don't call this from a chat-TUI orchestrator session via Bash** —
-the subprocess takes 2–5 minutes and the surrounding tool call will
-time out.
+All four operations spawn the `hivemind-expert-curator` subagent in
+background mode. The curator does the slow AI-analysis stage in its own
+session — no MCP request timeout. Each Task call returns a `task_id`
+immediately; collect the result with `read_task_result(task_id=...)`
+once opencode reports the task ready in a `<system-reminder>` block.
 
-### From a chat-TUI orchestrator session — `hivemind-expert-curator` subagent
+### Add a new expert
 
 ```
 Task(
   subagent_type="hivemind-expert-curator",
   background=true,
-  description="<3-5 word title>",
-  prompt="Add expert from https://github.com/foo/bar (ref v1.2.3 if relevant)"
+  description="add <name>",
+  prompt="Add expert from https://github.com/foo/bar with ref v1.2.3"
 )
 ```
 
-Returns immediately with `task_id`. The curator runs in the background:
-calls `prep_create_expert` to clone the repo and set up staging,
-performs the analysis **in its own session** using Read/Grep/Glob/Write,
-then calls `finalize_create_expert` to register the catalog entry. No
-MCP timeout because the analysis isn't going through MCP. Pick up the
-result later with `read_task_result(task_id=...)`.
+The curator clones the repo, performs the analysis in-session, and
+registers the catalog entry as *unlisted*. Call `enable_agent(name)`
+afterwards (fast MCP) to deploy.
 
-The curator's analysis instructions are baked into its deployed prompt
-(rendered from `templates/agents/hivemind-expert-curator.md.j2` at
-`hivemind redeploy` time, which itself includes the canonical
-`templates/prompts/create_expert.md.j2`). Reading
-`~/.config/opencode/agents/hivemind-expert-curator.md` shows you exactly
-what the curator does and what 6 files it produces.
+### Update an existing expert to the latest upstream commit
 
-Both paths produce identical `git_analyzed` catalog entries — they
-differ only in **who** runs the analysis stage (subprocess vs.
-in-session subagent).
+```
+Task(
+  subagent_type="hivemind-expert-curator",
+  background=true,
+  description="update expert-foo",
+  prompt="Update expert-foo"
+)
+```
 
-To bootstrap or audit a project's expert catalog, invoke
-`/hivemind_sync` (proposes which experts to enable, create, or
-`switch_version` so the catalog matches the cwd's pinned versions —
-e.g. `.bazelversion` 8.5.1 → `expert-bazel` @ 8.5.1; executes only
-on confirmation) or `/hivemind_generate_team` (same scoping plus a
-project-scoped team bundle at the end, end-to-end).
+The curator fetches origin, resolves the latest commit, re-analyzes
+(preserving hand-edited `description.md` + `expertise.md`), and rotates
+the agent's HEAD. Auto-redeployed if currently enabled.
+
+### Switch an expert to a specific commit / tag / branch
+
+```
+Task(
+  subagent_type="hivemind-expert-curator",
+  background=true,
+  description="switch expert-bazel to 8.5.1",
+  prompt="Switch expert-bazel to 8.5.1"
+)
+```
+
+Refs (tags, branches, short SHAs) are resolved against the local clone.
+If the target commit's analysis docs are already cached locally (e.g.,
+the agent was previously switched to it), the curator skips analysis
+entirely — sub-second total. Otherwise the curator does a fresh
+in-session analysis. Auto-redeployed if currently enabled.
+
+### Create a team-lead agent
+
+```
+Task(
+  subagent_type="hivemind-expert-curator",
+  background=true,
+  description="create team my-stack",
+  prompt="Create team my-stack with experts expert-bazel, expert-pydantic, expert-rich and description 'Build + Python tooling for the my-stack project'"
+)
+```
+
+The curator reads each roster member's `summary.md` and writes one
+`## expert-<name>` section into the team's directory. The team-lead
+agent's deployed prompt assembles those sections into a routing
+reference. Lands as **unlisted**; call `enable_agent(name)`
+afterwards to deploy. Roster mutations on an existing team
+(`add_expert_to_team` / `remove_expert_from_team`) stay direct-MCP —
+they don't need the curator.
+
+### Crawl external docs for an expert
+
+```
+Task(
+  subagent_type="hivemind-crawler",
+  background=true,
+  description="crawl docs for expert-foo",
+  prompt="Crawl https://docs.foo.com for expert-foo with max 100 pages"
+)
+```
+
+A separate worker subagent (`hivemind-crawler`) drives the headless
+browser / sitemap crawl pipeline and writes clean markdown to
+`~/.cache/hivemind/external_docs/<agent>/`. Expert agents read from
+that path natively (it's in their `external_directory` allowlist),
+so once the crawl finishes the new docs are immediately consultable
+— no separate enable / redeploy needed. Multi-minute crawls are
+fine; the work runs inside the subagent's session lifetime, not an
+MCP request. Drop the `with max <N> pages` clause for an
+uncapped crawl (rare — most docs sites are best capped).
+
+### Source of truth
+
+The curator's behaviour is defined by
+`src/hivemind/templates/agents/hivemind-expert-curator.md.j2` and
+regenerated on every `hivemind redeploy`. Reading
+`~/.config/opencode/agents/hivemind-expert-curator.md` shows you
+exactly what the curator does for each intent.
+
+To bootstrap or audit a project's expert catalog in one shot, invoke
+`/hivemind_sync` (proposes which experts to enable, create, or switch
+so the catalog matches the cwd's pinned versions — e.g. `.bazelversion`
+8.5.1 → `expert-bazel` @ 8.5.1; executes only on confirmation) or
+`/hivemind_generate_team` (same scoping plus a project-scoped team
+bundle at the end, end-to-end).
 
 For cross-session messaging (`list_sessions`, `send_message`), see
 the `hivemind-cross-session` skill.

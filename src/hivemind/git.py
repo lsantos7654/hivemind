@@ -26,6 +26,8 @@ __all__ = [
     "commit_analysis_results",
     "create_staging_dir",
     "read_analysis_error",
+    "resolve_commit_provenance",
+    "resolve_default_branch",
     "resolve_latest_commit",
     "resolve_ref",
     "revert_checkout",
@@ -110,6 +112,73 @@ async def clone_from_remote(
             return False
 
     return True
+
+
+async def resolve_commit_provenance(repo_dir: Path, commit: str) -> str | None:
+    """Resolve a commit's most-meaningful ref name.
+
+    Tries ``git describe --tags --exact-match <commit>`` first — when
+    the commit IS at a tagged release, that tag is the most useful
+    catalog identifier (lets ``/hivemind_sync`` compare against project
+    pins like ``8.5.1`` cleanly). Falls back to
+    :func:`resolve_default_branch` when the commit isn't at a tag (the
+    common case when an expert was added at default-branch HEAD without
+    ``--ref``). Returns ``None`` if neither resolution succeeds.
+    """
+    proc = await asyncio.create_subprocess_exec(
+        "git",
+        "describe",
+        "--tags",
+        "--exact-match",
+        commit,
+        cwd=str(repo_dir),
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.DEVNULL,
+    )
+    try:
+        stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=GIT_LOCAL_TIMEOUT)
+    except (TimeoutError, OSError):
+        stdout = b""
+    if proc.returncode == 0:
+        tag = stdout.decode().strip()
+        if tag:
+            return tag
+    return await resolve_default_branch(repo_dir)
+
+
+async def resolve_default_branch(repo_dir: Path) -> str | None:
+    """Resolve the upstream default branch name (e.g. ``main``, ``master``).
+
+    Reads ``refs/remotes/origin/HEAD`` (a symbolic ref set by
+    ``git clone`` when origin reports its default branch) and strips the
+    ``origin/`` prefix. Returns ``None`` if the symbolic ref isn't set
+    (offline clone, shallow clone without fetch, or detached-head
+    weirdness).
+
+    Used by ``prep_create_expert`` to populate ``ref_name`` for adds that
+    didn't pass an explicit ``--ref`` — ensures the catalog always
+    records provenance ("we cloned default-branch HEAD") rather than
+    leaving ``ref_name=""`` and forcing later consumers to improvise via
+    ``git describe``.
+    """
+    proc = await asyncio.create_subprocess_exec(
+        "git",
+        "symbolic-ref",
+        "--short",
+        "refs/remotes/origin/HEAD",
+        cwd=str(repo_dir),
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.DEVNULL,
+    )
+    try:
+        stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=GIT_LOCAL_TIMEOUT)
+    except (TimeoutError, OSError):
+        return None
+    if proc.returncode != 0:
+        return None
+    output = stdout.decode().strip()
+    output = output.removeprefix("origin/")
+    return output or None
 
 
 async def resolve_latest_commit(repo_dir: Path) -> str | None:

@@ -72,11 +72,14 @@ For each `(tech, pinned_version)`:
      exact alignment with the project's pin.
    - **unlisted / disabled** (in catalog) — `enable_agent` candidate.
      If `ref_name` also drifts from pin, queue `switch_version` first.
-   - **missing** — `create_git_expert(url, ref="<pinned_version>")`
-     candidate. The optional `ref` argument pins the new expert at
-     analysis time so it lands at the right version, not `main`.
+   - **missing** — `hivemind-expert-curator` spawn candidate. The
+     curator clones the upstream repo, performs the analysis in its
+     own session, and registers the catalog entry as *unlisted*. The
+     `ref` you pass through the curator's prompt pins the new expert
+     at analysis time so it lands at the right version, not `main`.
 
-For missing experts, determine the upstream repo URL. There is no
+For missing experts, determine the upstream repo URL — you'll pass
+it (and the ref) into the curator's prompt in Step 4. There is no
 curated mapping table — figure it out per call:
 
 - npm packages → `package.json`'s `repository` field, or
@@ -91,20 +94,21 @@ curated mapping table — figure it out per call:
   `repository`
 
 When in doubt, surface the URL in the proposal and let the user
-confirm before calling `create_git_expert`.
+confirm before spawning the curator.
 
-**Tag format:** `switch_version` and `create_git_expert.ref` both
-accept any ref that resolves in the cloned repo — tags are fetched
-first so freshly-pushed releases work. For Bazel (tags as `8.5.1`)
-pass the bare version. For repos that prefix with `v` (e.g.
-`v0.7.3`) pass the prefixed form. Try the literal version first;
-if `switch_version` rejects it as not-found, retry with the `v`
-prefix.
+**Tag format:** the `ref` passed to `switch_version` (or to the
+curator via its prompt) accepts any ref that resolves in the cloned
+repo — tags are fetched first so freshly-pushed releases work. For
+Bazel (tags as `8.5.1`) pass the bare version. For repos that prefix
+with `v` (e.g. `v0.7.3`) pass the prefixed form. Try the literal
+version first; if `switch_version` rejects it as not-found, retry
+with the `v` prefix.
 
 ## Step 3 — Propose
 
 Render the result as a single grouped report and **stop**. Do not
-call `create_git_expert` / `enable_agent` / `switch_version` yet.
+spawn the curator and do not call `enable_agent` / `switch_version`
+yet.
 
 Format:
 
@@ -139,30 +143,60 @@ that subset. If they say "no", do nothing.
 
 ## Step 4 — Execute on confirmation
 
-Run the queued actions, parallelizing `create_git_expert` calls
-(several minutes each for big repos). Order within a single expert:
-`switch_version` before `enable_agent` (the deployed file should
-reflect the pinned version, not the prior HEAD).
+Spawn all curator subagents and run all fast direct-MCP calls **in
+parallel** (single message, multiple tool calls). The curator handles
+the slow operations (switch + create) — each runs in its own session,
+returns a `task_id` immediately, and you collect the results as they
+finish. The fast operations (`enable_agent` for in-catalog matches)
+run alongside.
 
 ```
-switch_version(name=..., commit="<pinned_version>")  # version drift
-create_git_expert(url=..., ref="<pinned_version>")   # missing
-enable_agent(name=...)                               # after the above
+# All in one message — opencode runs them concurrently:
+
+# Switch existing experts to project pin (curator handles cached vs
+# fresh-analysis paths transparently — cached is sub-second, fresh
+# runs in-session):
+Task(
+  subagent_type="hivemind-expert-curator",
+  background=true,
+  description="switch <name> to <ref>",
+  prompt="Switch <name> to <ref>"
+)
+
+# Add missing experts (curator clones + analyzes in-session, registers
+# the catalog entry as unlisted):
+Task(
+  subagent_type="hivemind-expert-curator",
+  background=true,
+  description="add <name>",
+  prompt="Add expert from <url> with ref <pinned_version>"
+)
+
+# Fast direct-MCP for in-catalog matches that just need deployment:
+enable_agent(name=...)
 ```
 
-`create_git_expert` lands new experts as **unlisted**; queue an
-`enable_agent` after each.
+Curator spawns return `task_id` immediately. As each finishes opencode
+shows the ready ID in a `<system-reminder>`; collect each via
+`read_task_result(task_id=...)`. Newly-created experts land as
+*unlisted*, so queue an `enable_agent(name=...)` after each successful
+add.
+
+Order within a single expert: switch first, then enable. The deployed
+file should reflect the pinned version, not the prior HEAD.
 
 ## Step 5 — Report
 
 Compact summary, organized by what changed:
 
 ```
-✓ Already correct:    expert-bun, expert-vitest
-✓ Switched version:   expert-bazel (8.5.0 → 8.5.1)
-✓ Newly enabled:      expert-rich, expert-pydantic
-✓ Newly created:      expert-foo (analysis pending — 2-3 min)
-✗ Skipped:            <tech> (no upstream URL provided)
+✓ Already correct:                 expert-bun, expert-vitest
+✓ Switched (cached, instant):      expert-bazel-lib, expert-jinja
+✓ Switched (analyzed in-session):  expert-pydantic (8.5.0 → 8.5.1)
+✓ Newly enabled:                   expert-rich
+… Newly created:                   expert-foo (curator spawned: ses_xxx —
+                                      collect with read_task_result, then enable_agent)
+✗ Skipped:                         <tech> (no upstream URL provided)
 ```
 
 (No team is created. Use `/hivemind_generate_team` if you also want

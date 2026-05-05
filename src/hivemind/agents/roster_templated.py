@@ -17,12 +17,15 @@ the team before modifying its roster.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import shutil
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from hivemind import opencode
 from hivemind.config import (
+    STAGING_DIR,
     TEAMS_DIR,
     get_expert_dir,
 )
@@ -30,12 +33,13 @@ from hivemind.config import (
     expert_names as get_all_expert_names,
 )
 from hivemind.constants import DESCRIPTION_FILENAME
-from hivemind.git import clone_from_remote
+from hivemind.git import clone_from_remote, create_staging_dir
 from hivemind.hooks import afire_post_mutation, fire_post_mutation
 from hivemind.models import (
     AddExpertsResult,
     ExpertError,
     OperationResult,
+    PrepCreateTeamResult,
     RosterTemplatedParams,
 )
 from hivemind.templates import (
@@ -58,11 +62,17 @@ __all__ = [
     "create_expert_notes_stub",
     "create_team",
     "create_team_lead_notes_stub",
+    "finalize_create_team",
+    "find_staged_create_team_prep",
+    "load_create_team_prep_result",
+    "prep_create_team",
     "refresh_expert_notes_header",
     "refresh_team_lead_notes_header",
     "remove_expert_from_team",
     "update_team",
 ]
+
+_PREP_META_FILENAME = "prep.json"
 
 _SECTION_BATCH_SIZE = 15
 
@@ -348,50 +358,226 @@ def _require_enabled(team_name: str) -> OperationResult | None:
     return None
 
 
+def find_staged_create_team_prep(name: str) -> Path | None:
+    """Locate the create_team-intent staging dir for ``name``.
+
+    Filters glob hits by the ``intent`` field in each candidate's
+    ``prep.json``. Raises ``ValueError`` if multiple match.
+    """
+    if not STAGING_DIR.is_dir():
+        return None
+    candidates: list[Path] = []
+    for p in sorted(STAGING_DIR.glob(f"{name}-*")):
+        if not p.is_dir():
+            continue
+        meta_path = p / _PREP_META_FILENAME
+        if not meta_path.is_file():
+            continue
+        try:
+            data = json.loads(meta_path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            continue
+        if data.get("intent") == "create_team":
+            candidates.append(p)
+    if not candidates:
+        return None
+    if len(candidates) > 1:
+        msg = (
+            f"Multiple staging dirs match '{name}' with intent 'create_team': "
+            f"{[c.name for c in candidates]}. Remove stale ones and retry."
+        )
+        raise ValueError(msg)
+    return candidates[0]
+
+
+def load_create_team_prep_result(staging_root: Path) -> PrepCreateTeamResult:
+    """Reconstruct a ``PrepCreateTeamResult`` from a create_team staging dir."""
+    meta_path = staging_root / _PREP_META_FILENAME
+    if not meta_path.is_file():
+        return PrepCreateTeamResult(
+            success=False,
+            error=f"No prep metadata at {meta_path}",
+        )
+    meta = json.loads(meta_path.read_text(encoding="utf-8"))
+    return PrepCreateTeamResult(
+        success=True,
+        name=meta["name"],
+        description=meta["description"],
+        experts=list(meta["experts"]),
+        expert_paths=list(meta["expert_paths"]),
+        staging_root=staging_root,
+    )
+
+
+async def prep_create_team(
+    name: str,
+    description: str,
+    experts: list[str],
+) -> PrepCreateTeamResult:
+    """Stage 1 of the roster_templated team-creation pipeline.
+
+    Validates the team name is free, validates every expert exists,
+    creates a staging directory under ``STAGING_DIR``, and returns a
+    ``PrepCreateTeamResult`` with per-expert input/output paths the
+    analyzer (curator subagent or subprocess composition) consumes to
+    write one ``## expert-<name>`` section per expert.
+
+    The staging directory holds the per-expert section files only;
+    ``finalize_create_team`` moves them into ``TEAMS_DIR/<name>/`` and
+    writes the description + notes stubs there. This separates the AI
+    work (per-expert section writing, slow) from the catalog mutation
+    (fast, atomic).
+    """
+    from hivemind.agents import registry
+
+    if registry.get(name) is not None:
+        return PrepCreateTeamResult(success=False, error=f"Team '{name}' already exists")
+
+    all_experts = set(get_all_expert_names()) | {a.name for a in registry.by_kind("git_analyzed")}
+    for expert in experts:
+        if expert not in all_experts:
+            return PrepCreateTeamResult(success=False, error=f"Expert '{expert}' does not exist")
+
+    validation = opencode.validate_engine()
+    if not validation.success:
+        return PrepCreateTeamResult(success=False, error=validation.error)
+
+    staging_root = create_staging_dir(name)
+    succeeded = False
+    try:
+        expert_paths: list[dict[str, str]] = []
+        for expert_name in experts:
+            summary_path = get_expert_dir(expert_name) / "HEAD" / "summary.md"
+            section_path = staging_root / f"expert-{expert_name}.md"
+            expert_paths.append(
+                {
+                    "name": expert_name,
+                    "summary_path": str(summary_path),
+                    "section_path": str(section_path),
+                }
+            )
+
+        (staging_root / _PREP_META_FILENAME).write_text(
+            json.dumps(
+                {
+                    "intent": "create_team",
+                    "name": name,
+                    "description": description,
+                    "experts": list(experts),
+                    "expert_paths": expert_paths,
+                },
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+
+        succeeded = True
+        return PrepCreateTeamResult(
+            success=True,
+            name=name,
+            description=description,
+            experts=list(experts),
+            expert_paths=expert_paths,
+            staging_root=staging_root,
+        )
+    finally:
+        if not succeeded:
+            shutil.rmtree(str(staging_root), ignore_errors=True)
+
+
+async def finalize_create_team(prep: PrepCreateTeamResult) -> OperationResult:
+    """Stage 3 of the roster_templated team-creation pipeline.
+
+    Validates that every staged ``expert-<name>.md`` section file
+    exists in ``prep.staging_root``, moves them into
+    ``TEAMS_DIR/<name>/``, writes the team description and notes
+    stubs, and registers the catalog entry as *unlisted*.
+    """
+    from hivemind.agents import registry
+    from hivemind.agents.base import Agent
+
+    if not prep.success:
+        return OperationResult(success=False, error=prep.error or "prep failed")
+    if prep.staging_root is None or not prep.name or not prep.experts:
+        return OperationResult(success=False, error="prep result is missing required fields")
+
+    missing: list[str] = [entry["name"] for entry in prep.expert_paths if not Path(entry["section_path"]).is_file()]
+    if missing:
+        return OperationResult(
+            success=False,
+            error=(
+                f"Section files missing for experts: {missing}. "
+                f"Write each ``expert-<name>.md`` into {prep.staging_root}, then retry."
+            ),
+        )
+
+    if registry.get(prep.name) is not None:
+        return OperationResult(success=False, error=f"Team '{prep.name}' already exists")
+
+    team_dir = TEAMS_DIR / prep.name
+    team_dir.mkdir(parents=True, exist_ok=True)
+
+    for entry in prep.expert_paths:
+        section_text = Path(entry["section_path"]).read_text(encoding="utf-8").strip()
+        _write_expert_section_file(prep.name, entry["name"], section_text)
+        create_expert_notes_stub(prep.name, entry["name"])
+    _write_description_file(prep.name, prep.description)
+    create_team_lead_notes_stub(prep.name)
+
+    body = RosterTemplatedBody(
+        name=prep.name,
+        params=RosterTemplatedParams(description=prep.description, experts=list(prep.experts)),
+    )
+    agent = Agent(name=prep.name, body=body, enabled=False)
+    registry.add(agent)
+
+    await afire_post_mutation()
+
+    shutil.rmtree(str(prep.staging_root), ignore_errors=True)
+
+    return OperationResult(success=True)
+
+
 async def create_team(
     name: str,
     description: str,
     experts: list[str],
 ) -> OperationResult:
-    """Create a new team in the catalog (unlisted by default)."""
-    from hivemind.agents import registry
-    from hivemind.agents.base import Agent
+    """Create a new team in the catalog (unlisted by default).
 
-    if registry.get(name) is not None:
-        return OperationResult(success=False, error=f"Team '{name}' already exists")
+    Composition of :func:`prep_create_team` (stage 1),
+    :func:`generate_expert_sections` (stage 2 — subprocess), and
+    :func:`finalize_create_team` (stage 3). Identical
+    externally-observable behavior to before the prep / finalize seam
+    was introduced. Suitable for the CLI. From a chat-TUI orchestrator
+    session, prefer spawning the ``hivemind-expert-curator`` subagent
+    with a "Create team …" intent — it performs stage 2 in-session
+    (one section per expert), sidestepping the multi-minute AI
+    subprocess that would otherwise time out the surrounding MCP call.
+    """
+    prep = await prep_create_team(name, description, experts)
+    if not prep.success:
+        return OperationResult(success=False, error=prep.error)
+    assert prep.staging_root is not None
 
-    all_experts = set(get_all_expert_names()) | {a.name for a in registry.by_kind("git_analyzed")}
-    for expert in experts:
-        if expert not in all_experts:
-            return OperationResult(success=False, error=f"Expert '{expert}' does not exist")
+    try:
+        sections = await generate_expert_sections(experts, name)
+        failed = [e for e in experts if e not in sections]
+        if failed:
+            return OperationResult(
+                success=False,
+                error=f"AI generation failed for expert section(s): {', '.join(failed)}",
+            )
 
-    team_dir = TEAMS_DIR / name
-    team_dir.mkdir(parents=True, exist_ok=True)
+        for entry in prep.expert_paths:
+            section_text = sections[entry["name"]]
+            Path(entry["section_path"]).write_text(section_text + "\n", encoding="utf-8")
 
-    sections = await generate_expert_sections(experts, name)
-    failed = [e for e in experts if e not in sections]
-    if failed:
-        shutil.rmtree(team_dir)
-        return OperationResult(
-            success=False,
-            error=f"AI generation failed for expert section(s): {', '.join(failed)}",
-        )
-
-    _write_description_file(name, description)
-    for expert_name in experts:
-        _write_expert_section_file(name, expert_name, sections[expert_name])
-        create_expert_notes_stub(name, expert_name)
-    create_team_lead_notes_stub(name)
-
-    body = RosterTemplatedBody(
-        name=name,
-        params=RosterTemplatedParams(description=description, experts=list(experts)),
-    )
-    agent = Agent(name=name, body=body, enabled=False)
-    registry.add(agent)
-
-    await afire_post_mutation()
-    return OperationResult(success=True)
+        return await finalize_create_team(prep)
+    finally:
+        # finalize cleans up on success; this catches failure paths.
+        if prep.staging_root.exists():
+            shutil.rmtree(str(prep.staging_root), ignore_errors=True)
 
 
 def update_team(

@@ -55,7 +55,10 @@ For each `(tech, version)`:
    - **enabled** — already in catalog and deployed → ready
    - **unlisted / disabled** — in catalog but not deployed →
      `enable_agent(name)` queue
-   - **missing** — not in catalog → needs `create_git_expert`
+   - **missing** — not in catalog → needs a `hivemind-expert-curator`
+     subagent spawn (which clones the upstream repo, performs the
+     analysis in its own session, and registers the catalog entry as
+     *unlisted*)
    - **version mismatch** — catalog version differs by a major
      release from project's pin → consider `switch_version`
 
@@ -79,33 +82,61 @@ If the project's tooling tells you (a `repository` field in
 `package.json`, etc.) prefer that over registry lookups.
 
 When in doubt, surface the URL to the user and let them confirm
-before calling `create_git_expert`.
+before spawning the curator.
 
 ## Step 3 — Execute the queue
 
-For each queued action, in order. Run `create_git_expert` calls in
-**parallel** where possible — each one is a long async analysis
-(several minutes for big repos).
+Spawn all curator subagents and run all fast direct-MCP calls **in
+parallel** (single message, multiple tool calls). The curator handles
+the slow operations (add + switch); fast direct-MCP handles
+`enable_agent` for in-catalog matches.
 
 ```
-create_git_expert(url=..., ref="v<version>")     # for missing
-enable_agent(name=...)                           # for unlisted/disabled
-switch_version(name=..., commit=<sha>)           # only on major mismatch
+# All in one message — opencode runs them concurrently:
+
+# Missing — curator clones + analyzes in-session, registers as unlisted:
+Task(
+  subagent_type="hivemind-expert-curator",
+  background=true,
+  description="add <name>",
+  prompt="Add expert from <url> with ref v<version>"
+)
+
+# Major version mismatch — curator handles cached vs fresh-analysis paths
+# transparently (cached is sub-second; fresh runs in-session):
+Task(
+  subagent_type="hivemind-expert-curator",
+  background=true,
+  description="switch <name> to v<version>",
+  prompt="Switch <name> to v<version>"
+)
+
+# Fast direct-MCP for in-catalog matches that just need deployment:
+enable_agent(name=...)
 ```
 
-`create_git_expert` lands the new expert as **unlisted**. After
-analysis completes, queue an `enable_agent` for it.
+Curator spawns return `task_id` immediately. Collect each via
+`read_task_result(task_id=...)` once opencode reports the task ready
+in a `<system-reminder>`. Newly-created experts land as *unlisted*,
+so queue an `enable_agent(name=...)` after each successful add.
 
 ## Step 4 — Create the project team
 
-Once all needed experts are enabled (or queued for enable), call:
+Once all needed experts are enabled (or queued for enable), spawn the
+curator with the create-team intent. The curator generates one
+`## expert-<name>` section per roster member in-session — a multi-minute
+operation that would time out as a direct MCP call.
 
 ```
-create_team(
-  name="<team-name>",
-  description="<one-sentence project summary>",
-  experts=[<all-expert-names>],
+Task(
+  subagent_type="hivemind-expert-curator",
+  background=true,
+  description="create team <team-name>",
+  prompt="Create team <team-name> with experts <comma-separated names> and description '<one-sentence project summary>'"
 )
+# → returns task_id; collect with read_task_result(task_id=...).
+
+# After read_task_result reports success:
 enable_agent(name="<team-name>")
 ```
 
@@ -117,7 +148,7 @@ genuinely ambiguous.
 
 If a team with this name already exists, reconcile via
 `add_expert_to_team` / `remove_expert_from_team` instead of
-recreating.
+recreating — those are fast direct-MCP tools (no curator needed).
 
 ## Step 5 — Report
 
@@ -126,12 +157,14 @@ Summarize for the user, organized by status:
 ```
 ✓ Already enabled: expert-bun, expert-vitest
 ✓ Newly enabled:   expert-pydantic
-✓ Newly created:   expert-foo (analysis pending — try in 2–3 min)
+… Newly created:   expert-foo (curator spawned: ses_xxx — collect
+                     with read_task_result, then enable_agent)
 ⚠ Version drift:   expert-bar (catalog: v3, project: v4)
 ✗ No upstream:     <tech>  (couldn't find a repo URL — please provide)
 
-Team `<name>` created with [list of experts].
-Spawn it with: Task(subagent_type="<name>", ...)
+… Team `<name>`:   curator spawned: ses_yyy — collect with
+                     read_task_result, then enable_agent.
+Once enabled, spawn it with: Task(subagent_type="<name>", ...)
 ```
 
 ## When NOT to run this command

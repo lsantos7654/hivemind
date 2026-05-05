@@ -1,4 +1,4 @@
-From 0edb775c78fa56961f0934d4fc1956fdc8881959 Mon Sep 17 00:00:00 2001
+From 19d27c12b84bd2b6bff3cf59f3e8045773a15518 Mon Sep 17 00:00:00 2001
 From: Lucas Santos <lsantos7654@gmail.com>
 Date: Fri, 1 May 2026 01:51:53 -0400
 Subject: [PATCH 13/17] Switch HTTP listener to native Bun.serve
@@ -32,11 +32,11 @@ for the per-client WebSocket presence channel that follows.
 
 Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 ---
- packages/opencode/src/server/server.ts | 86 ++++++++++++--------------
- 1 file changed, 38 insertions(+), 48 deletions(-)
+ packages/opencode/src/server/server.ts | 94 +++++++++++++-------------
+ 1 file changed, 46 insertions(+), 48 deletions(-)
 
 diff --git a/packages/opencode/src/server/server.ts b/packages/opencode/src/server/server.ts
-index c4f2a93..74f163e 100644
+index c4f2a93..72f61e9 100644
 --- a/packages/opencode/src/server/server.ts
 +++ b/packages/opencode/src/server/server.ts
 @@ -2,10 +2,11 @@ import { Log } from "../util/log"
@@ -76,7 +76,7 @@ index c4f2a93..74f163e 100644
        ws,
      }
    }
-@@ -281,46 +285,46 @@ export namespace Server {
+@@ -281,46 +285,54 @@ export namespace Server {
      cors?: string[]
    }): Promise<Listener> {
      const built = create(opts)
@@ -104,12 +104,20 @@ index c4f2a93..74f163e 100644
 +    // can locate it for WebSocket upgrades. Bun.serve fires
 +    // `req.signal.abort` synchronously via uSockets — the load-bearing
 +    // piece for the presence WebSocket close detection.
++    //
++    // `idleTimeout: 0` disables Bun's per-request 10s default. The SSE
++    // event stream is a long-lived idle request — the default would race
++    // the 10s heartbeat in routes/event.ts and intermittently kill the
++    // connection. Bun's own warning ("request timed out after 10 seconds")
++    // is the smoking gun. Application-level heartbeat governs SSE
++    // liveness; the presence WebSocket has its own (separate) idleTimeout.
 +    const start = (port: number): BunServer => {
 +      const server: BunServer = Bun.serve({
 +        fetch: (req: Request) => built.app.fetch(req, server),
 +        websocket: built.ws.websocket,
 +        port,
 +        hostname: opts.hostname,
++        idleTimeout: 0,
        })
 +      return server
 +    }
@@ -149,7 +157,7 @@ index c4f2a93..74f163e 100644
      } else if (opts.mdns) {
        log.warn("mDNS enabled but hostname is loopback; skipping mDNS publish")
      }
-@@ -328,27 +332,13 @@ export namespace Server {
+@@ -328,27 +340,13 @@ export namespace Server {
      let closing: Promise<void> | undefined
      return {
        hostname: opts.hostname,

@@ -271,6 +271,93 @@ class PrepCreateResult(OperationResult):
     analysis_prompt: str = ""
 
 
+class PrepUpdateResult(OperationResult):
+    """Result of stage 1 (prep) of the git_analyzed update pipeline.
+
+    Mirrors :class:`PrepCreateResult` but for updating an existing expert
+    to its latest upstream commit. Update preserves the agent's
+    ``description.md`` and ``expertise.md`` (they're staged in
+    ``commit_dir`` from the prior commit before analysis runs), so stage
+    2 only writes the 4 knowledge docs (per
+    :func:`hivemind.analysis.expected_analysis_files` with
+    ``is_update=True``).
+
+    On the no-op path (``already_up_to_date=True``) the staging fields
+    are unset — the caller skips analysis and treats the operation as
+    complete.
+    """
+
+    name: str = ""
+    new_commit: str = ""
+    old_commit: str | None = None
+    already_up_to_date: bool = False
+    repo_dir: Path | None = None
+    commit_dir: Path | None = None
+    staging_root: Path | None = None
+    analysis_prompt: str = ""
+
+
+class PrepSwitchResult(OperationResult):
+    """Result of stage 1 (prep) of the git_analyzed switch_version pipeline.
+
+    Returned by ``prep_switch_version(name, ref)`` after resolving the
+    ref to a full commit SHA and checking whether the target commit's
+    analysis docs are already on disk.
+
+    Two finalize paths:
+
+    - ``cached=True``: docs are present at ``experts/<name>/<commit>/``.
+      The staging fields are unset; ``finalize_switch_version`` repoints
+      HEAD, updates body params, checks out the working tree, and fires
+      the post-mutation hook. Sub-second.
+    - ``cached=False``: a fresh analysis is needed. The staging fields
+      are populated and ``analysis_prompt`` is the rendered
+      create-expert prompt. The caller (curator subagent or subprocess)
+      writes the 6 expected files into ``commit_dir`` then calls
+      ``finalize_switch_version``.
+
+    On the no-op path (``already_up_to_date=True``) — when the resolved
+    ref is the agent's current HEAD — staging fields are unset and the
+    caller treats the operation as complete.
+    """
+
+    name: str = ""
+    target_commit: str = ""
+    old_commit: str | None = None
+    cached: bool = False
+    already_up_to_date: bool = False
+    repo_dir: Path | None = None
+    commit_dir: Path | None = None
+    staging_root: Path | None = None
+    analysis_prompt: str = ""
+
+
+class PrepCreateTeamResult(OperationResult):
+    """Result of stage 1 (prep) of the roster_templated team-creation pipeline.
+
+    Returned by ``prep_create_team(name, description, experts)`` after
+    validating inputs and setting up a staging directory under
+    ``STAGING_DIR``. The caller (curator subagent or subprocess
+    composition) generates one ``## expert-<name>`` section per expert
+    and writes each into the corresponding entry of ``expert_paths``.
+    Pass this result to ``finalize_create_team`` to validate the
+    section files, move them into the team's permanent directory under
+    ``TEAMS_DIR``, write the description and notes stubs, and register
+    the catalog entry as *unlisted*.
+
+    ``expert_paths`` is a list of ``{name, summary_path, section_path}``
+    dicts. ``summary_path`` is the existing expert's ``summary.md``
+    that the analyzer reads as input; ``section_path`` is where the
+    analyzer must write the generated ``## expert-<name>`` section.
+    """
+
+    name: str = ""
+    description: str = ""
+    experts: list[str] = []
+    expert_paths: list[dict[str, str]] = []
+    staging_root: Path | None = None
+
+
 class EnableResult(OperationResult):
     already_enabled: bool = False
 

@@ -1,4 +1,4 @@
-From 895d7e069703c16bf95e18cabff5b69485139ccb Mon Sep 17 00:00:00 2001
+From 3311db27d26d58558f2380d22fcc3af76be84532 Mon Sep 17 00:00:00 2001
 From: Lucas Santos <lsantos7654@gmail.com>
 Date: Fri, 1 May 2026 02:00:37 -0400
 Subject: [PATCH 15/17] Per-client WebSocket presence and focus tracking
@@ -608,7 +608,7 @@ index 0000000..c35f91e
 +  )
 +}
 diff --git a/packages/opencode/src/server/server.ts b/packages/opencode/src/server/server.ts
-index 74f163e..da64bbc 100644
+index 72f61e9..99cefe5 100644
 --- a/packages/opencode/src/server/server.ts
 +++ b/packages/opencode/src/server/server.ts
 @@ -14,6 +14,7 @@ import { ProviderID } from "../provider/schema"

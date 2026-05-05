@@ -4,6 +4,7 @@ Ordered top-to-bottom by what's most actionable. Drop or refile items that no lo
 
 - [ ] **Verify "enable without restart" works end-to-end** — patch 0016 (`Extend reload-agents to invalidate Skill and Command state`) extends `/global/reload-agents` so it now also invalidates Skill + Command caches in addition to Agent state. The new engine binary is in place. To verify, restart your current opencode session, then drop a SKILL.md / command / agent file in `opencode/{skills,commands,agents}/`, run `hivemind redeploy`, and confirm it shows up without another restart.
 
+
 ---
 
 ## Larger conversations needed
@@ -37,6 +38,7 @@ Ordered top-to-bottom by what's most actionable. Drop or refile items that no lo
 
 ### MCP tools
 
+- [x] **`ref_name` provenance for ref-less expert adds** — `prep_create_expert` now resolves `origin/HEAD` after clone and stores the default branch (e.g. `"main"`) when no `--ref` is passed, so the catalog always carries provenance instead of leaving `ref_name=""`. One-shot migration in `bootstrap_workspace` backfills existing entries (skips silently when the repo isn't cloned). Removes the `git describe` improvisation that drove `/hivemind_sync`'s "close enough" group.
 - [x] **MCP `switch_version(name, commit)` tool** — wraps the existing async `switch_version` in `agents/git_analyzed.py`. (`fab5b1e`)
 - [x] **MCP cross-session reference tool** — done via `send_message` (`mcp/tools.py:222`) backed by per-session inbox (patch 0007).
 - [x] **MCP `delete_session(session_id)` tool** — hard-removes a subagent session (recursively, after aborting any in-flight prompt). Fires `session.deleted` so the parent's footer subagent pill auto-decrements and `list_sessions` no longer shows it. Replaces the broken `archive_session` design that only flipped a never-read flag.

@@ -9,16 +9,23 @@ and ``~/.cache/hivemind/repos/<name>/`` are both
 Tools that remain:
 
 * **Read/query** — ``list_agents``, ``show_agent``, ``status``.
-* **Lifecycle mutations** — ``enable_agent``, ``disable_agent``,
-  ``delete_agent``, ``update_agent``, ``redeploy``.
-* **Kind-specific creators** —
-  ``prep_create_expert`` + ``finalize_create_expert`` (the create
-  pipeline split into stage 1 and stage 3 so the analysis stage is
-  pluggable; the orchestrator typically spawns the
-  ``hivemind-expert-curator`` subagent which performs all three stages
-  in-session via Bash + Read/Grep/Write — no MCP timeout), ``create_team``.
-* **Roster mutations** — ``add_expert_to_team``, ``remove_expert_from_team``.
-* **Cross-session** — ``list_sessions``, ``send_message``.
+* **Lifecycle mutations (fast, no AI)** — ``enable_agent``,
+  ``disable_agent``, ``delete_agent``, ``redeploy``.
+* **Curator-scoped pipeline** — four prep/finalize pairs that the
+  ``hivemind-expert-curator`` subagent uses to run the slow operations
+  in-session (no MCP timeout):
+  ``prep_create_expert`` + ``finalize_create_expert``,
+  ``prep_update_agent`` + ``finalize_update_agent``,
+  ``prep_switch_version`` + ``finalize_switch_version``,
+  ``prep_create_team`` + ``finalize_create_team``.
+  The curator's permission allowlist names exactly these eight tools.
+  The previous blocking ``update_agent`` / ``switch_version`` /
+  ``create_team`` MCP tools have been removed — they were the leaky
+  surface that forced orchestrator docs to mention CLI fallbacks.
+* **Team roster mutations** (fast, no AI) — ``add_expert_to_team``,
+  ``remove_expert_from_team``.
+* **Cross-session** — ``list_sessions``, ``send_message``,
+  ``delete_session``.
 
 Cross-session forking-with-context goes through opencode's native
 ``Task(source_session_id=..., subagent_type=..., description=..., prompt=...)``
@@ -148,53 +155,14 @@ TOOLS: list[Tool] = [
             "required": ["name"],
         },
     ),
-    Tool(
-        name="update_agent",
-        description=(
-            "Update an agent's body. For git_analyzed agents this fetches latest commits "
-            "and re-runs AI analysis. Other kinds may not support update."
-        ),
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "name": {"type": "string", "description": "Agent name to update"},
-                "skip_analysis": {
-                    "type": "boolean",
-                    "description": "For git_analyzed: pull latest commits without re-running AI analysis.",
-                },
-            },
-            "required": ["name"],
-        },
-    ),
-    Tool(
-        name="switch_version",
-        description=(
-            "Switch a git_analyzed agent to a specific commit, tag, or branch. Refs "
-            "(e.g. '8.5.1', 'main', 'origin/feat/x') are resolved against the cloned "
-            "repo — tags are fetched first so freshly-pushed releases work. Re-uses "
-            "cached analysis (description.md / expertise.md / agent.md) under the "
-            "resolved commit if present; otherwise checks out the commit, runs AI "
-            "analysis, and stores the result. Updates the HEAD symlink so the deployed "
-            "agent body comes from this commit. Use show_agent first to see which "
-            "commits are already analysed locally."
-        ),
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "name": {"type": "string", "description": "Git-analyzed agent name"},
-                "commit": {
-                    "type": "string",
-                    "description": (
-                        "Target commit SHA (full or short), tag name, or branch name. "
-                        "If not a valid SHA in the local clone, resolved as a git ref "
-                        "(tags fetched first)."
-                    ),
-                },
-            },
-            "required": ["name", "commit"],
-        },
-    ),
-    # --- Kind-specific creators ---
+    # --- Curator-scoped pipeline (prep + finalize) ---
+    # These primitives exist for the ``hivemind-expert-curator`` subagent
+    # to run the slow operations (create expert, update expert,
+    # switch_version, create team) in-session — its permission allowlist
+    # names exactly these four pairs. Direct orchestrator calls work but
+    # are unusual; the canonical path is
+    # ``Task(subagent_type="hivemind-expert-curator", background=true,
+    # prompt="...")`` which routes to the right pair internally.
     Tool(
         name="prep_create_expert",
         description=(
@@ -242,10 +210,114 @@ TOOLS: list[Tool] = [
         },
     ),
     Tool(
-        name="create_team",
+        name="prep_update_agent",
         description=(
-            "Create a new team-lead agent with AI-generated per-expert sections. "
-            "Added to the catalog in the *unlisted* state."
+            "Stage 1 of the git_analyzed update pipeline. Fetches origin, "
+            "resolves the latest commit, and stages the analysis input "
+            "(preserves description.md + expertise.md from the prior "
+            "commit). Returns staging metadata + analysis_prompt. Fast — "
+            "no AI invoked here. If the agent is already at the latest "
+            "commit, returns success with already_up_to_date=True and "
+            "the staging fields unset. Pair with finalize_update_agent "
+            "(stage 3) — the curator subagent writes the 4 fresh "
+            "knowledge docs into commit_dir between prep and finalize."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "description": "Agent name to update"},
+            },
+            "required": ["name"],
+        },
+    ),
+    Tool(
+        name="finalize_update_agent",
+        description=(
+            "Stage 3 of the git_analyzed update pipeline. Locates the "
+            "update-intent staging dir for `name`, validates the 4 "
+            "expected fresh analysis docs (description.md + expertise.md "
+            "are preserved from the prior commit by prep), moves the "
+            "staged commit dir into the agent's expert dir, repoints "
+            "HEAD, updates the catalog body's commit, fires the "
+            "post-mutation hook. Fast — no AI invoked."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "description": "Agent name (must match a staging dir from prep_update_agent)",
+                },
+            },
+            "required": ["name"],
+        },
+    ),
+    Tool(
+        name="prep_switch_version",
+        description=(
+            "Stage 1 of the git_analyzed switch_version pipeline. "
+            "Resolves the ref (tag, branch, full or short SHA — tags "
+            "fetched first) to a full commit SHA, then determines the "
+            "finalize path. Returns `cached: true` (target commit's "
+            "analysis docs already on disk — finalize is sub-second), "
+            "`already_up_to_date: true` (HEAD already at the resolved "
+            "commit), or staging metadata + analysis_prompt for the "
+            "fresh path. Fast — no AI invoked here. Pair with "
+            "finalize_switch_version (stage 3); the curator writes the "
+            "6 expected files into commit_dir between prep and finalize "
+            "only when cached=false."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "description": "Git-analyzed agent name"},
+                "ref": {
+                    "type": "string",
+                    "description": (
+                        "Target commit SHA (full or short), tag name, or branch name. "
+                        "Resolved against the local clone (tags fetched first)."
+                    ),
+                },
+            },
+            "required": ["name", "ref"],
+        },
+    ),
+    Tool(
+        name="finalize_switch_version",
+        description=(
+            "Stage 3 of the git_analyzed switch_version pipeline. Two "
+            "paths: cached (just repoint HEAD + checkout + post-mutation, "
+            "sub-second) or fresh (validate the 6 expected files in the "
+            "switch-intent staging dir, move into experts/<name>/<commit>/, "
+            "then the cached-path tail). The cached vs fresh decision was "
+            "made by prep_switch_version — finalize just executes the "
+            "right tail. Fast — no AI invoked."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "description": (
+                        "Git-analyzed agent name. Reads the prior prep_switch_version "
+                        "result from the staging dir to know cached vs fresh."
+                    ),
+                },
+            },
+            "required": ["name"],
+        },
+    ),
+    Tool(
+        name="prep_create_team",
+        description=(
+            "Stage 1 of the roster_templated team-creation pipeline. "
+            "Validates the team name is free, validates each expert "
+            "exists, and sets up a staging directory with one section "
+            "file slot per expert. Returns the staging metadata + "
+            "per-expert input/output paths the curator subagent reads "
+            "and writes. Fast — no AI invoked here. Pair with "
+            "finalize_create_team (stage 3) to register the catalog "
+            "entry as *unlisted*."
         ),
         inputSchema={
             "type": "object",
@@ -255,10 +327,33 @@ TOOLS: list[Tool] = [
                 "experts": {
                     "type": "array",
                     "items": {"type": "string"},
-                    "description": "List of expert names to include",
+                    "description": "List of expert names to include in the team's roster",
                 },
             },
             "required": ["name", "description", "experts"],
+        },
+    ),
+    Tool(
+        name="finalize_create_team",
+        description=(
+            "Stage 3 of the roster_templated team-creation pipeline. "
+            "Locates the create_team-intent staging dir for `name`, "
+            "validates that every expected ``expert-<member>.md`` "
+            "section file exists in it, moves them into "
+            "``TEAMS_DIR/<name>/``, writes the team description and "
+            "per-expert + team-lead notes stubs, and registers the "
+            "catalog entry as *unlisted*. Fast — no AI invoked. Call "
+            "enable_agent afterwards to deploy the team-lead agent."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "description": "Team name (must match a staging dir from prep_create_team)",
+                },
+            },
+            "required": ["name"],
         },
     ),
     # --- Team roster management ---
@@ -483,57 +578,8 @@ async def _handle_delete_agent(name: str, purge_memory: bool) -> list[TextConten
     return _text(f"Agent '{name}' deleted{suffix}.")
 
 
-async def _handle_update_agent(name: str, skip_analysis: bool) -> list[TextContent]:
-    from hivemind.agents import registry
-    from hivemind.agents.git_analyzed import update_git_expert
-    from hivemind.config import AGENTS_DIR
-    from hivemind.deployment import regenerate_librarian
-
-    agent = registry.get(name)
-    if agent is None:
-        return _text(f"Error: agent '{name}' not found")
-
-    if agent.kind == "git_analyzed":
-        result = await update_git_expert(name, skip_analysis=skip_analysis)
-        if not result.success:
-            return _text(f"Error: {result.error}")
-        if result.already_up_to_date:
-            return _text(f"Agent '{name}' is already up to date ({result.new_commit[:12]}).")
-        if agent.enabled:
-            agent.deploy(agents_dir=AGENTS_DIR)
-            regenerate_librarian()
-        old_display = result.old_commit[:12] if result.old_commit else "none"
-        return _text(f"Agent '{name}' updated from {old_display} to {result.new_commit[:12]}.")
-
-    return _text(f"Error: update not supported for agent kind '{agent.kind}'")
-
-
-async def _handle_switch_version(name: str, commit: str) -> list[TextContent]:
-    from hivemind.agents import registry
-    from hivemind.agents.git_analyzed import switch_version
-    from hivemind.config import AGENTS_DIR
-    from hivemind.deployment import regenerate_librarian
-
-    agent = registry.get(name)
-    if agent is None:
-        return _text(f"Error: agent '{name}' not found")
-    if agent.kind != "git_analyzed":
-        return _text(f"Error: switch_version is only supported for git_analyzed agents (got '{agent.kind}')")
-
-    result = await switch_version(name=name, target_commit=commit)
-    if not result.success:
-        return _text(f"Error: {result.error}")
-    if result.already_up_to_date:
-        return _text(f"Agent '{name}' is already at {result.new_commit[:12]}.")
-    if agent.enabled:
-        agent.deploy(agents_dir=AGENTS_DIR)
-        regenerate_librarian()
-    old_display = result.old_commit[:12] if result.old_commit else "none"
-    return _text(f"Agent '{name}' switched from {old_display} to {result.new_commit[:12]}.")
-
-
 # ---------------------------------------------------------------------------
-# Handlers — kind-specific creators
+# Handlers — curator-scoped expert pipeline (prep + finalize)
 # ---------------------------------------------------------------------------
 
 
@@ -591,13 +637,207 @@ async def _handle_finalize_create_expert(name: str) -> list[TextContent]:
     return _text(f"Expert '{name}' registered at {prep.commit[:12]}. Run enable_agent to deploy.")
 
 
-async def _handle_create_team(name: str, description: str, experts: list[str]) -> list[TextContent]:
-    from hivemind.agents.roster_templated import create_team
+async def _handle_prep_update_agent(name: str) -> list[TextContent]:
+    from hivemind.agents.git_analyzed import prep_update_agent
 
-    result = await create_team(name, description, experts)
+    result = await prep_update_agent(name)
     if not result.success:
         return _text(f"Error: {result.error}")
-    return _text(f"Team '{name}' added to catalog with experts: {', '.join(experts)}. Call enable_agent to deploy it.")
+
+    if result.already_up_to_date:
+        return _json_text(
+            {
+                "name": result.name,
+                "new_commit": result.new_commit,
+                "old_commit": result.old_commit,
+                "already_up_to_date": True,
+            }
+        )
+
+    # ``analysis_prompt`` deliberately omitted — the curator subagent
+    # has the update prompt baked into its own deployed body.
+    return _json_text(
+        {
+            "name": result.name,
+            "new_commit": result.new_commit,
+            "old_commit": result.old_commit,
+            "already_up_to_date": False,
+            "repo_dir": str(result.repo_dir),
+            "commit_dir": str(result.commit_dir),
+            "staging_root": str(result.staging_root),
+        }
+    )
+
+
+async def _handle_finalize_update_agent(name: str) -> list[TextContent]:
+    from hivemind.agents import registry
+    from hivemind.agents.git_analyzed import (
+        finalize_update_agent,
+        find_staged_update_prep,
+        load_update_prep_result,
+    )
+    from hivemind.config import AGENTS_DIR
+    from hivemind.deployment import regenerate_librarian
+
+    try:
+        staging_root = find_staged_update_prep(name)
+    except ValueError as exc:
+        return _text(f"Error: {exc}")
+
+    if staging_root is None:
+        return _text(f"Error: no update staging dir for '{name}' — call prep_update_agent first.")
+
+    prep = load_update_prep_result(staging_root)
+    if not prep.success:
+        return _text(f"Error: {prep.error}")
+
+    result = await finalize_update_agent(prep)
+    if not result.success:
+        return _text(f"Error: {result.error}")
+
+    # Redeploy if the agent is currently enabled, so the new body lands
+    # in opencode's agents/ dir without a separate enable_agent call.
+    agent = registry.get(name)
+    if agent is not None and agent.enabled:
+        agent.deploy(agents_dir=AGENTS_DIR)
+        regenerate_librarian()
+
+    old_display = result.old_commit[:12] if result.old_commit else "none"
+    return _text(f"Agent '{name}' updated from {old_display} to {result.new_commit[:12]}.")
+
+
+async def _handle_prep_switch_version(name: str, ref: str) -> list[TextContent]:
+    from hivemind.agents.git_analyzed import prep_switch_version
+
+    result = await prep_switch_version(name, ref)
+    if not result.success:
+        return _text(f"Error: {result.error}")
+
+    if result.already_up_to_date:
+        return _json_text(
+            {
+                "name": result.name,
+                "target_commit": result.target_commit,
+                "old_commit": result.old_commit,
+                "cached": True,
+                "already_up_to_date": True,
+            }
+        )
+
+    if result.cached:
+        return _json_text(
+            {
+                "name": result.name,
+                "target_commit": result.target_commit,
+                "old_commit": result.old_commit,
+                "cached": True,
+                "already_up_to_date": False,
+            }
+        )
+
+    # Fresh path — analyzer needs to write 6 files into commit_dir.
+    return _json_text(
+        {
+            "name": result.name,
+            "target_commit": result.target_commit,
+            "old_commit": result.old_commit,
+            "cached": False,
+            "already_up_to_date": False,
+            "repo_dir": str(result.repo_dir),
+            "commit_dir": str(result.commit_dir),
+            "staging_root": str(result.staging_root),
+        }
+    )
+
+
+async def _handle_finalize_switch_version(name: str) -> list[TextContent]:
+    from hivemind.agents import registry
+    from hivemind.agents.git_analyzed import (
+        finalize_switch_version,
+        find_staged_switch_prep,
+        load_switch_prep_result,
+    )
+    from hivemind.config import AGENTS_DIR
+    from hivemind.deployment import regenerate_librarian
+
+    try:
+        staging_root = find_staged_switch_prep(name)
+    except ValueError as exc:
+        return _text(f"Error: {exc}")
+
+    if staging_root is None:
+        return _text(f"Error: no switch staging dir for '{name}' — call prep_switch_version first.")
+
+    prep = load_switch_prep_result(staging_root)
+    if not prep.success:
+        return _text(f"Error: {prep.error}")
+
+    result = await finalize_switch_version(prep)
+    if not result.success:
+        return _text(f"Error: {result.error}")
+
+    # Redeploy if currently enabled.
+    agent = registry.get(name)
+    if agent is not None and agent.enabled:
+        agent.deploy(agents_dir=AGENTS_DIR)
+        regenerate_librarian()
+
+    old_display = result.old_commit[:12] if result.old_commit else "none"
+    return _text(f"Agent '{name}' switched from {old_display} to {result.new_commit[:12]}.")
+
+
+async def _handle_prep_create_team(name: str, description: str, experts: list[str]) -> list[TextContent]:
+    from hivemind.agents.roster_templated import prep_create_team
+
+    result = await prep_create_team(name, description, experts)
+    if not result.success:
+        return _text(f"Error: {result.error}")
+
+    return _json_text(
+        {
+            "name": result.name,
+            "description": result.description,
+            "experts": result.experts,
+            "expert_paths": result.expert_paths,
+            "staging_root": str(result.staging_root),
+        }
+    )
+
+
+async def _handle_finalize_create_team(name: str) -> list[TextContent]:
+    from hivemind.agents import registry
+    from hivemind.agents.roster_templated import (
+        finalize_create_team,
+        find_staged_create_team_prep,
+        load_create_team_prep_result,
+    )
+    from hivemind.config import AGENTS_DIR
+    from hivemind.deployment import regenerate_librarian
+
+    try:
+        staging_root = find_staged_create_team_prep(name)
+    except ValueError as exc:
+        return _text(f"Error: {exc}")
+
+    if staging_root is None:
+        return _text(f"Error: no create_team staging dir for '{name}' — call prep_create_team first.")
+
+    prep = load_create_team_prep_result(staging_root)
+    if not prep.success:
+        return _text(f"Error: {prep.error}")
+
+    result = await finalize_create_team(prep)
+    if not result.success:
+        return _text(f"Error: {result.error}")
+
+    # Redeploy if currently enabled (rare on first creation but harmless).
+    agent = registry.get(name)
+    if agent is not None and agent.enabled:
+        agent.deploy(agents_dir=AGENTS_DIR)
+        regenerate_librarian()
+
+    experts_summary = ", ".join(prep.experts)
+    return _text(f"Team '{name}' added to catalog with experts: {experts_summary}. Call enable_agent to deploy it.")
 
 
 async def _handle_add_expert_to_team(team: str, expert: str) -> list[TextContent]:
@@ -763,11 +1003,14 @@ TOOL_HANDLERS: dict[str, ToolHandler] = {
     "enable_agent": _handle_enable_agent,
     "disable_agent": _handle_disable_agent,
     "delete_agent": _handle_delete_agent,
-    "update_agent": _handle_update_agent,
-    "switch_version": _handle_switch_version,
     "prep_create_expert": _handle_prep_create_expert,
     "finalize_create_expert": _handle_finalize_create_expert,
-    "create_team": _handle_create_team,
+    "prep_update_agent": _handle_prep_update_agent,
+    "finalize_update_agent": _handle_finalize_update_agent,
+    "prep_switch_version": _handle_prep_switch_version,
+    "finalize_switch_version": _handle_finalize_switch_version,
+    "prep_create_team": _handle_prep_create_team,
+    "finalize_create_team": _handle_finalize_create_team,
     "add_expert_to_team": _handle_add_expert_to_team,
     "remove_expert_from_team": _handle_remove_expert_from_team,
     "list_sessions": _handle_list_sessions,
@@ -785,11 +1028,14 @@ _ARG_EXTRACTORS: dict[str, Callable[[dict[str, Any]], tuple[Any, ...]]] = {
     "enable_agent": lambda a: (a["name"],),
     "disable_agent": lambda a: (a["name"],),
     "delete_agent": lambda a: (a["name"], bool(a.get("purge_memory", False))),
-    "update_agent": lambda a: (a["name"], bool(a.get("skip_analysis", False))),
-    "switch_version": lambda a: (a["name"], a["commit"]),
     "prep_create_expert": lambda a: (a["url"], str(a.get("ref", "")), str(a.get("name", ""))),
     "finalize_create_expert": lambda a: (a["name"],),
-    "create_team": lambda a: (a["name"], a["description"], a["experts"]),
+    "prep_update_agent": lambda a: (a["name"],),
+    "finalize_update_agent": lambda a: (a["name"],),
+    "prep_switch_version": lambda a: (a["name"], a["ref"]),
+    "finalize_switch_version": lambda a: (a["name"],),
+    "prep_create_team": lambda a: (a["name"], a["description"], a["experts"]),
+    "finalize_create_team": lambda a: (a["name"],),
     "add_expert_to_team": lambda a: (a["team"], a["expert"]),
     "remove_expert_from_team": lambda a: (a["team"], a["expert"]),
     "list_sessions": lambda a: (
