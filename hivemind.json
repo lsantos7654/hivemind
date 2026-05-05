@@ -446,7 +446,7 @@
       "kind": "git_analyzed",
       "body": {
         "remote": "https://github.com/oven-sh/bun.git",
-        "commit": "3ed4186bc8db8357c670307f192991bfc263f141",
+        "commit": "a04817ce2b7f1a1e8b7cbf8af8f2c027ab072f1d",
         "ref_name": "main"
       }
     },
@@ -724,6 +724,14 @@
       "kind": "system_templated",
       "body": {
         "template": "agents/hivemind-crawler.md.j2"
+      }
+    },
+    "python-sdk": {
+      "kind": "git_analyzed",
+      "body": {
+        "remote": "https://github.com/modelcontextprotocol/python-sdk",
+        "commit": "652478266702ac71a1d03692337bd5207ddbedf4",
+        "ref_name": "v1.27.0"
       }
     }
   }
