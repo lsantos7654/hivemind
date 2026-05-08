@@ -118,6 +118,35 @@ cap returns an error. Compose `background=true` orthogonally with
 `task_id` (background resume) or `source_session_id` (background
 fork).
 
+### Ephemeral spawns
+
+When the subagent's job is one-off — codebase exploration, an
+expert-curator analysis run, an ad-hoc task you won't resume —
+pass `ephemeral=true` to `Task`. The session deletes itself when
+the subagent reaches a terminal state (completed | failed |
+cancelled), keeping your subagent tree clean from one-shot work.
+
+```
+Task(
+  subagent_type="explore",
+  ephemeral=true,
+  description="<3-5 word title>",
+  prompt="<question>",
+)
+```
+
+The summary returned by the subagent stays in your message
+history; only the spawned session's intermediate tool calls and
+reasoning go away. Mutually exclusive with `task_id` — once the
+session is deleted you can't resume it. Compose orthogonally
+with `background=true`: ephemeral background spawns survive
+until `read_task_result` consumes the buffered output, then
+delete.
+
+Some agents are always ephemeral (`hivemind-memory-daemon`,
+`hivemind-expert-curator`); their `agent.md` frontmatter declares
+`ephemeral: true` and you don't need to pass the flag.
+
 ## Reading expert knowledge directly
 
 Every git-analyzed expert ships pre-generated analysis docs and a

@@ -1,7 +1,7 @@
 From 210928d6bcb38b32d7d4058ff9990f4ec3f36bfe Mon Sep 17 00:00:00 2001
 From: Lucas Santos <lsantos7654@gmail.com>
 Date: Thu, 7 May 2026 21:58:15 -0400
-Subject: [PATCH 18/19] Session metadata column
+Subject: [PATCH 18/21] Session metadata column
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit

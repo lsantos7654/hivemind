@@ -38,6 +38,16 @@ spawn:
 The two are mutually exclusive — pick the one that matches your
 intent.
 
+### Ephemeral forks for one-off questions
+
+`Task(source_session_id=..., ephemeral=true)` deletes the forked
+subagent's session as soon as it returns. Use when the fork is
+purely a probe — you want the answer in your message history but
+don't care about the intermediate work and won't resume the
+forked session. Keeps your subagent tree from accumulating one
+short-lived fork per "ask another session a quick question."
+Ephemeral and `task_id` are mutually exclusive.
+
 ## Limits
 
 - Same-host only. Cross-machine session messaging isn't supported.

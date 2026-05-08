@@ -1,0 +1,571 @@
+From 969e68377fed9606b9d24caf7116f86a718edd58 Mon Sep 17 00:00:00 2001
+From: Lucas Santos <lsantos7654@gmail.com>
+Date: Thu, 7 May 2026 23:28:37 -0400
+Subject: [PATCH 20/21] SDK gen: ephemeral on Session + create/fork inputs
+
+Regenerated bindings for the ephemeral session column. The new
+field appears on the Session response type, on Session.create's
+flat parameters, and on Session2's create body. No client-side
+behavior change beyond the typed surface.
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+---
+ packages/sdk/js/src/v2/gen/sdk.gen.ts   | 131 ++++++++++----
+ packages/sdk/js/src/v2/gen/types.gen.ts | 218 ++++++++++++++++++++----
+ 2 files changed, 281 insertions(+), 68 deletions(-)
+
+diff --git a/packages/sdk/js/src/v2/gen/sdk.gen.ts b/packages/sdk/js/src/v2/gen/sdk.gen.ts
+index 010c1f4..bf4c1f1 100644
+--- a/packages/sdk/js/src/v2/gen/sdk.gen.ts
++++ b/packages/sdk/js/src/v2/gen/sdk.gen.ts
+@@ -43,12 +43,15 @@ import type {
+   FindSymbolsResponses,
+   FindTextResponses,
+   FormatterStatusResponses,
++  GlobalBackgroundTasksResponses,
+   GlobalConfigGetResponses,
+   GlobalConfigUpdateErrors,
+   GlobalConfigUpdateResponses,
+   GlobalDisposeResponses,
+   GlobalEventResponses,
+   GlobalHealthResponses,
++  GlobalLiveSessionsResponses,
++  GlobalReloadAgentsResponses,
+   GlobalSyncEventSubscribeResponses,
+   GlobalUpgradeErrors,
+   GlobalUpgradeResponses,
+@@ -126,6 +129,8 @@ import type {
+   SessionForkResponses,
+   SessionGetErrors,
+   SessionGetResponses,
++  SessionInboxErrors,
++  SessionInboxResponses,
+   SessionInitErrors,
+   SessionInitResponses,
+   SessionListResponses,
+@@ -325,28 +330,13 @@ export class Global extends HeyApiClient {
+   }
+
+   /**
+-   * List background tasks
++   * Reload agent, skill, and command registries
+    *
+-   * Hivemind: returns the set of background-mode Task children currently
+-   * tracked across all parents. Each entry has parentID, taskID, and
+-   * status ("running" | "complete"). Provided by patch
+-   * `//third_party/patches/0017-Background-Task-mode-cascade-cancellation.patch`.
++   * Hivemind: re-read agents*.md, skills**SKILL.md, and commands*.md for every active instance without disposing the InstanceState. Endpoint name is historical; reload covers all three filesystem-backed catalogs that hivemind redeploy can mutate. Unlike /global/dispose, this does not SIGTERM MCP subprocesses, so an in-flight tool call survives the reload.
+    */
+-  public backgroundTasks<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+-    return (options?.client ?? this.client).get<
+-      {
+-        200: {
+-          tasks: Array<{
+-            parentID: string
+-            taskID: string
+-            status: "running" | "complete"
+-          }>
+-        }
+-      },
+-      unknown,
+-      ThrowOnError
+-    >({
+-      url: "/global/background-tasks",
++  public reloadAgents<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
++    return (options?.client ?? this.client).post<GlobalReloadAgentsResponses, unknown, ThrowOnError>({
++      url: "/global/reload-agents",
+       ...options,
+     })
+   }
+@@ -354,28 +344,27 @@ export class Global extends HeyApiClient {
+   /**
+    * List live sessions
+    *
+-   * Hivemind: returns the deduplicated set of session IDs currently
+-   * focused by at least one connected client (TUI). Each TUI opens a
+-   * single WebSocket on `/presence` and signals focus via JSON
+-   * messages. Subagent counts are computed per-TUI from the focused
+-   * session's direct DB children and do not flow through this
+-   * endpoint.
++   * Hivemind: return the deduplicated set of session IDs currently focused by at least one connected client (TUI). Each TUI opens a single WebSocket on `/presence` and signals its currently-attached session via JSON messages on that connection. The TUI footer's `● N sessions` pill reads `sessions.length`. Subagent counts are computed per-TUI from the focused session's direct DB children and do not flow through this endpoint.
+    */
+   public liveSessions<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+-    return (options?.client ?? this.client).get<
+-      {
+-        200: {
+-          sessions: Array<string>
+-        }
+-      },
+-      unknown,
+-      ThrowOnError
+-    >({
++    return (options?.client ?? this.client).get<GlobalLiveSessionsResponses, unknown, ThrowOnError>({
+       url: "/global/live-sessions",
+       ...options,
+     })
+   }
+
++  /**
++   * List background tasks
++   *
++   * Hivemind: return the set of background-mode Task children currently tracked across all parents. Each entry has parentID, taskID, and status ("running" | "complete"). Running tasks are subagents kicked off via Task(background=true) whose prompts have not yet finished; complete tasks are buffered results awaiting consumption by the parent via the read_task_result tool. The TUI footer subscribes to session.background.changed for live updates and uses this route for initial state on mount.
++   */
++  public backgroundTasks<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
++    return (options?.client ?? this.client).get<GlobalBackgroundTasksResponses, unknown, ThrowOnError>({
++      url: "/global/background-tasks",
++      ...options,
++    })
++  }
++
+   /**
+    * Upgrade opencode
+    *
+@@ -1611,6 +1600,10 @@ export class Session2 extends HeyApiClient {
+       title?: string
+       permission?: PermissionRuleset
+       workspaceID?: string
++      metadata?: {
++        [key: string]: unknown
++      }
++      ephemeral?: boolean
+     },
+     options?: Options<never, ThrowOnError>,
+   ) {
+@@ -1625,6 +1618,8 @@ export class Session2 extends HeyApiClient {
+             { in: "body", key: "title" },
+             { in: "body", key: "permission" },
+             { in: "body", key: "workspaceID" },
++            { in: "body", key: "metadata" },
++            { in: "body", key: "ephemeral" },
+           ],
+         },
+       ],
+@@ -1896,6 +1891,9 @@ export class Session2 extends HeyApiClient {
+       directory?: string
+       workspace?: string
+       messageID?: string
++      parentID?: string
++      permission?: PermissionRuleset
++      ephemeral?: boolean
+     },
+     options?: Options<never, ThrowOnError>,
+   ) {
+@@ -1908,6 +1906,9 @@ export class Session2 extends HeyApiClient {
+             { in: "query", key: "directory" },
+             { in: "query", key: "workspace" },
+             { in: "body", key: "messageID" },
++            { in: "body", key: "parentID" },
++            { in: "body", key: "permission" },
++            { in: "body", key: "ephemeral" },
+           ],
+         },
+       ],
+@@ -2325,6 +2326,66 @@ export class Session2 extends HeyApiClient {
+     })
+   }
+
++  /**
++   * Send message via inbox
++   *
++   * Hivemind: deliver a message to the session now if idle, or queue it and deliver on next idle if busy. Unlike /message and /prompt_async, never throws BusyError. Returns { queued, depth, sessionID } once the decision is made; the prompt itself runs asynchronously.
++   */
++  public inbox<ThrowOnError extends boolean = false>(
++    parameters: {
++      sessionID: string
++      directory?: string
++      workspace?: string
++      messageID?: string
++      model?: {
++        providerID: string
++        modelID: string
++      }
++      agent?: string
++      noReply?: boolean
++      tools?: {
++        [key: string]: boolean
++      }
++      format?: OutputFormat
++      system?: string
++      variant?: string
++      parts?: Array<TextPartInput | FilePartInput | AgentPartInput | SubtaskPartInput>
++    },
++    options?: Options<never, ThrowOnError>,
++  ) {
++    const params = buildClientParams(
++      [parameters],
++      [
++        {
++          args: [
++            { in: "path", key: "sessionID" },
++            { in: "query", key: "directory" },
++            { in: "query", key: "workspace" },
++            { in: "body", key: "messageID" },
++            { in: "body", key: "model" },
++            { in: "body", key: "agent" },
++            { in: "body", key: "noReply" },
++            { in: "body", key: "tools" },
++            { in: "body", key: "format" },
++            { in: "body", key: "system" },
++            { in: "body", key: "variant" },
++            { in: "body", key: "parts" },
++          ],
++        },
++      ],
++    )
++    return (options?.client ?? this.client).post<SessionInboxResponses, SessionInboxErrors, ThrowOnError>({
++      url: "/session/{sessionID}/inbox",
++      ...options,
++      ...params,
++      headers: {
++        "Content-Type": "application/json",
++        ...options?.headers,
++        ...params.headers,
++      },
++    })
++  }
++
+   /**
+    * Send command
+    *
+diff --git a/packages/sdk/js/src/v2/gen/types.gen.ts b/packages/sdk/js/src/v2/gen/types.gen.ts
+index 4ce2c9d..a33d709 100644
+--- a/packages/sdk/js/src/v2/gen/types.gen.ts
++++ b/packages/sdk/js/src/v2/gen/types.gen.ts
+@@ -330,6 +330,13 @@ export type EventWorkspaceFailed = {
+   }
+ }
+
++export type EventAgentChanged = {
++  type: "agent.changed"
++  properties: {
++    count: number
++  }
++}
++
+ export type QuestionOption = {
+   /**
+    * Display text (1-5 words, concise)
+@@ -401,6 +408,14 @@ export type EventQuestionRejected = {
+   }
+ }
+
++export type EventSessionMessageQueued = {
++  type: "session.message.queued"
++  properties: {
++    sessionID: string
++    depth: number
++  }
++}
++
+ export type SessionStatus =
+   | {
+       type: "idle"
+@@ -430,15 +445,13 @@ export type EventSessionIdle = {
+   }
+ }
+
+-/**
+- * Hivemind: emitted when the SessionBackground registry mutates — a
+- * background-mode Task spawn (status=running), its completion
+- * (status=complete), or the parent consuming a result via
+- * read_task_result (entry removed). Carries the full active set so a
+- * subscriber can derive .length, diff against last-known state, etc.
+- * Provided by patch
+- * `//third_party/patches/0017-Background-Task-mode-cascade-cancellation.patch`.
+- */
++export type EventSessionCompacted = {
++  type: "session.compacted"
++  properties: {
++    sessionID: string
++  }
++}
++
+ export type EventSessionBackgroundChanged = {
+   type: "session.background.changed"
+   properties: {
+@@ -450,28 +463,6 @@ export type EventSessionBackgroundChanged = {
+   }
+ }
+
+-/**
+- * Hivemind: emitted when the per-client presence map changes — a TUI
+- * connects/disconnects its `/presence` WebSocket or sends a focus
+- * update. `sessions` is the deduplicated set of session IDs focused
+- * by at least one client. Subagent counts are computed per-TUI from
+- * the focused session's direct DB children and do not flow through
+- * this event.
+- */
+-export type EventSessionLiveChanged = {
+-  type: "session.live.changed"
+-  properties: {
+-    sessions: Array<string>
+-  }
+-}
+-
+-export type EventSessionCompacted = {
+-  type: "session.compacted"
+-  properties: {
+-    sessionID: string
+-  }
+-}
+-
+ export type Todo = {
+   /**
+    * Brief description of the task
+@@ -549,6 +540,23 @@ export type EventWorktreeFailed = {
+   }
+ }
+
++export type EventSessionLiveChanged = {
++  type: "session.live.changed"
++  properties: {
++    sessions: Array<string>
++  }
++}
++
++export type EventGlobalAgentsReloaded = {
++  type: "global.agents-reloaded"
++  properties: {
++    instances: number
++    agents: number
++    skills: number
++    commands: number
++  }
++}
++
+ export type OutputFormatText = {
+   type: "text"
+ }
+@@ -971,6 +979,10 @@ export type Session = {
+     snapshot?: string
+     diff?: string
+   }
++  metadata?: {
++    [key: string]: unknown
++  }
++  ephemeral?: boolean
+ }
+
+ export type EventSessionCreated = {
+@@ -1023,14 +1035,15 @@ export type Event =
+   | EventCommandExecuted
+   | EventWorkspaceReady
+   | EventWorkspaceFailed
++  | EventAgentChanged
+   | EventQuestionAsked
+   | EventQuestionReplied
+   | EventQuestionRejected
++  | EventSessionMessageQueued
+   | EventSessionStatus
+   | EventSessionIdle
+-  | EventSessionBackgroundChanged
+-  | EventSessionLiveChanged
+   | EventSessionCompacted
++  | EventSessionBackgroundChanged
+   | EventTodoUpdated
+   | EventPtyCreated
+   | EventPtyUpdated
+@@ -1038,6 +1051,8 @@ export type Event =
+   | EventPtyDeleted
+   | EventWorktreeReady
+   | EventWorktreeFailed
++  | EventSessionLiveChanged
++  | EventGlobalAgentsReloaded
+   | EventMessageUpdated
+   | EventMessageRemoved
+   | EventMessagePartUpdated
+@@ -1134,6 +1149,10 @@ export type SyncEventSessionUpdated = {
+         snapshot?: string
+         diff?: string
+       } | null
++      metadata: {
++        [key: string]: unknown
++      } | null
++      ephemeral: boolean | null
+     }
+   }
+ }
+@@ -1254,6 +1273,10 @@ export type AgentConfig = {
+    */
+   maxSteps?: number
+   permission?: PermissionConfig
++  /**
++   * Hivemind: when true, every Task() spawn of this agent creates a session that auto-deletes on terminal state (completed | failed | cancelled). For background spawns, the delete is deferred until read_task_result consumes the result. Per-spawn `Task(ephemeral=...)` overrides this default. Use for one-off agents like memory daemons, curators, and explore-style helpers.
++   */
++  ephemeral?: boolean
+   [key: string]:
+     | unknown
+     | string
+@@ -1863,6 +1886,10 @@ export type GlobalSession = {
+     snapshot?: string
+     diff?: string
+   }
++  metadata?: {
++    [key: string]: unknown
++  }
++  ephemeral?: boolean
+   project: ProjectSummary | null
+ }
+
+@@ -2088,6 +2115,7 @@ export type Agent = {
+     [key: string]: unknown
+   }
+   steps?: number
++  ephemeral?: boolean
+ }
+
+ export type LspStatus = {
+@@ -2212,6 +2240,67 @@ export type GlobalDisposeResponses = {
+
+ export type GlobalDisposeResponse = GlobalDisposeResponses[keyof GlobalDisposeResponses]
+
++export type GlobalReloadAgentsData = {
++  body?: never
++  path?: never
++  query?: never
++  url: "/global/reload-agents"
++}
++
++export type GlobalReloadAgentsResponses = {
++  /**
++   * Agents, skills, and commands reloaded
++   */
++  200: {
++    instances: number
++    agents: number
++    skills: number
++    commands: number
++  }
++}
++
++export type GlobalReloadAgentsResponse = GlobalReloadAgentsResponses[keyof GlobalReloadAgentsResponses]
++
++export type GlobalLiveSessionsData = {
++  body?: never
++  path?: never
++  query?: never
++  url: "/global/live-sessions"
++}
++
++export type GlobalLiveSessionsResponses = {
++  /**
++   * Live sessions
++   */
++  200: {
++    sessions: Array<string>
++  }
++}
++
++export type GlobalLiveSessionsResponse = GlobalLiveSessionsResponses[keyof GlobalLiveSessionsResponses]
++
++export type GlobalBackgroundTasksData = {
++  body?: never
++  path?: never
++  query?: never
++  url: "/global/background-tasks"
++}
++
++export type GlobalBackgroundTasksResponses = {
++  /**
++   * Background tasks
++   */
++  200: {
++    tasks: Array<{
++      parentID: string
++      taskID: string
++      status: "running" | "complete"
++    }>
++  }
++}
++
++export type GlobalBackgroundTasksResponse = GlobalBackgroundTasksResponses[keyof GlobalBackgroundTasksResponses]
++
+ export type GlobalUpgradeData = {
+   body?: {
+     target?: string
+@@ -3139,6 +3228,10 @@ export type SessionCreateData = {
+     title?: string
+     permission?: PermissionRuleset
+     workspaceID?: string
++    metadata?: {
++      [key: string]: unknown
++    }
++    ephemeral?: boolean
+   }
+   path?: never
+   query?: {
+@@ -3412,6 +3505,9 @@ export type SessionInitResponse = SessionInitResponses[keyof SessionInitResponse
+ export type SessionForkData = {
+   body?: {
+     messageID?: string
++    parentID?: string
++    permission?: PermissionRuleset
++    ephemeral?: boolean
+   }
+   path: {
+     sessionID: string
+@@ -3888,6 +3984,62 @@ export type SessionPromptAsyncResponses = {
+
+ export type SessionPromptAsyncResponse = SessionPromptAsyncResponses[keyof SessionPromptAsyncResponses]
+
++export type SessionInboxData = {
++  body?: {
++    messageID?: string
++    model?: {
++      providerID: string
++      modelID: string
++    }
++    agent?: string
++    noReply?: boolean
++    /**
++     * @deprecated tools and permissions have been merged, you can set permissions on the session itself now
++     */
++    tools?: {
++      [key: string]: boolean
++    }
++    format?: OutputFormat
++    system?: string
++    variant?: string
++    parts: Array<TextPartInput | FilePartInput | AgentPartInput | SubtaskPartInput>
++  }
++  path: {
++    sessionID: string
++  }
++  query?: {
++    directory?: string
++    workspace?: string
++  }
++  url: "/session/{sessionID}/inbox"
++}
++
++export type SessionInboxErrors = {
++  /**
++   * Bad request
++   */
++  400: BadRequestError
++  /**
++   * Not found
++   */
++  404: NotFoundError
++}
++
++export type SessionInboxError = SessionInboxErrors[keyof SessionInboxErrors]
++
++export type SessionInboxResponses = {
++  /**
++   * Message delivered or queued
++   */
++  200: {
++    sessionID: string
++    queued: boolean
++    depth: number
++  }
++}
++
++export type SessionInboxResponse = SessionInboxResponses[keyof SessionInboxResponses]
++
+ export type SessionCommandData = {
+   body?: {
+     messageID?: string
+--
+2.50.1

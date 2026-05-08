@@ -1,0 +1,980 @@
+From fa9ba301f837614679726b01c2b1b0ee609e52e1 Mon Sep 17 00:00:00 2001
+From: Lucas Santos <lsantos7654@gmail.com>
+Date: Thu, 7 May 2026 23:28:59 -0400
+Subject: [PATCH 21/21] Ephemeral subagent sessions
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Adds an `ephemeral` boolean to sessions. When set, the session is
+deleted automatically when its runner reaches idle on a terminal
+turn (completed | failed | cancelled). For background-mode
+subagents the delete is deferred until the parent consumes the
+buffered result via read_task_result, so the result isn't lost.
+
+Subagents that aren't designed for resume — the memory daemon,
+the expert curator, explore-style one-offs — accumulate in main's
+session tree today. Manual cleanup via delete_session is the only
+escape hatch. With this change the subagent tree only shows
+long-lived agents (experts, team leads) plus any in-flight
+one-offs; one-offs vanish when done.
+
+Schema:
+
+  - `session.ephemeral` boolean column with default false (Drizzle
+    migration `20260508023927_session_ephemeral`)
+  - `Session.Info` Zod schema field
+  - `Session.toRow` / `fromRow` map it
+  - `Session.create` / `Session.fork` accept `ephemeral?: boolean`
+
+Finalizers:
+
+  - `SessionRunState.onIdle` looks up the session and removes it
+    when ephemeral and not registered as a background task
+  - `SessionBackground.consume` removes the consumed session when
+    ephemeral. New `SessionBackground.isRegistered(taskID)` helper
+    discriminates background vs foreground at the run-state seam
+  - Both finalizers use dynamic imports for the cross-module call
+    to avoid a top-level cycle (background.ts already imports
+    SessionRunState.assertNotBusy)
+
+Task tool:
+
+  - `Task(ephemeral?: boolean)` parameter, mutually exclusive with
+    `task_id` (resume defeats ephemeral; rejected at the schema
+    layer)
+  - Effective ephemeral = per-spawn override OR agent frontmatter
+    default. Agents that should always be ephemeral declare
+    `ephemeral: true` in `agent.md` frontmatter
+  - Pass-through to Session.create / Session.fork
+
+Agent + config:
+
+  - `Agent.Info.ephemeral` runtime field
+  - Config Agent schema accepts `ephemeral` in frontmatter
+  - Agent state composer threads it from cfg into the runtime info
+
+Hivemind callsite:
+
+  - `HivemindMemoryPlugin` auto-spawn passes `ephemeral: true` so
+    the daemon's session vanishes after each compaction pass
+
+Tests:
+
+  - `test/session/ephemeral.test.ts` — round-trip, fork, consume()
+    deletion semantics, isRegistered helper
+  - `test/tool/task-ephemeral.test.ts` — per-spawn override,
+    default false, mutual-exclusion with task_id, frontmatter
+    default applied, per-spawn override beats frontmatter
+  - `test/plugin/hivemind-memory.test.ts` extended to assert the
+    auto-spawned daemon has ephemeral=true
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+---
+ .../migration.sql                             |   1 +
+ packages/opencode/src/agent/agent.ts          |   6 +
+ packages/opencode/src/config/config.ts        |   7 +
+ .../opencode/src/plugin/hivemind-memory.ts    |  16 +-
+ packages/opencode/src/session/background.ts   |  38 ++
+ packages/opencode/src/session/index.ts        |  22 ++
+ packages/opencode/src/session/projectors.ts   |   1 +
+ packages/opencode/src/session/run-state.ts    |  33 ++
+ packages/opencode/src/session/session.sql.ts  |   5 +
+ packages/opencode/src/tool/task.ts            |  28 ++
+ .../test/plugin/hivemind-memory.test.ts       |   5 +
+ .../opencode/test/session/ephemeral.test.ts   | 108 ++++++
+ .../opencode/test/tool/task-ephemeral.test.ts | 350 ++++++++++++++++++
+ 13 files changed, 618 insertions(+), 2 deletions(-)
+ create mode 100644 packages/opencode/migration/20260508023927_session_ephemeral/migration.sql
+ create mode 100644 packages/opencode/test/session/ephemeral.test.ts
+ create mode 100644 packages/opencode/test/tool/task-ephemeral.test.ts
+
+diff --git a/packages/opencode/migration/20260508023927_session_ephemeral/migration.sql b/packages/opencode/migration/20260508023927_session_ephemeral/migration.sql
+new file mode 100644
+index 0000000..935e452
+--- /dev/null
++++ b/packages/opencode/migration/20260508023927_session_ephemeral/migration.sql
+@@ -0,0 +1 @@
++ALTER TABLE `session` ADD `ephemeral` integer DEFAULT 0;
+diff --git a/packages/opencode/src/agent/agent.ts b/packages/opencode/src/agent/agent.ts
+index d3179d6..dcd2ecd 100644
+--- a/packages/opencode/src/agent/agent.ts
++++ b/packages/opencode/src/agent/agent.ts
+@@ -47,6 +47,11 @@ export namespace Agent {
+       prompt: z.string().optional(),
+       options: z.record(z.string(), z.any()),
+       steps: z.number().int().positive().optional(),
++      // Hivemind: when set, every Task() spawn of this agent creates an
++      // ephemeral session that auto-deletes on terminal state. Per-spawn
++      // `Task(ephemeral=...)` overrides this default. Read by the Task
++      // tool when resolving the effective ephemeral flag.
++      ephemeral: z.boolean().optional(),
+     })
+     .meta({
+       ref: "Agent",
+@@ -270,6 +275,7 @@ export namespace Agent {
+             item.steps = value.steps ?? item.steps
+             item.options = mergeDeep(item.options, value.options ?? {})
+             item.permission = Permission.merge(item.permission, Permission.fromConfig(value.permission ?? {}))
++            item.ephemeral = value.ephemeral ?? item.ephemeral
+           }
+
+           // Ensure Truncate.GLOB is allowed unless explicitly configured
+diff --git a/packages/opencode/src/config/config.ts b/packages/opencode/src/config/config.ts
+index cee060b..e9c4ecc 100644
+--- a/packages/opencode/src/config/config.ts
++++ b/packages/opencode/src/config/config.ts
+@@ -556,6 +556,12 @@ export namespace Config {
+         .describe("Maximum number of agentic iterations before forcing text-only response"),
+       maxSteps: z.number().int().positive().optional().describe("@deprecated Use 'steps' field instead."),
+       permission: Permission.optional(),
++      ephemeral: z
++        .boolean()
++        .optional()
++        .describe(
++          "Hivemind: when true, every Task() spawn of this agent creates a session that auto-deletes on terminal state (completed | failed | cancelled). For background spawns, the delete is deferred until read_task_result consumes the result. Per-spawn `Task(ephemeral=...)` overrides this default. Use for one-off agents like memory daemons, curators, and explore-style helpers.",
++        ),
+     })
+     .catchall(z.any())
+     .transform((agent, ctx) => {
+@@ -576,6 +582,7 @@ export namespace Config {
+         "permission",
+         "disable",
+         "tools",
++        "ephemeral",
+       ])
+
+       // Extract unknown properties into options
+diff --git a/packages/opencode/src/plugin/hivemind-memory.ts b/packages/opencode/src/plugin/hivemind-memory.ts
+index f85e052..0cfa89d 100644
+--- a/packages/opencode/src/plugin/hivemind-memory.ts
++++ b/packages/opencode/src/plugin/hivemind-memory.ts
+@@ -103,8 +103,12 @@ export const HivemindMemoryPlugin = async (input: PluginInput): Promise<Hooks> =
+         const targetAgent = match[1]
+
+         try {
++          // Hivemind: `agent`, `metadata`, and `ephemeral` are hivemind
++          // engine extensions not in the V1 OpenAPI spec the SDK was
++          // generated from. Cast through `unknown` so the call site
++          // documents the intent without abusing `// @ts-expect-error`
++          // (which would suppress unrelated future errors silently).
+           await client.session.create({
+-            // @ts-expect-error — metadata field added by hivemind patch
+             body: {
+               parentID: mainID,
+               agent: DAEMON_AGENT,
+@@ -114,7 +118,15 @@ export const HivemindMemoryPlugin = async (input: PluginInput): Promise<Hooks> =
+                 target_agent: targetAgent,
+                 triggered_at_bytes: bytes,
+               },
+-            },
++              // Hivemind: the daemon is one-off. Auto-delete its session
++              // when it reaches terminal state so the subagent tree only
++              // shows long-lived agents instead of accumulating one
++              // `compact memory: <agent>` corpse per write that crossed
++              // the threshold. Belt-and-braces with the daemon's
++              // frontmatter `ephemeral: true` — explicit here so the
++              // behavior is visible at the call site.
++              ephemeral: true,
++            } as unknown as { parentID?: string; title?: string },
+           })
+           log.info("memory-hook: spawned daemon", {
+             target_agent: targetAgent,
+diff --git a/packages/opencode/src/session/background.ts b/packages/opencode/src/session/background.ts
+index 907fadb..57288be 100644
+--- a/packages/opencode/src/session/background.ts
++++ b/packages/opencode/src/session/background.ts
+@@ -172,6 +172,11 @@ export namespace SessionBackground {
+   /**
+    * Pop a completed result and remove it from the registry. Returns
+    * undefined if the task is unknown or still running.
++   *
++   * Hivemind: if the consumed task's session is `ephemeral`, the session
++   * is removed here. Background mode defers the ephemeral cleanup until
++   * the parent has read the buffered result; otherwise the result would
++   * vanish before the parent could fetch it.
+    */
+   export function consume(parentID: SessionID, taskID: SessionID): Pending | undefined {
+     const bucket = _registry.get(parentID)
+@@ -182,9 +187,42 @@ export namespace SessionBackground {
+     if (bucket!.size === 0) _registry.delete(parentID)
+     log.info("consume", { parentID, taskID })
+     _publishChange()
++    void _maybeCleanupEphemeral(taskID)
+     return entry
+   }
+
++  /**
++   * Hivemind: fire-and-forget. Look up the session and, if `ephemeral`,
++   * remove it. Errors are logged and swallowed because the caller has
++   * already returned the result; a stale row is acceptable but a thrown
++   * error would surface in the wrong call path.
++   */
++  async function _maybeCleanupEphemeral(taskID: SessionID): Promise<void> {
++    try {
++      const info = await Session.get(taskID)
++      if (info.ephemeral) {
++        await Session.remove(taskID)
++        log.info("ephemeral session removed after consume", { taskID })
++      }
++    } catch (err) {
++      log.error("ephemeral cleanup after consume failed", { taskID, err })
++    }
++  }
++
++  /**
++   * Hivemind: true if `taskID` is registered as a background child of some
++   * parent (regardless of status). Used by the run-state finalizer to decide
++   * whether ephemeral cleanup should happen now (foreground task) or be
++   * deferred to `consume` (background task — result still needs to be
++   * read by the parent).
++   */
++  export function isRegistered(taskID: SessionID): boolean {
++    for (const bucket of _registry.values()) {
++      if (bucket.has(taskID)) return true
++    }
++    return false
++  }
++
+   /** Read entries for a parent without mutating the registry. */
+   export function pendingFor(parentID: SessionID): Pending[] {
+     const bucket = _registry.get(parentID)
+diff --git a/packages/opencode/src/session/index.ts b/packages/opencode/src/session/index.ts
+index 349bcc1..7801efc 100644
+--- a/packages/opencode/src/session/index.ts
++++ b/packages/opencode/src/session/index.ts
+@@ -77,6 +77,7 @@ export namespace Session {
+       revert,
+       permission: row.permission ?? undefined,
+       metadata: row.metadata ?? undefined,
++      ephemeral: row.ephemeral ?? undefined,
+       time: {
+         created: row.time_created,
+         updated: row.time_updated,
+@@ -104,6 +105,7 @@ export namespace Session {
+       revert: info.revert ?? null,
+       permission: info.permission,
+       metadata: info.metadata,
++      ephemeral: info.ephemeral,
+       time_created: info.time.created,
+       time_updated: info.time.updated,
+       time_compacting: info.time.compacting,
+@@ -165,6 +167,12 @@ export namespace Session {
+       // observers can see why a session exists without parsing the
+       // title. Plain JSON; opaque to opencode core.
+       metadata: z.record(z.string(), z.unknown()).optional(),
++      // Hivemind: when true, the session is deleted automatically when
++      // its runner reaches idle after a terminal turn. For background-
++      // mode subagents the delete is deferred until the parent consumes
++      // the buffered result via read_task_result. Set on Task spawns
++      // (`Task(ephemeral=true)`) or via `Session.create({ephemeral})`.
++      ephemeral: z.boolean().optional(),
+     })
+     .meta({
+       ref: "Session",
+@@ -392,6 +400,10 @@ export namespace Session {
+         directory: string
+         permission?: Permission.Ruleset
+         metadata?: Record<string, unknown>
++        // Hivemind: see Info.ephemeral. Persisted on the row so the
++        // run-state finalizer can read it back without consulting the
++        // caller. Default false at the schema level.
++        ephemeral?: boolean
+       }) {
+         const ctx = yield* InstanceState.context
+         const result: Info = {
+@@ -405,6 +417,7 @@ export namespace Session {
+           title: input.title ?? createDefaultTitle(!!input.parentID),
+           permission: input.permission,
+           metadata: input.metadata,
++          ephemeral: input.ephemeral,
+           time: {
+             created: Date.now(),
+             updated: Date.now(),
+@@ -532,6 +545,7 @@ export namespace Session {
+         permission?: Permission.Ruleset
+         workspaceID?: WorkspaceID
+         metadata?: Record<string, unknown>
++        ephemeral?: boolean
+       }) {
+         const directory = yield* InstanceState.directory
+         return yield* createNext({
+@@ -541,6 +555,7 @@ export namespace Session {
+           permission: input?.permission,
+           workspaceID: input?.workspaceID,
+           metadata: input?.metadata,
++          ephemeral: input?.ephemeral,
+         })
+       })
+
+@@ -549,6 +564,10 @@ export namespace Session {
+         messageID?: MessageID
+         parentID?: SessionID
+         permission?: Permission.Ruleset
++        // Hivemind: when set, the forked session is ephemeral and will
++        // be auto-deleted on terminal state. The source session is
++        // never modified.
++        ephemeral?: boolean
+       }) {
+         const directory = yield* InstanceState.directory
+         const original = yield* get(input.sessionID)
+@@ -567,6 +586,7 @@ export namespace Session {
+           // forks always start with no permission overlay regardless of
+           // what the source had.
+           permission: input.permission,
++          ephemeral: input.ephemeral,
+         })
+         const msgs = yield* messages({ sessionID: input.sessionID })
+         const idMap = new Map<string, MessageID>()
+@@ -727,6 +747,7 @@ export namespace Session {
+         permission: Info.shape.permission,
+         workspaceID: WorkspaceID.zod.optional(),
+         metadata: Info.shape.metadata,
++        ephemeral: Info.shape.ephemeral,
+       })
+       .optional(),
+     (input) => runPromise((svc) => svc.create(input)),
+@@ -738,6 +759,7 @@ export namespace Session {
+       messageID: MessageID.zod.optional(),
+       parentID: SessionID.zod.optional(),
+       permission: Permission.Ruleset.optional(),
++      ephemeral: Info.shape.ephemeral,
+     }),
+     (input) => runPromise((svc) => svc.fork(input)),
+   )
+diff --git a/packages/opencode/src/session/projectors.ts b/packages/opencode/src/session/projectors.ts
+index 71e0160..6e8421a 100644
+--- a/packages/opencode/src/session/projectors.ts
++++ b/packages/opencode/src/session/projectors.ts
+@@ -53,6 +53,7 @@ export function toPartialRow(info: DeepPartial<Session.Info>) {
+     revert: grab(info, "revert"),
+     permission: grab(info, "permission"),
+     metadata: grab(info, "metadata"),
++    ephemeral: grab(info, "ephemeral"),
+     time_created: grab(info, "time", (v) => grab(v, "created")),
+     time_updated: grab(info, "time", (v) => grab(v, "updated")),
+     time_compacting: grab(info, "time", (v) => grab(v, "compacting")),
+diff --git a/packages/opencode/src/session/run-state.ts b/packages/opencode/src/session/run-state.ts
+index 6b6e4f4..279341c 100644
+--- a/packages/opencode/src/session/run-state.ts
++++ b/packages/opencode/src/session/run-state.ts
+@@ -7,8 +7,34 @@ import { SessionInbox } from "./inbox"
+ import { MessageV2 } from "./message-v2"
+ import { SessionID } from "./schema"
+ import { SessionStatus } from "./status"
++import { Log } from "../util/log"
+
+ export namespace SessionRunState {
++  const log = Log.create({ service: "session.run-state" })
++
++  /**
++   * Hivemind: foreground ephemeral cleanup. Runs when a session's runner
++   * reaches idle (terminal turn — completed, failed, or cancelled). If the
++   * session is `ephemeral` AND not registered as a background task, remove
++   * it. Background tasks defer cleanup to `SessionBackground.consume` so
++   * the parent has a chance to read the buffered result first.
++   *
++   * `background.ts` imports from this module (`SessionRunState.assertNotBusy`)
++   * so we use a dynamic import here to avoid a top-level cycle.
++   */
++  async function _maybeCleanupEphemeral(sessionID: SessionID): Promise<void> {
++    try {
++      const { SessionBackground } = await import("./background")
++      if (SessionBackground.isRegistered(sessionID)) return
++      const info = await Session.get(sessionID)
++      if (!info.ephemeral) return
++      await Session.remove(sessionID)
++      log.info("ephemeral session removed on idle", { sessionID })
++    } catch (err) {
++      log.error("ephemeral cleanup on idle failed", { sessionID, err })
++    }
++  }
++
+   export interface Interface {
+     readonly assertNotBusy: (sessionID: SessionID) => Effect.Effect<void>
+     readonly cancel: (sessionID: SessionID) => Effect.Effect<void>
+@@ -63,6 +89,13 @@ export namespace SessionRunState {
+             // The follow-up prompt re-enters ensureRunning and creates a new
+             // runner for this session.
+             yield* Effect.sync(() => SessionInbox.drainNext(sessionID))
++            // Hivemind: ephemeral cleanup. Foreground ephemeral sessions are
++            // removed here on terminal-state idle. Background ephemeral sessions
++            // defer cleanup to consume() so the parent can read the buffered
++            // result. Fire-and-forget — failures are logged inside the helper.
++            yield* Effect.sync(() => {
++              void _maybeCleanupEphemeral(sessionID)
++            })
+           }),
+           onBusy: status.set(sessionID, { type: "busy" }),
+           onInterrupt,
+diff --git a/packages/opencode/src/session/session.sql.ts b/packages/opencode/src/session/session.sql.ts
+index 112825f..7814be9 100644
+--- a/packages/opencode/src/session/session.sql.ts
++++ b/packages/opencode/src/session/session.sql.ts
+@@ -33,6 +33,11 @@ export const SessionTable = sqliteTable(
+     revert: text({ mode: "json" }).$type<{ messageID: MessageID; partID?: PartID; snapshot?: string; diff?: string }>(),
+     permission: text({ mode: "json" }).$type<Permission.Ruleset>(),
+     metadata: text({ mode: "json" }).$type<Record<string, unknown>>(),
++    // Hivemind: when set, the session is deleted automatically when it
++    // reaches a terminal state (idle after work completed/failed/cancelled).
++    // Default false. For background-mode subagents, deletion is deferred
++    // until the parent consumes the result via read_task_result.
++    ephemeral: integer({ mode: "boolean" }).default(false),
+     ...Timestamps,
+     time_compacting: integer(),
+     time_archived: integer(),
+diff --git a/packages/opencode/src/tool/task.ts b/packages/opencode/src/tool/task.ts
+index f94ccb4..d8bf0b4 100644
+--- a/packages/opencode/src/tool/task.ts
++++ b/packages/opencode/src/tool/task.ts
+@@ -36,6 +36,12 @@ const parameters = z.object({
+       "Optional. If true, spawn the subagent and return immediately with task_id and status=spawned (background). The subagent runs to completion in its own session; the result is NOT returned synchronously. On a later turn the engine injects a <system-reminder> listing ready task_ids — fetch each result with read_task_result(task_id). Aborting the parent session cascades to running background children. Useful for long-running consultations or parallel expert spawns where blocking the parent's tool call would waste time. Default false (synchronous).",
+     )
+     .optional(),
++  ephemeral: z
++    .boolean()
++    .describe(
++      "Optional. If true, the spawned subagent's session is auto-deleted when the subagent reaches a terminal state (completed, failed, or cancelled). Useful for one-off tasks where you will never resume the session — exploration spawns, fire-and-forget analysis, scratch work — to keep the subagent tree clean. The summary returned by the Task tool stays in the parent's message history; only the spawned session's intermediate work goes away. Mutually exclusive with task_id (resume defeats ephemeral). For background mode, deletion is deferred until read_task_result consumes the buffered result. Some agents declare `ephemeral: true` in their frontmatter and are always ephemeral regardless of this flag. Default false.",
++    )
++    .optional(),
+   command: z.string().describe("The command that triggered this task").optional(),
+ })
+
+@@ -60,6 +66,18 @@ export const TaskTool = Tool.defineEffect(
+         )
+       }
+
++      // Hivemind: ephemeral + task_id is a caller mistake — resume
++      // by definition wants the session to persist. Reject at the
++      // schema layer so the model gets a clear error and doesn't
++      // silently end up with the resume path winning.
++      if (params.task_id && params.ephemeral) {
++        return yield* Effect.fail(
++          new Error(
++            "task_id and ephemeral are mutually exclusive — resume keeps the session alive, ephemeral deletes it",
++          ),
++        )
++      }
++
+       if (!ctx.extra?.bypassAgentCheck) {
+         yield* Effect.promise(() =>
+           ctx.ask({
+@@ -79,6 +97,14 @@ export const TaskTool = Tool.defineEffect(
+         return yield* Effect.fail(new Error(`Unknown agent type: ${params.subagent_type} is not a valid agent type`))
+       }
+
++      // Hivemind: effective ephemeral flag = per-spawn override OR
++      // agent frontmatter default. Per-spawn explicit value (true OR
++      // false) always wins; falls back to the agent's declared default
++      // when omitted. Resume path skips this — task_id is mutually
++      // exclusive with ephemeral and the existing session keeps its
++      // stored value.
++      const effectiveEphemeral = params.ephemeral ?? next.ephemeral ?? undefined
++
+       const canTask = next.permission.some((rule) => rule.permission === id)
+       const canTodo = next.permission.some((rule) => rule.permission === "todowrite")
+
+@@ -138,6 +164,7 @@ export const TaskTool = Tool.defineEffect(
+             sessionID: sourceID,
+             parentID: ctx.sessionID,
+             permission: [...(original.permission ?? []), ...childPermissionOverlay],
++            ephemeral: effectiveEphemeral,
+           }),
+         )
+       } else {
+@@ -146,6 +173,7 @@ export const TaskTool = Tool.defineEffect(
+             parentID: ctx.sessionID,
+             title: params.description + ` (@${next.name} subagent)`,
+             permission: childPermissionOverlay,
++            ephemeral: effectiveEphemeral,
+           }),
+         )
+       }
+diff --git a/packages/opencode/test/plugin/hivemind-memory.test.ts b/packages/opencode/test/plugin/hivemind-memory.test.ts
+index d70ad76..1159974 100644
+--- a/packages/opencode/test/plugin/hivemind-memory.test.ts
++++ b/packages/opencode/test/plugin/hivemind-memory.test.ts
+@@ -98,6 +98,11 @@ describe("hivemind-memory plugin", () => {
+             target_agent: "bazel",
+             triggered_at_bytes: 9000,
+           })
++          // Hivemind: the auto-spawn passes ephemeral=true so the daemon's
++          // session vanishes once it finishes its compaction pass. Without
++          // this, every threshold-crossing write would leave a `compact
++          // memory: <agent>` corpse in the subagent tree.
++          expect(daemon!.ephemeral).toBe(true)
+         },
+       })
+     } finally {
+diff --git a/packages/opencode/test/session/ephemeral.test.ts b/packages/opencode/test/session/ephemeral.test.ts
+new file mode 100644
+index 0000000..154f34a
+--- /dev/null
++++ b/packages/opencode/test/session/ephemeral.test.ts
+@@ -0,0 +1,108 @@
++import { describe, expect, test } from "bun:test"
++import path from "path"
++import { Session } from "../../src/session"
++import { SessionBackground } from "../../src/session/background"
++import { Log } from "../../src/util/log"
++import { Instance } from "../../src/project/instance"
++
++const projectRoot = path.join(__dirname, "../..")
++Log.init({ print: false })
++
++// Hivemind: tests for the session.ephemeral column. Sessions flagged
++// ephemeral are deleted when the runner reaches idle on a terminal turn
++// (completed | failed | cancelled). Background tasks defer deletion to
++// `SessionBackground.consume` so the parent has a chance to read the
++// buffered result first.
++
++describe("Session ephemeral column", () => {
++  test("round-trips true / false / undefined", async () => {
++    await Instance.provide({
++      directory: projectRoot,
++      fn: async () => {
++        const a = await Session.create({ ephemeral: true })
++        const b = await Session.create({ ephemeral: false })
++        const c = await Session.create({})
++
++        expect((await Session.get(a.id)).ephemeral).toBe(true)
++        expect((await Session.get(b.id)).ephemeral).toBe(false)
++        expect((await Session.get(c.id)).ephemeral).toBeFalsy()
++      },
++    })
++  })
++
++  test("fork carries ephemeral when set on the fork call", async () => {
++    await Instance.provide({
++      directory: projectRoot,
++      fn: async () => {
++        const source = await Session.create({})
++        const forked = await Session.fork({ sessionID: source.id, ephemeral: true })
++        expect((await Session.get(forked.id)).ephemeral).toBe(true)
++        // Source untouched.
++        expect((await Session.get(source.id)).ephemeral).toBeFalsy()
++      },
++    })
++  })
++
++  test("consume() deletes the session if ephemeral", async () => {
++    await Instance.provide({
++      directory: projectRoot,
++      fn: async () => {
++        const parent = await Session.create({})
++        const ephemeralChild = await Session.create({ parentID: parent.id, ephemeral: true })
++
++        SessionBackground.register(parent.id, ephemeralChild.id)
++        SessionBackground.complete(parent.id, ephemeralChild.id, "result text")
++
++        // Consume returns the buffered entry…
++        const entry = SessionBackground.consume(parent.id, ephemeralChild.id)
++        expect(entry?.result).toBe("result text")
++
++        // …and triggers fire-and-forget cleanup. The cleanup is async,
++        // so wait briefly for Session.remove to land.
++        await new Promise((r) => setTimeout(r, 50))
++        await expect(Session.get(ephemeralChild.id)).rejects.toThrow()
++      },
++    })
++  })
++
++  test("consume() leaves non-ephemeral sessions in place", async () => {
++    await Instance.provide({
++      directory: projectRoot,
++      fn: async () => {
++        const parent = await Session.create({})
++        const persistentChild = await Session.create({ parentID: parent.id })
++
++        SessionBackground.register(parent.id, persistentChild.id)
++        SessionBackground.complete(parent.id, persistentChild.id, "result")
++        SessionBackground.consume(parent.id, persistentChild.id)
++
++        await new Promise((r) => setTimeout(r, 50))
++        // Still there.
++        const fetched = await Session.get(persistentChild.id)
++        expect(fetched.id).toBe(persistentChild.id)
++      },
++    })
++  })
++
++  test("isRegistered() returns true for active background tasks only", async () => {
++    await Instance.provide({
++      directory: projectRoot,
++      fn: async () => {
++        const parent = await Session.create({})
++        const child = await Session.create({ parentID: parent.id })
++
++        expect(SessionBackground.isRegistered(child.id)).toBe(false)
++
++        SessionBackground.register(parent.id, child.id)
++        expect(SessionBackground.isRegistered(child.id)).toBe(true)
++
++        SessionBackground.complete(parent.id, child.id, "")
++        // Still registered until consume pops it.
++        expect(SessionBackground.isRegistered(child.id)).toBe(true)
++
++        SessionBackground.consume(parent.id, child.id)
++        expect(SessionBackground.isRegistered(child.id)).toBe(false)
++      },
++    })
++  })
++})
+diff --git a/packages/opencode/test/tool/task-ephemeral.test.ts b/packages/opencode/test/tool/task-ephemeral.test.ts
+new file mode 100644
+index 0000000..4195a7f
+--- /dev/null
++++ b/packages/opencode/test/tool/task-ephemeral.test.ts
+@@ -0,0 +1,350 @@
++import { afterEach, describe, expect } from "bun:test"
++import { Effect, Layer } from "effect"
++import { Agent } from "../../src/agent/agent"
++import { Config } from "../../src/config/config"
++import * as CrossSpawnSpawner from "../../src/effect/cross-spawn-spawner"
++import { Instance } from "../../src/project/instance"
++import { Session } from "../../src/session"
++import { MessageV2 } from "../../src/session/message-v2"
++import { SessionPrompt } from "../../src/session/prompt"
++import { MessageID, PartID } from "../../src/session/schema"
++import { ModelID, ProviderID } from "../../src/provider/schema"
++import { TaskTool } from "../../src/tool/task"
++import { provideTmpdirInstance } from "../fixture/fixture"
++import { testEffect } from "../lib/effect"
++
++// Hivemind: tests for the ephemeral subagent flag on the Task tool.
++// Verifies the per-spawn override path (params.ephemeral) and the
++// frontmatter-default path (agent declares ephemeral). Mutual
++// exclusion with task_id is checked. Termination-driven cleanup
++// itself is covered by test/session/ephemeral.test.ts; here we
++// only assert that the spawned session is created with the right
++// `ephemeral` value.
++
++afterEach(async () => {
++  await Instance.disposeAll()
++})
++
++const ref = {
++  providerID: ProviderID.make("test"),
++  modelID: ModelID.make("test-model"),
++}
++
++const it = testEffect(
++  Layer.mergeAll(Agent.defaultLayer, Config.defaultLayer, CrossSpawnSpawner.defaultLayer, Session.defaultLayer),
++)
++
++const seed = Effect.fn("TaskEphemeralTest.seed")(function* (title = "Pinned") {
++  const session = yield* Session.Service
++  const chat = yield* session.create({ title })
++  const user = yield* session.updateMessage({
++    id: MessageID.ascending(),
++    role: "user",
++    sessionID: chat.id,
++    agent: "build",
++    model: ref,
++    time: { created: Date.now() },
++  })
++  const assistant: MessageV2.Assistant = {
++    id: MessageID.ascending(),
++    role: "assistant",
++    parentID: user.id,
++    sessionID: chat.id,
++    mode: "build",
++    agent: "build",
++    cost: 0,
++    path: { cwd: "/tmp", root: "/tmp" },
++    tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
++    modelID: ref.modelID,
++    providerID: ref.providerID,
++    time: { created: Date.now() },
++  }
++  yield* session.updateMessage(assistant)
++  return { chat, assistant }
++})
++
++function reply(input: Parameters<typeof SessionPrompt.prompt>[0], text: string): MessageV2.WithParts {
++  const id = MessageID.ascending()
++  return {
++    info: {
++      id,
++      role: "assistant",
++      parentID: input.messageID ?? MessageID.ascending(),
++      sessionID: input.sessionID,
++      mode: input.agent ?? "general",
++      agent: input.agent ?? "general",
++      cost: 0,
++      path: { cwd: "/tmp", root: "/tmp" },
++      tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
++      modelID: input.model?.modelID ?? ref.modelID,
++      providerID: input.model?.providerID ?? ref.providerID,
++      time: { created: Date.now() },
++      finish: "stop",
++    },
++    parts: [
++      {
++        id: PartID.ascending(),
++        messageID: id,
++        sessionID: input.sessionID,
++        type: "text",
++        text,
++      },
++    ],
++  }
++}
++
++describe("tool.task ephemeral", () => {
++  it.live("Task(ephemeral=true) creates an ephemeral session", () =>
++    provideTmpdirInstance(() =>
++      Effect.gen(function* () {
++        const sessions = yield* Session.Service
++        const { chat, assistant } = yield* seed()
++        const tool = yield* TaskTool
++        const def = yield* Effect.promise(() => tool.init())
++        const resolve = SessionPrompt.resolvePromptParts
++        const prompt = SessionPrompt.prompt
++
++        SessionPrompt.resolvePromptParts = async (template) => [{ type: "text", text: template }]
++        SessionPrompt.prompt = async (input) => reply(input, "done")
++        yield* Effect.addFinalizer(() =>
++          Effect.sync(() => {
++            SessionPrompt.resolvePromptParts = resolve
++            SessionPrompt.prompt = prompt
++          }),
++        )
++
++        const result = yield* Effect.promise(() =>
++          def.execute(
++            {
++              description: "explore foo",
++              prompt: "find foo references",
++              subagent_type: "general",
++              ephemeral: true,
++            },
++            {
++              sessionID: chat.id,
++              messageID: assistant.id,
++              agent: "build",
++              abort: new AbortController().signal,
++              messages: [],
++              metadata() {},
++              ask: async () => {},
++            },
++          ),
++        )
++
++        const childID = result.metadata.sessionId
++        const child = yield* sessions.get(childID)
++        expect(child.ephemeral).toBe(true)
++      }),
++    ),
++  )
++
++  it.live("Task() default is non-ephemeral", () =>
++    provideTmpdirInstance(() =>
++      Effect.gen(function* () {
++        const sessions = yield* Session.Service
++        const { chat, assistant } = yield* seed()
++        const tool = yield* TaskTool
++        const def = yield* Effect.promise(() => tool.init())
++        const resolve = SessionPrompt.resolvePromptParts
++        const prompt = SessionPrompt.prompt
++
++        SessionPrompt.resolvePromptParts = async (template) => [{ type: "text", text: template }]
++        SessionPrompt.prompt = async (input) => reply(input, "done")
++        yield* Effect.addFinalizer(() =>
++          Effect.sync(() => {
++            SessionPrompt.resolvePromptParts = resolve
++            SessionPrompt.prompt = prompt
++          }),
++        )
++
++        const result = yield* Effect.promise(() =>
++          def.execute(
++            {
++              description: "regular work",
++              prompt: "do thing",
++              subagent_type: "general",
++            },
++            {
++              sessionID: chat.id,
++              messageID: assistant.id,
++              agent: "build",
++              abort: new AbortController().signal,
++              messages: [],
++              metadata() {},
++              ask: async () => {},
++            },
++          ),
++        )
++
++        const child = yield* sessions.get(result.metadata.sessionId)
++        expect(child.ephemeral).toBeFalsy()
++      }),
++    ),
++  )
++
++  it.live("Task(task_id, ephemeral=true) is rejected at the schema layer", () =>
++    provideTmpdirInstance(() =>
++      Effect.gen(function* () {
++        const sessions = yield* Session.Service
++        const { chat, assistant } = yield* seed()
++        const child = yield* sessions.create({ parentID: chat.id, title: "Existing" })
++        const tool = yield* TaskTool
++        const def = yield* Effect.promise(() => tool.init())
++
++        // The Task tool's validation failure surfaces as a rejected
++        // promise from `def.execute`. Use Effect.tryPromise so the
++        // rejection becomes a typed failure that Effect.exit can
++        // capture (Effect.promise turns rejections into defects,
++        // which would crash the test runner instead).
++        const exitResult = yield* Effect.exit(
++          Effect.tryPromise({
++            try: () =>
++              def.execute(
++                {
++                  description: "resume + ephemeral",
++                  prompt: "should reject",
++                  subagent_type: "general",
++                  task_id: child.id,
++                  ephemeral: true,
++                },
++                {
++                  sessionID: chat.id,
++                  messageID: assistant.id,
++                  agent: "build",
++                  abort: new AbortController().signal,
++                  messages: [],
++                  metadata() {},
++                  ask: async () => {},
++                },
++              ),
++            catch: (err) => err as Error,
++          }),
++        )
++        expect(exitResult._tag).toBe("Failure")
++        // Effect 4.x exposes the wrapped error via `cause.reasons`.
++        // Each Reason is { _tag: "Fail" | "Die" | "Interrupt", error/defect }.
++        const cause = (exitResult as unknown as {
++          cause: { reasons: ReadonlyArray<{ _tag: string; error?: Error; defect?: unknown }> }
++        }).cause
++        const reason = cause.reasons[0]
++        const err = (reason?.error ?? reason?.defect) as Error | undefined
++        expect(err?.message ?? "").toContain("ephemeral")
++      }),
++    ),
++  )
++
++  it.live("frontmatter ephemeral default applies when caller omits the flag", () =>
++    provideTmpdirInstance(
++      () =>
++        Effect.gen(function* () {
++          const sessions = yield* Session.Service
++          const { chat, assistant } = yield* seed()
++          const tool = yield* TaskTool
++          const def = yield* Effect.promise(() => tool.init())
++          const resolve = SessionPrompt.resolvePromptParts
++          const prompt = SessionPrompt.prompt
++
++          SessionPrompt.resolvePromptParts = async (template) => [{ type: "text", text: template }]
++          SessionPrompt.prompt = async (input) => reply(input, "done")
++          yield* Effect.addFinalizer(() =>
++            Effect.sync(() => {
++              SessionPrompt.resolvePromptParts = resolve
++              SessionPrompt.prompt = prompt
++            }),
++          )
++
++          const result = yield* Effect.promise(() =>
++            def.execute(
++              {
++                description: "always-ephemeral",
++                prompt: "do",
++                subagent_type: "throwaway",
++              },
++              {
++                sessionID: chat.id,
++                messageID: assistant.id,
++                agent: "build",
++                abort: new AbortController().signal,
++                messages: [],
++                metadata() {},
++                ask: async () => {},
++              },
++            ),
++          )
++
++          const child = yield* sessions.get(result.metadata.sessionId)
++          expect(child.ephemeral).toBe(true)
++        }),
++      {
++        config: {
++          agent: {
++            throwaway: {
++              description: "Always-ephemeral subagent (test fixture)",
++              mode: "subagent",
++              ephemeral: true,
++            },
++          },
++        },
++      },
++    ),
++  )
++
++  it.live("per-spawn ephemeral=false overrides frontmatter default true", () =>
++    provideTmpdirInstance(
++      () =>
++        Effect.gen(function* () {
++          const sessions = yield* Session.Service
++          const { chat, assistant } = yield* seed()
++          const tool = yield* TaskTool
++          const def = yield* Effect.promise(() => tool.init())
++          const resolve = SessionPrompt.resolvePromptParts
++          const prompt = SessionPrompt.prompt
++
++          SessionPrompt.resolvePromptParts = async (template) => [{ type: "text", text: template }]
++          SessionPrompt.prompt = async (input) => reply(input, "done")
++          yield* Effect.addFinalizer(() =>
++            Effect.sync(() => {
++              SessionPrompt.resolvePromptParts = resolve
++              SessionPrompt.prompt = prompt
++            }),
++          )
++
++          const result = yield* Effect.promise(() =>
++            def.execute(
++              {
++                description: "override",
++                prompt: "do",
++                subagent_type: "throwaway",
++                ephemeral: false,
++              },
++              {
++                sessionID: chat.id,
++                messageID: assistant.id,
++                agent: "build",
++                abort: new AbortController().signal,
++                messages: [],
++                metadata() {},
++                ask: async () => {},
++              },
++            ),
++          )
++
++          const child = yield* sessions.get(result.metadata.sessionId)
++          expect(child.ephemeral).toBe(false)
++        }),
++      {
++        config: {
++          agent: {
++            throwaway: {
++              description: "Always-ephemeral subagent (test fixture)",
++              mode: "subagent",
++              ephemeral: true,
++            },
++          },
++        },
++      },
++    ),
++  )
++})
+--
+2.50.1

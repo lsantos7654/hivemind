@@ -4,6 +4,11 @@ mode: subagent
 model: anthropic/claude-haiku-4-5
 temperature: 0.1
 memory: false
+# Hivemind: daemon is one-off — auto-delete its session on terminal state
+# so the subagent tree only shows long-lived agents. The auto-spawn
+# (plugin/hivemind-memory.ts) also passes ephemeral=true; declaring it
+# here means manual invocations get the same behavior.
+ephemeral: true
 tools:
   bash: false
   task: false

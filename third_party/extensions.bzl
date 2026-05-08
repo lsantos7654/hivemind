@@ -105,6 +105,7 @@ def _ext_impl(ctx):
 _OPENCODE_DEP_PATCHES = [
     "0011-SDK-gen-backgroundTasks-endpoint-SessionBackgroundCh.patch",
     "0014-SDK-gen-liveSessions-endpoint-LiveSessionsChanged-ev.patch",
+    "0020-SDK-gen-ephemeral-on-Session-create-fork-inputs.patch",
 ]
 # Patches that modify only source files (no dep manifest changes). Applied
 # only in @opencode_src, after dep_patches, after install. Editing one
@@ -128,6 +129,7 @@ _OPENCODE_CODE_PATCHES = [
     "0017-TUI-SSE-loop-catch-transient-errors-and-reconnect.patch",
     "0018-Session-metadata-column.patch",
     "0019-File-write-hook-hivemind-memory-compaction-auto-spaw.patch",
+    "0021-Ephemeral-subagent-sessions.patch",
 ]
 external_engines = module_extension(
     implementation = _ext_impl,

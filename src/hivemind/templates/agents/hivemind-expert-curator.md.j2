@@ -4,6 +4,11 @@ mode: subagent
 model: anthropic/claude-sonnet-4-6
 temperature: 0.1
 memory: false
+# Hivemind: curator runs are one-off — every catalog mutation spins up a
+# fresh session, finishes, and leaves nothing the orchestrator wants to
+# resume. Auto-delete on terminal state so the subagent tree stays
+# focused on long-lived agents.
+ephemeral: true
 tools:
   bash: false
   glob: true

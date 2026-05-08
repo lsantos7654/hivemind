@@ -45,3 +45,14 @@ py_test(
         "@pypi//pytest",
     ],
 )
+
+py_test(
+    name = "test_ephemeral_invariants",
+    srcs = ["test_ephemeral_invariants.py", "conftest.py"],
+    main = "test_ephemeral_invariants.py",
+    imports = [".."],
+    deps = [
+        "//src/hivemind:lib",
+        "@pypi//pytest",
+    ],
+)

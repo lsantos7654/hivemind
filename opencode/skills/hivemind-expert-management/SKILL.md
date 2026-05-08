@@ -64,6 +64,13 @@ There are no `update_agent` / `switch_version` / `create_git_expert` /
 prep/finalize MCP tools (four pairs, one per operation) are scoped
 to the curator's permission allowlist; you don't call them yourself.
 
+The curator is **always ephemeral** — its `agent.md` frontmatter
+declares `ephemeral: true`, so every spawn auto-deletes its
+session once the work returns. You don't pass `ephemeral=true`
+yourself; it's the agent's default. The summary you read via
+`read_task_result` is the durable artifact — the curator's
+intermediate analysis goes away with the session.
+
 ## Common workflows
 
 ### Add a new expert from upstream
