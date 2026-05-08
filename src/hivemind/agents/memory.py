@@ -3,16 +3,20 @@
 Each agent has a durable memory directory under
 ``~/.config/opencode/hivemind/memory/<agent-name>/`` containing:
 
-- ``MEMORY.md`` — index of pinned topic files (one line per entry)
-- ``short_memory.md`` — working context (bounded; ~400 lines)
+- ``short_memory.md`` — working context (compacted by the daemon when
+  it exceeds the configured byte threshold)
 - ``long_memory.md`` — consolidated durable knowledge
-- ``<topic>.md`` — individual memory docs (referenced in MEMORY.md)
+- ``<topic>.md`` — daemon-created topic files with descriptive
+  filenames (no separate index — the agent discovers them by
+  listing the directory)
 
 The orchestrator (opencode's user-facing session) has a parallel
 ``_orchestrator/`` directory with the same layout.
 
 Hivemind provides the directory structure and the agent.md memory section;
-the subagent decides when to consolidate short → long per its prompt.
+the daemon (`hivemind-memory-daemon`, a `system_templated` agent) handles
+short → long consolidation automatically when triggered by the file-write
+hook.
 """
 
 from __future__ import annotations
@@ -26,15 +30,18 @@ from hivemind.templates import render
 if TYPE_CHECKING:
     from pathlib import Path
 
-SHORT_MEMORY_STUB = "# Short-term memory\n\nWorking context for the current session(s). Keep this file concise.\n"
+SHORT_MEMORY_STUB = (
+    "# Short-term memory\n\n"
+    "Working context for the current session(s). The daemon compacts this\n"
+    "file into long_memory.md (or topic files) when it exceeds the\n"
+    "configured byte threshold.\n"
+)
 
 LONG_MEMORY_STUB = (
     "# Long-term memory\n\n"
-    "Consolidated durable knowledge. Consolidated here from short_memory.md\n"
-    "when that file exceeds ~400 lines.\n"
+    "Consolidated durable knowledge. Promoted from short_memory.md by\n"
+    "the memory-compaction daemon.\n"
 )
-
-MEMORY_INDEX_STUB = "# Memory index\n\n"
 
 
 __all__ = [
@@ -92,10 +99,6 @@ def render_memory_section(name: str, kind: str) -> str:
 
 def _ensure_dir_with_stubs(path: Path) -> None:
     path.mkdir(parents=True, exist_ok=True)
-
-    memory_index = path / "MEMORY.md"
-    if not memory_index.exists():
-        memory_index.write_text(MEMORY_INDEX_STUB, encoding="utf-8")
 
     short = path / "short_memory.md"
     if not short.exists():

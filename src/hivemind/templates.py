@@ -60,27 +60,6 @@ def team_lead_template(
     )
 
 
-# --- Expert Notes ---
-
-
-def expert_notes_template(expert_name: str, team_name: str) -> str:
-    return render(
-        "expert_notes.md.j2",
-        expert_name=expert_name,
-        team_name=team_name,
-    )
-
-
-# --- Team Lead Notes ---
-
-
-def team_lead_notes_template(team_name: str) -> str:
-    return render(
-        "team_lead_notes.md.j2",
-        team_name=team_name,
-    )
-
-
 # --- Expert Agent ---
 
 

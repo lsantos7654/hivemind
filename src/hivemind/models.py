@@ -191,6 +191,19 @@ class CatalogEntry(BaseModel):
         return data
 
 
+class MemoryConfig(BaseModel):
+    """``memory:`` section of ``hivemind.json`` — daemon trigger config.
+
+    The compaction daemon (``hivemind-memory-daemon``) is auto-spawned
+    by the file-write hook when an agent's ``short_memory.md`` crosses
+    ``compaction_threshold_bytes``.
+    """
+
+    model_config = ConfigDict(extra="forbid", validate_assignment=True)
+
+    compaction_threshold_bytes: int = 8192
+
+
 class HivemindConfig(BaseModel):
     """Full hivemind.json schema (committed to git; shared across teammates).
 
@@ -208,6 +221,7 @@ class HivemindConfig(BaseModel):
     temperature: float | None = None
     server: ServerConfig = ServerConfig()
     permissions: dict[str, object] | None = None
+    memory: MemoryConfig = MemoryConfig()
     agents: dict[str, CatalogEntry] = {}
 
 

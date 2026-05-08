@@ -126,6 +126,8 @@ _OPENCODE_CODE_PATCHES = [
     "0015-Per-client-WebSocket-presence-and-focus-tracking.patch",
     "0016-Extend-reload-agents-to-invalidate-Skill-and-Command.patch",
     "0017-TUI-SSE-loop-catch-transient-errors-and-reconnect.patch",
+    "0018-Session-metadata-column.patch",
+    "0019-File-write-hook-hivemind-memory-compaction-auto-spaw.patch",
 ]
 external_engines = module_extension(
     implementation = _ext_impl,

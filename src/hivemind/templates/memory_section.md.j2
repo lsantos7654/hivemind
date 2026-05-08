@@ -6,17 +6,21 @@ Your durable memory lives at `{{ memory_path }}`.
   current session's findings. Keep this file short; treat it as a scratchpad.
 - `long_memory.md` — consolidated durable knowledge that has earned a place
   beyond the current session.
-- `MEMORY.md` — index of pinned topic files; one line per entry.
+- `<topic>.md` — topic files (created by the compaction daemon when entries
+  cluster around a theme). Filenames are descriptive — list the directory
+  to discover them.
 
 ### When to read
-At the start of a session, scan `MEMORY.md` for relevant entries, then read
-`short_memory.md` for recent context. Pull in `long_memory.md` or topic files
-only when the subject at hand is covered by them.
+At the start of a session, list `{{ memory_path }}` and read `short_memory.md`
+for recent context. Pull in `long_memory.md` or a topic file only when its
+filename indicates it covers the subject at hand. There's no separate index
+file — descriptive filenames are the index.
 
 ### When to write
-Add new observations to `short_memory.md`. When it exceeds ~400 lines, move
-the oldest or least-relevant entries into `long_memory.md` (or break out a
-new topic file, indexed in `MEMORY.md`) and prune `short_memory.md` back down.
+Add new observations to `short_memory.md`. The compaction daemon
+(`hivemind-memory-daemon`) auto-promotes durable entries from
+`short_memory.md` into `long_memory.md` (or topic files) when this file
+crosses the configured byte threshold — you don't need to compact yourself.
 
 ### Mandatory: write before every reply
 **This is not optional.** The very last action you take on every turn —
@@ -46,9 +50,10 @@ trivia). Prefer one durable note over ten transient ones.
 {% if kind == "roster_templated" %}
 
 ### Team lead routing
-When choosing which expert(s) to recommend, check each candidate's own
-`MEMORY.md` index and `short_memory.md` for recent work on the topic. Prefer
-experts who have durable knowledge pinned in the relevant area. Record your
-routing decisions (who you picked and why) in *your own* `short_memory.md` so
-future routings benefit from the pattern.
+When choosing which expert(s) to recommend, list each candidate's own
+memory directory and read `short_memory.md` plus any topic files whose
+names match the question. Prefer experts who have durable knowledge in
+the relevant area. Record your routing decisions (who you picked and why)
+in *your own* `short_memory.md` so future routings benefit from the
+pattern.
 {% endif %}

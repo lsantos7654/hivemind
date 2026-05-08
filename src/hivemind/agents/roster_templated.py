@@ -43,9 +43,7 @@ from hivemind.models import (
     RosterTemplatedParams,
 )
 from hivemind.templates import (
-    expert_notes_template,
     expert_sections_prompt,
-    team_lead_notes_template,
     team_lead_template,
 )
 
@@ -59,15 +57,11 @@ __all__ = [
     "RosterTemplatedBody",
     "add_expert_to_team",
     "add_experts_to_team",
-    "create_expert_notes_stub",
     "create_team",
-    "create_team_lead_notes_stub",
     "finalize_create_team",
     "find_staged_create_team_prep",
     "load_create_team_prep_result",
     "prep_create_team",
-    "refresh_expert_notes_header",
-    "refresh_team_lead_notes_header",
     "remove_expert_from_team",
     "update_team",
 ]
@@ -268,40 +262,8 @@ async def generate_expert_section(expert_name: str, team_name: str) -> str | Non
 
 
 # ---------------------------------------------------------------------------
-# Section / notes helpers (mostly unchanged from teams.py)
+# Section helpers
 # ---------------------------------------------------------------------------
-
-
-def create_expert_notes_stub(team_name: str, expert_name: str) -> None:
-    notes_dir = TEAMS_DIR / team_name / f"expert-{expert_name}"
-    notes_dir.mkdir(parents=True, exist_ok=True)
-    notes_file = notes_dir / "notes.md"
-    if not notes_file.exists():
-        notes_file.write_text(expert_notes_template(expert_name, team_name), encoding="utf-8")
-
-
-def refresh_expert_notes_header(team_name: str, expert_name: str) -> None:
-    notes_file = TEAMS_DIR / team_name / f"expert-{expert_name}" / "notes.md"
-    if not notes_file.exists():
-        create_expert_notes_stub(team_name, expert_name)
-        return
-
-    content = notes_file.read_text(encoding="utf-8")
-    template = expert_notes_template(expert_name, team_name)
-    separator = "\n---\n"
-    if separator in content:
-        _, entries = content.split(separator, 1)
-        notes_file.write_text(template + entries, encoding="utf-8")
-    else:
-        notes_file.write_text(template, encoding="utf-8")
-
-
-def create_team_lead_notes_stub(team_name: str) -> None:
-    team_dir = TEAMS_DIR / team_name
-    team_dir.mkdir(parents=True, exist_ok=True)
-    notes_file = team_dir / "notes.md"
-    if not notes_file.exists():
-        notes_file.write_text(team_lead_notes_template(team_name), encoding="utf-8")
 
 
 def _write_description_file(team_name: str, description: str) -> None:
@@ -320,22 +282,6 @@ def _delete_expert_section_file(team_name: str, expert_name: str) -> None:
     section_path = TEAMS_DIR / team_name / f"expert-{expert_name}.md"
     if section_path.exists():
         section_path.unlink()
-
-
-def refresh_team_lead_notes_header(team_name: str) -> None:
-    notes_file = TEAMS_DIR / team_name / "notes.md"
-    if not notes_file.exists():
-        create_team_lead_notes_stub(team_name)
-        return
-
-    content = notes_file.read_text(encoding="utf-8")
-    template = team_lead_notes_template(team_name)
-    separator = "\n---\n"
-    if separator in content:
-        _, entries = content.split(separator, 1)
-        notes_file.write_text(template + entries, encoding="utf-8")
-    else:
-        notes_file.write_text(template, encoding="utf-8")
 
 
 # ---------------------------------------------------------------------------
@@ -520,9 +466,7 @@ async def finalize_create_team(prep: PrepCreateTeamResult) -> OperationResult:
     for entry in prep.expert_paths:
         section_text = Path(entry["section_path"]).read_text(encoding="utf-8").strip()
         _write_expert_section_file(prep.name, entry["name"], section_text)
-        create_expert_notes_stub(prep.name, entry["name"])
     _write_description_file(prep.name, prep.description)
-    create_team_lead_notes_stub(prep.name)
 
     body = RosterTemplatedBody(
         name=prep.name,
@@ -684,7 +628,6 @@ async def add_experts_to_team(
             continue
 
         _write_expert_section_file(team_name, expert_name, section)
-        create_expert_notes_stub(team_name, expert_name)
         existing.append(expert_name)
         added.append(expert_name)
 
@@ -722,7 +665,6 @@ async def add_expert_to_team(team_name: str, expert_name: str) -> OperationResul
         )
 
     _write_expert_section_file(team_name, expert_name, section)
-    create_expert_notes_stub(team_name, expert_name)
     body.params.experts.append(expert_name)
     registry.save_body(agent)
 

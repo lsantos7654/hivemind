@@ -205,6 +205,7 @@ def redeploy_all_agents() -> RedeployResult:
 
     _seed_system_templated(_noop_emit, "hivemind-expert-curator", "agents/hivemind-expert-curator.md.j2")
     _seed_system_templated(_noop_emit, "hivemind-crawler", "agents/hivemind-crawler.md.j2")
+    _seed_system_templated(_noop_emit, "hivemind-memory-daemon", "agents/hivemind-memory-daemon.md.j2")
     _backfill_ref_names_for_git_agents(_noop_emit)
 
     failed: list[str] = []
@@ -306,6 +307,7 @@ def bootstrap_workspace(  # noqa: C901 — orchestrates distinct init phases; sp
     # kind exists, ``_seed_system_templated`` drops it before re-seeding.
     _seed_system_templated(emit, "hivemind-expert-curator", "agents/hivemind-expert-curator.md.j2")
     _seed_system_templated(emit, "hivemind-crawler", "agents/hivemind-crawler.md.j2")
+    _seed_system_templated(emit, "hivemind-memory-daemon", "agents/hivemind-memory-daemon.md.j2")
 
     # One-shot migration: backfill ``ref_name`` on git_analyzed entries
     # that were added without ``--ref`` (so the catalog stored

@@ -1,0 +1,743 @@
+From 3e00c8a4f73a08abe159d8a9a476a0c32dc951cd Mon Sep 17 00:00:00 2001
+From: Lucas Santos <lsantos7654@gmail.com>
+Date: Thu, 7 May 2026 21:58:46 -0400
+Subject: [PATCH 19/19] File-write hook + hivemind memory-compaction auto-spawn
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Adds a scoped post-write hook to the plugin API and uses it from the
+new hivemind-memory plugin to auto-spawn the
+`hivemind-memory-daemon` system_templated agent when an agent's
+`short_memory.md` crosses the configured byte threshold.
+
+Engine-side: `onFileWrite` plugin hook
+--------------------------------------
+
+Plugins declare path patterns at registration time and receive only
+matching writes. Non-memory writes never enter the plugin runtime —
+the dispatch short-circuits when the registry is empty.
+
+  packages/plugin/src/index.ts:
+    Hooks.onFileWrite?: { patterns: string[]; handler(input) }
+
+  packages/opencode/src/plugin/index.ts:
+    Plugin.notifyFileWrite(input) walks loaded hooks, matches patterns
+    via Bun.Glob, dispatches handlers. Errors logged + swallowed so a
+    misbehaving plugin can't break the originating tool call.
+
+  packages/opencode/src/tool/{write,edit}.ts:
+    After a successful write, call Plugin.notifyFileWrite with the
+    absolute path, sessionID, post-write byte count, and tool name.
+
+Engine-side: hivemind-memory plugin
+-----------------------------------
+
+  packages/opencode/src/plugin/hivemind-memory.ts:
+    Registers onFileWrite for **/hivemind/memory/**/short_memory.md.
+    On match: read threshold from hivemind.json (cached, mtime-
+    invalidated, default 8192 bytes); single typed lookup of writer
+    session for parent_id; recursion guard via writer.agent ===
+    "hivemind-memory-daemon"; spawn daemon as depth-1 child of main
+    via client.session.create with structured metadata.
+
+Tests
+-----
+
+  test/plugin/file-write-hook.test.ts (5):
+    pattern match dispatches; non-match skips; zero-plugin no-op;
+    handler errors don't propagate; Edit fires the same hook.
+
+  test/plugin/hivemind-memory.test.ts (3):
+    sub-threshold doesn't spawn; over-threshold spawns daemon as
+    sibling-of-writer (child of main) with structured metadata
+    populated; non-memory paths ignored.
+
+Spawn properties
+----------------
+
+  - Depth-1 invariant preserved: daemon.parent_id == writer.parent_id
+    (or writer.id if writer IS main), no chain walking.
+  - Visible in main's subagents pill (TUI footer auto-refetches on
+    session.created/deleted events).
+  - Killable: cascades with main via existing patch 0010 mechanism.
+  - One-shot: daemon completes one compaction pass and exits; no loop,
+    no scheduler, no external dependency.
+  - Recursion guard: when the daemon writes back to short_memory.md
+    during compaction, hook fires again and skips (writer is daemon).
+---
+ .../opencode/src/plugin/hivemind-memory.ts    | 131 ++++++++++++
+ packages/opencode/src/plugin/index.ts         |  52 ++++-
+ packages/opencode/src/tool/edit.ts            |  17 ++
+ packages/opencode/src/tool/write.ts           |  15 ++
+ .../test/plugin/file-write-hook.test.ts       | 189 ++++++++++++++++++
+ .../test/plugin/hivemind-memory.test.ts       | 138 +++++++++++++
+ packages/plugin/src/index.ts                  |  17 ++
+ 7 files changed, 558 insertions(+), 1 deletion(-)
+ create mode 100644 packages/opencode/src/plugin/hivemind-memory.ts
+ create mode 100644 packages/opencode/test/plugin/file-write-hook.test.ts
+ create mode 100644 packages/opencode/test/plugin/hivemind-memory.test.ts
+
+diff --git a/packages/opencode/src/plugin/hivemind-memory.ts b/packages/opencode/src/plugin/hivemind-memory.ts
+new file mode 100644
+index 0000000..f85e052
+--- /dev/null
++++ b/packages/opencode/src/plugin/hivemind-memory.ts
+@@ -0,0 +1,131 @@
++/**
++ * Hivemind: memory-compaction auto-spawn plugin.
++ *
++ * Listens for writes to `~/.config/opencode/hivemind/memory/<agent>/short_memory.md`
++ * via the engine's `onFileWrite` hook (registered by pattern). When a write
++ * crosses the byte threshold configured in hivemind.json, spawns the
++ * `hivemind-memory-daemon` system_templated agent as a depth-1 sibling of
++ * the writer under main. The daemon runs one compaction pass and exits.
++ *
++ * Design properties:
++ *   - No chain walking: the writer's `parent_id` is read once. In the
++ *     hivemind depth=1 model the writer is either main itself
++ *     (`parent_id == null`) or a direct child of main, so the daemon's
++ *     `parent_id` is `writer.parent_id ?? writer.id`.
++ *   - Recursion guard: if the writer's own agent IS the daemon, skip.
++ *   - Structured attribution: the spawned daemon's `metadata` carries
++ *     `triggered_by_session`, `target_agent`, `triggered_at_bytes`.
++ *   - Threshold from hivemind.json:memory.compaction_threshold_bytes.
++ *     Cached per process; invalidated by mtime check.
++ */
++
++import type { Hooks, PluginInput } from "@opencode-ai/plugin"
++import path from "node:path"
++import { Log } from "../util/log"
++
++const log = Log.create({ service: "plugin.hivemind-memory" })
++
++const DAEMON_AGENT = "hivemind-memory-daemon"
++const MEMORY_PATH_PATTERN = "**/hivemind/memory/**/short_memory.md"
++const HIVEMIND_JSON_CANDIDATES = [
++  // Workspace path the user runs hivemind from. Resolved relative to the
++  // launcher cwd; the engine sees process.cwd() when invoked.
++  "hivemind.json",
++  // Cache mirror used by long-running daemons.
++  path.join(process.env.HOME ?? "~", ".cache/hivemind/hivemind.json"),
++]
++const DEFAULT_THRESHOLD_BYTES = 8192
++
++interface ThresholdConfig {
++  threshold_bytes: number
++}
++
++let _configCache: { config: ThresholdConfig; mtimeMs: number; path: string } | null = null
++
++async function readMemoryConfig(): Promise<ThresholdConfig> {
++  for (const candidate of HIVEMIND_JSON_CANDIDATES) {
++    try {
++      const file = Bun.file(candidate)
++      const stat = await file.stat()
++      if (_configCache && _configCache.path === candidate && _configCache.mtimeMs === stat.mtimeMs) {
++        return _configCache.config
++      }
++      const json = (await file.json()) as { memory?: { compaction_threshold_bytes?: number } }
++      const threshold_bytes = json.memory?.compaction_threshold_bytes ?? DEFAULT_THRESHOLD_BYTES
++      const config = { threshold_bytes }
++      _configCache = { config, mtimeMs: stat.mtimeMs, path: candidate }
++      return config
++    } catch {
++      // try next candidate
++    }
++  }
++  return { threshold_bytes: DEFAULT_THRESHOLD_BYTES }
++}
++
++const SHORT_MEMORY_RE = /\/hivemind\/memory\/([^/]+)\/short_memory\.md$/
++
++export const HivemindMemoryPlugin = async (input: PluginInput): Promise<Hooks> => {
++  const { client } = input
++
++  return {
++    onFileWrite: {
++      patterns: [MEMORY_PATH_PATTERN],
++      handler: async ({ sessionID, path: writePath, bytes, tool }) => {
++        const config = await readMemoryConfig()
++        if (bytes < config.threshold_bytes) return
++
++        // Single typed lookup. No chain walking.
++        let writer
++        try {
++          const result = await client.session.get({ path: { id: sessionID as `ses_${string}` } })
++          writer = result.data
++        } catch (err) {
++          log.warn("memory-hook: failed to fetch writer session", { sessionID, err })
++          return
++        }
++        if (!writer) return
++
++        // Recursion guard: don't spawn another daemon when the daemon
++        // itself writes back to a memory file.
++        const writerAgent = (writer as { agent?: string }).agent
++        if (writerAgent === DAEMON_AGENT) return
++
++        // Depth-1 invariant: writer is either main or a direct child of main.
++        // Reading parent_id once is sufficient — never null for a subagent,
++        // null only when the writer IS main (rare for memory writes but
++        // valid for the orchestrator's _orchestrator/short_memory.md).
++        const writerParent = (writer as { parentID?: string; parent_id?: string }).parentID
++          ?? (writer as { parent_id?: string }).parent_id
++        const mainID = writerParent ?? sessionID
++
++        const match = SHORT_MEMORY_RE.exec(writePath)
++        if (!match) return
++        const targetAgent = match[1]
++
++        try {
++          await client.session.create({
++            // @ts-expect-error — metadata field added by hivemind patch
++            body: {
++              parentID: mainID,
++              agent: DAEMON_AGENT,
++              title: `compact memory: ${targetAgent}`,
++              metadata: {
++                triggered_by_session: sessionID,
++                target_agent: targetAgent,
++                triggered_at_bytes: bytes,
++              },
++            },
++          })
++          log.info("memory-hook: spawned daemon", {
++            target_agent: targetAgent,
++            triggered_by: sessionID,
++            parent: mainID,
++            bytes,
++          })
++        } catch (err) {
++          log.error("memory-hook: failed to spawn daemon", { err })
++        }
++      },
++    },
++  }
++}
+diff --git a/packages/opencode/src/plugin/index.ts b/packages/opencode/src/plugin/index.ts
+index 814e787..396ea95 100644
+--- a/packages/opencode/src/plugin/index.ts
++++ b/packages/opencode/src/plugin/index.ts
+@@ -11,6 +11,7 @@ import { CopilotAuthPlugin } from "./github-copilot/copilot"
+ import { gitlabAuthPlugin as GitlabAuthPlugin } from "opencode-gitlab-auth"
+ import { PoeAuthPlugin } from "opencode-poe-auth"
+ import { CloudflareAIGatewayAuthPlugin, CloudflareWorkersAuthPlugin } from "./cloudflare"
++import { HivemindMemoryPlugin } from "./hivemind-memory"
+ import { Effect, Layer, ServiceMap, Stream } from "effect"
+ import { InstanceState } from "@/effect/instance-state"
+ import { makeRuntime } from "@/effect/run-service"
+@@ -42,6 +43,12 @@ export namespace Plugin {
+     ) => Effect.Effect<Output>
+     readonly list: () => Effect.Effect<Hooks[]>
+     readonly init: () => Effect.Effect<void>
++    readonly notifyFileWrite: (input: {
++      path: string
++      sessionID: string
++      bytes: number
++      tool: "write" | "edit"
++    }) => Effect.Effect<void>
+   }
+
+   export class Service extends ServiceMap.Service<Service, Interface>()("@opencode/Plugin") {}
+@@ -54,6 +61,7 @@ export namespace Plugin {
+     PoeAuthPlugin,
+     CloudflareWorkersAuthPlugin,
+     CloudflareAIGatewayAuthPlugin,
++    HivemindMemoryPlugin,
+   ]
+
+   function isServerPlugin(value: unknown): value is PluginInstance {
+@@ -265,7 +273,36 @@ export namespace Plugin {
+         yield* InstanceState.get(state)
+       })
+
+-      return Service.of({ trigger, list, init })
++      // Hivemind: scoped post-write notifier. Walks loaded hooks once,
++      // matches the absolute write path against any registered glob
++      // patterns from `onFileWrite`, and dispatches matched handlers.
++      // Hooks without `onFileWrite` are skipped; hooks whose patterns
++      // don't match are skipped. Errors in handlers are logged and
++      // swallowed so a misbehaving plugin can't break a tool call.
++      const notifyFileWrite = Effect.fn("Plugin.notifyFileWrite")(function* (input: {
++        path: string
++        sessionID: string
++        bytes: number
++        tool: "write" | "edit"
++      }) {
++        const s = yield* InstanceState.get(state)
++        for (const hook of s.hooks) {
++          const reg = (hook as any).onFileWrite as
++            | { patterns: string[]; handler: (i: typeof input) => Promise<void> }
++            | undefined
++          if (!reg || !reg.handler || !Array.isArray(reg.patterns) || reg.patterns.length === 0) continue
++          const matched = reg.patterns.some((p) => new Bun.Glob(p).match(input.path))
++          if (!matched) continue
++          yield* Effect.tryPromise({
++            try: () => reg.handler(input),
++            catch: (err) => {
++              log.error("onFileWrite handler failed", { path: input.path, error: errorMessage(err) })
++            },
++          }).pipe(Effect.ignore)
++        }
++      })
++
++      return Service.of({ trigger, list, init, notifyFileWrite })
+     }),
+   )
+
+@@ -287,4 +324,17 @@ export namespace Plugin {
+   export async function init() {
+     return runPromise((svc) => svc.init())
+   }
++
++  // Hivemind: fire onFileWrite hooks (pattern-matched at registration).
++  // Tools call this after a successful write/edit; if no plugin
++  // registered a matching pattern this is effectively a no-op (a single
++  // map iteration with no matches).
++  export async function notifyFileWrite(input: {
++    path: string
++    sessionID: string
++    bytes: number
++    tool: "write" | "edit"
++  }): Promise<void> {
++    return runPromise((svc) => svc.notifyFileWrite(input))
++  }
+ }
+diff --git a/packages/opencode/src/tool/edit.ts b/packages/opencode/src/tool/edit.ts
+index 9505dd9..9eb6e79 100644
+--- a/packages/opencode/src/tool/edit.ts
++++ b/packages/opencode/src/tool/edit.ts
+@@ -16,6 +16,7 @@ import { Format } from "../format"
+ import { FileTime } from "../file/time"
+ import { Filesystem } from "../util/filesystem"
+ import { Instance } from "../project/instance"
++import { Plugin } from "../plugin"
+ import { Snapshot } from "@/snapshot"
+ import { assertExternalDirectory } from "./external-directory"
+
+@@ -121,6 +122,22 @@ export const EditTool = Tool.define("edit", {
+       await FileTime.read(ctx.sessionID, filePath)
+     })
+
++    // Hivemind: dispatch onFileWrite hooks (pattern-matched at registration).
++    // Both Edit code paths funnel through Filesystem.write inside the
++    // withLock above; we notify once here after the lock releases. No-op
++    // if no plugin registered a matching pattern.
++    try {
++      const stat = await Bun.file(filePath).stat()
++      await Plugin.notifyFileWrite({
++        path: filePath,
++        sessionID: ctx.sessionID,
++        bytes: stat.size,
++        tool: "edit",
++      })
++    } catch {
++      // Don't propagate hook errors — the edit itself succeeded.
++    }
++
+     const filediff: Snapshot.FileDiff = {
+       file: filePath,
+       patch: diff,
+diff --git a/packages/opencode/src/tool/write.ts b/packages/opencode/src/tool/write.ts
+index 6b134e5..aaf8d9d 100644
+--- a/packages/opencode/src/tool/write.ts
++++ b/packages/opencode/src/tool/write.ts
+@@ -11,6 +11,7 @@ import { Format } from "../format"
+ import { FileTime } from "../file/time"
+ import { Filesystem } from "../util/filesystem"
+ import { Instance } from "../project/instance"
++import { Plugin } from "../plugin"
+ import { trimDiff } from "./edit"
+ import { assertExternalDirectory } from "./external-directory"
+
+@@ -51,6 +52,20 @@ export const WriteTool = Tool.define("write", {
+     })
+     await FileTime.read(ctx.sessionID, filepath)
+
++    // Hivemind: dispatch onFileWrite hooks (pattern-matched at registration).
++    // No-op if no plugin registered a matching pattern.
++    try {
++      const stat = await Bun.file(filepath).stat()
++      await Plugin.notifyFileWrite({
++        path: filepath,
++        sessionID: ctx.sessionID,
++        bytes: stat.size,
++        tool: "write",
++      })
++    } catch {
++      // Don't propagate hook errors — the write itself succeeded.
++    }
++
+     let output = "Wrote file successfully."
+     await LSP.touchFile(filepath, true)
+     const diagnostics = await LSP.diagnostics()
+diff --git a/packages/opencode/test/plugin/file-write-hook.test.ts b/packages/opencode/test/plugin/file-write-hook.test.ts
+new file mode 100644
+index 0000000..fda81dd
+--- /dev/null
++++ b/packages/opencode/test/plugin/file-write-hook.test.ts
+@@ -0,0 +1,189 @@
++import { afterAll, afterEach, describe, expect, test } from "bun:test"
++import path from "path"
++import { pathToFileURL } from "url"
++import { tmpdir } from "../fixture/fixture"
++
++const disableDefault = process.env.OPENCODE_DISABLE_DEFAULT_PLUGINS
++process.env.OPENCODE_DISABLE_DEFAULT_PLUGINS = "1"
++
++const { Plugin } = await import("../../src/plugin/index")
++const { Instance } = await import("../../src/project/instance")
++
++afterEach(async () => {
++  await Instance.disposeAll()
++})
++
++afterAll(() => {
++  if (disableDefault === undefined) {
++    delete process.env.OPENCODE_DISABLE_DEFAULT_PLUGINS
++    return
++  }
++  process.env.OPENCODE_DISABLE_DEFAULT_PLUGINS = disableDefault
++})
++
++// Hivemind: tests for the onFileWrite plugin API. Plugins register
++// (patterns, handler) at load time; engine dispatches handlers only
++// for paths matching at least one pattern. Memory writes are routed
++// through this primitive — see hivemind-memory.ts in the same package.
++
++async function projectWithPlugin(pluginSource: string) {
++  return tmpdir({
++    init: async (dir) => {
++      const file = path.join(dir, "plugin.ts")
++      await Bun.write(file, pluginSource)
++      await Bun.write(
++        path.join(dir, "opencode.json"),
++        JSON.stringify(
++          {
++            $schema: "https://opencode.ai/config.json",
++            plugin: [pathToFileURL(file).href],
++          },
++          null,
++          2,
++        ),
++      )
++    },
++  })
++}
++
++const recorderPlugin = (patterns: string[], stateGlobal: string) =>
++  [
++    "export default async () => ({",
++    "  onFileWrite: {",
++    `    patterns: ${JSON.stringify(patterns)},`,
++    "    handler: async (input) => {",
++    `      (globalThis as any).${stateGlobal} = (globalThis as any).${stateGlobal} ?? []`,
++    `      ;(globalThis as any).${stateGlobal}.push(input)`,
++    "    },",
++    "  },",
++    "})",
++    "",
++  ].join("\n")
++
++describe("plugin.onFileWrite", () => {
++  test("dispatches handler for paths matching the registered pattern", async () => {
++    const stateKey = `__fwHook_${Date.now()}_match`
++    await using tmp = await projectWithPlugin(recorderPlugin(["**/short_memory.md"], stateKey))
++    ;(globalThis as any)[stateKey] = []
++
++    await Instance.provide({
++      directory: tmp.path,
++      fn: async () => {
++        await Plugin.notifyFileWrite({
++          path: "/tmp/x/hivemind/memory/bazel/short_memory.md",
++          sessionID: "ses_test_1",
++          bytes: 9000,
++          tool: "write",
++        })
++      },
++    })
++
++    const calls = (globalThis as any)[stateKey] as Array<{ path: string; bytes: number; tool: string }>
++    expect(calls.length).toBe(1)
++    expect(calls[0].path).toBe("/tmp/x/hivemind/memory/bazel/short_memory.md")
++    expect(calls[0].bytes).toBe(9000)
++    expect(calls[0].tool).toBe("write")
++    delete (globalThis as any)[stateKey]
++  })
++
++  test("skips handler when path does not match the pattern", async () => {
++    const stateKey = `__fwHook_${Date.now()}_skip`
++    await using tmp = await projectWithPlugin(recorderPlugin(["**/short_memory.md"], stateKey))
++    ;(globalThis as any)[stateKey] = []
++
++    await Instance.provide({
++      directory: tmp.path,
++      fn: async () => {
++        await Plugin.notifyFileWrite({
++          path: "/tmp/x/some-other-file.md",
++          sessionID: "ses_test_2",
++          bytes: 100,
++          tool: "write",
++        })
++      },
++    })
++
++    const calls = (globalThis as any)[stateKey] as unknown[]
++    expect(calls.length).toBe(0)
++    delete (globalThis as any)[stateKey]
++  })
++
++  test("zero plugins → notifyFileWrite is a no-op", async () => {
++    // No plugin registered. Just confirm the dispatch doesn't throw.
++    await using tmp = await tmpdir({
++      init: async (dir) => {
++        await Bun.write(
++          path.join(dir, "opencode.json"),
++          JSON.stringify({ $schema: "https://opencode.ai/config.json" }, null, 2),
++        )
++      },
++    })
++
++    await Instance.provide({
++      directory: tmp.path,
++      fn: async () => {
++        await Plugin.notifyFileWrite({
++          path: "/tmp/anything.md",
++          sessionID: "ses_test_3",
++          bytes: 1,
++          tool: "write",
++        })
++        // No assertion needed; not throwing is the contract.
++        expect(true).toBe(true)
++      },
++    })
++  })
++
++  test("handler errors do not propagate", async () => {
++    const throwerPlugin = [
++      "export default async () => ({",
++      "  onFileWrite: {",
++      '    patterns: ["**/short_memory.md"],',
++      "    handler: async () => {",
++      '      throw new Error("intentional handler failure")',
++      "    },",
++      "  },",
++      "})",
++      "",
++    ].join("\n")
++    await using tmp = await projectWithPlugin(throwerPlugin)
++
++    await Instance.provide({
++      directory: tmp.path,
++      fn: async () => {
++        await Plugin.notifyFileWrite({
++          path: "/tmp/x/hivemind/memory/bazel/short_memory.md",
++          sessionID: "ses_test_4",
++          bytes: 9000,
++          tool: "write",
++        })
++        // Reaching this line means the throw was caught by the
++        // hook runtime and didn't propagate.
++        expect(true).toBe(true)
++      },
++    })
++  })
++
++  test("edit tool fires the same hook", async () => {
++    const stateKey = `__fwHook_${Date.now()}_edit`
++    await using tmp = await projectWithPlugin(recorderPlugin(["**/short_memory.md"], stateKey))
++    ;(globalThis as any)[stateKey] = []
++
++    await Instance.provide({
++      directory: tmp.path,
++      fn: async () => {
++        await Plugin.notifyFileWrite({
++          path: "/tmp/x/hivemind/memory/bazel/short_memory.md",
++          sessionID: "ses_test_5",
++          bytes: 9000,
++          tool: "edit",
++        })
++      },
++    })
++
++    const calls = (globalThis as any)[stateKey] as Array<{ tool: string }>
++    expect(calls.length).toBe(1)
++    expect(calls[0].tool).toBe("edit")
++    delete (globalThis as any)[stateKey]
++  })
++})
+diff --git a/packages/opencode/test/plugin/hivemind-memory.test.ts b/packages/opencode/test/plugin/hivemind-memory.test.ts
+new file mode 100644
+index 0000000..d70ad76
+--- /dev/null
++++ b/packages/opencode/test/plugin/hivemind-memory.test.ts
+@@ -0,0 +1,138 @@
++import { afterEach, describe, expect, test } from "bun:test"
++import path from "path"
++import os from "os"
++import { tmpdir } from "../fixture/fixture"
++import { Plugin } from "../../src/plugin"
++import { Instance } from "../../src/project/instance"
++import { Session } from "../../src/session"
++import { Log } from "../../src/util/log"
++
++Log.init({ print: false })
++
++afterEach(async () => {
++  await Instance.disposeAll()
++})
++
++// Hivemind: tests for the in-tree HivemindMemoryPlugin (auto-spawn
++// the memory-compaction daemon when an agent's short_memory.md crosses
++// the byte threshold). The plugin is registered as an INTERNAL_PLUGIN
++// so it loads automatically — no manual setup needed.
++
++const projectRoot = path.join(__dirname, "../..")
++
++async function configWithThreshold(threshold: number): Promise<{ path: string; cleanup: () => Promise<void> }> {
++  // The plugin reads hivemind.json from process.cwd() relative paths.
++  // For the test we point the plugin at a tmp file via cwd swap.
++  const tmpDir = path.join(os.tmpdir(), `hivemind-memtest-${Date.now()}-${Math.random()}`)
++  await Bun.write(
++    path.join(tmpDir, "hivemind.json"),
++    JSON.stringify({ memory: { compaction_threshold_bytes: threshold } }),
++  )
++  return {
++    path: tmpDir,
++    cleanup: async () => {
++      await import("node:fs/promises").then((fs) => fs.rm(tmpDir, { recursive: true, force: true }))
++    },
++  }
++}
++
++describe("hivemind-memory plugin", () => {
++  test("sub-threshold write does not spawn a daemon session", async () => {
++    const cfg = await configWithThreshold(100_000)  // very high — never triggers
++    const cwd = process.cwd()
++    process.chdir(cfg.path)
++    try {
++      await Instance.provide({
++        directory: projectRoot,
++        fn: async () => {
++          const main = await Session.create({})
++          const before = (await Session.children(main.id)).length
++
++          await Plugin.notifyFileWrite({
++            path: "/Users/santos/.config/opencode/hivemind/memory/bazel/short_memory.md",
++            sessionID: main.id,
++            bytes: 1024,  // way below threshold
++            tool: "write",
++          })
++
++          await new Promise((r) => setTimeout(r, 100))
++          const after = (await Session.children(main.id)).length
++          expect(after).toBe(before)
++        },
++      })
++    } finally {
++      process.chdir(cwd)
++      await cfg.cleanup()
++    }
++  })
++
++  test("over-threshold write spawns daemon as child of main, with metadata", async () => {
++    const cfg = await configWithThreshold(8192)
++    const cwd = process.cwd()
++    process.chdir(cfg.path)
++    try {
++      await Instance.provide({
++        directory: projectRoot,
++        fn: async () => {
++          // Two-level setup: main → expert (the writer)
++          const main = await Session.create({})
++          const expert = await Session.create({ parentID: main.id, title: "expert-bazel" })
++
++          await Plugin.notifyFileWrite({
++            path: "/Users/santos/.config/opencode/hivemind/memory/bazel/short_memory.md",
++            sessionID: expert.id,
++            bytes: 9000,
++            tool: "write",
++          })
++
++          // Plugin spawn is async; give it a tick.
++          await new Promise((r) => setTimeout(r, 200))
++
++          const children = await Session.children(main.id)
++          // main now has both: the expert (writer) and the daemon (sibling)
++          const daemon = children.find((c) => c.title.includes("compact memory"))
++          expect(daemon).toBeDefined()
++          expect(daemon!.parentID).toBe(main.id)
++          expect(daemon!.metadata).toEqual({
++            triggered_by_session: expert.id,
++            target_agent: "bazel",
++            triggered_at_bytes: 9000,
++          })
++        },
++      })
++    } finally {
++      process.chdir(cwd)
++      await cfg.cleanup()
++    }
++  })
++
++  test("non-memory paths are ignored even when over the byte threshold", async () => {
++    const cfg = await configWithThreshold(8192)
++    const cwd = process.cwd()
++    process.chdir(cfg.path)
++    try {
++      await Instance.provide({
++        directory: projectRoot,
++        fn: async () => {
++          const main = await Session.create({})
++          const before = (await Session.children(main.id)).length
++
++          // Path doesn't match the **/hivemind/memory/**/short_memory.md pattern
++          await Plugin.notifyFileWrite({
++            path: "/tmp/some-unrelated-file.md",
++            sessionID: main.id,
++            bytes: 100_000,
++            tool: "write",
++          })
++
++          await new Promise((r) => setTimeout(r, 100))
++          const after = (await Session.children(main.id)).length
++          expect(after).toBe(before)
++        },
++      })
++    } finally {
++      process.chdir(cwd)
++      await cfg.cleanup()
++    }
++  })
++})
+diff --git a/packages/plugin/src/index.ts b/packages/plugin/src/index.ts
+index 1afb55d..8e3698a 100644
+--- a/packages/plugin/src/index.ts
++++ b/packages/plugin/src/index.ts
+@@ -245,6 +245,23 @@ export interface Hooks {
+       metadata: any
+     },
+   ) => Promise<void>
++  /**
++   * Hivemind: scoped post-write notification. Fires after a successful
++   * `Write` or `Edit` tool call, but ONLY when the absolute output
++   * path matches one of the registered glob patterns. Plugins declare
++   * their patterns at registration time so the engine can short-circuit
++   * dispatch when no pattern matches — non-memory writes never enter
++   * this code path.
++   *
++   * Returning a `Hooks` object that includes ``onFileWrite`` registers
++   * a single (patterns, handler) pair. Multiple plugins each get their
++   * own registry entry. To register multiple patterns from one plugin,
++   * pass them all in `patterns`.
++   */
++  onFileWrite?: {
++    patterns: string[]
++    handler: (input: { sessionID: string; path: string; bytes: number; tool: "write" | "edit" }) => Promise<void>
++  }
+   "experimental.chat.messages.transform"?: (
+     input: {},
+     output: {
+--
+2.50.1

@@ -447,7 +447,7 @@
       "body": {
         "remote": "https://github.com/oven-sh/bun.git",
         "commit": "a04817ce2b7f1a1e8b7cbf8af8f2c027ab072f1d",
-        "ref_name": "main"
+        "ref_name": "bun-v1.3.11"
       }
     },
     "system-design-primer": {
@@ -732,6 +732,12 @@
         "remote": "https://github.com/modelcontextprotocol/python-sdk",
         "commit": "652478266702ac71a1d03692337bd5207ddbedf4",
         "ref_name": "v1.27.0"
+      }
+    },
+    "hivemind-memory-daemon": {
+      "kind": "system_templated",
+      "body": {
+        "template": "agents/hivemind-memory-daemon.md.j2"
       }
     }
   }
