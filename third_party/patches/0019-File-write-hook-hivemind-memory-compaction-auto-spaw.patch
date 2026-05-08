@@ -1,4 +1,4 @@
-From 3e00c8a4f73a08abe159d8a9a476a0c32dc951cd Mon Sep 17 00:00:00 2001
+From cd0efa0a87a6d23bbd5f630f7f48df496e7dda9d Mon Sep 17 00:00:00 2001
 From: Lucas Santos <lsantos7654@gmail.com>
 Date: Thu, 7 May 2026 21:58:46 -0400
 Subject: [PATCH 19/21] File-write hook + hivemind memory-compaction auto-spawn

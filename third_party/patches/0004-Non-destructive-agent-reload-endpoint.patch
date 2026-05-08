@@ -1,4 +1,4 @@
-From 3e4c7d89199d9b6389dfdfb25cf3d81fabfe0b6e Mon Sep 17 00:00:00 2001
+From f213e3f15c0a34e94989b7a5e2df06a6a1c1e0a4 Mon Sep 17 00:00:00 2001
 From: Lucas Santos <lsantos7654@gmail.com>
 Date: Mon, 20 Apr 2026 21:22:13 -0400
 Subject: [PATCH 04/21] Non-destructive agent reload endpoint
@@ -32,10 +32,11 @@ Mechanism:
     and emits a new AgentsReloadedEvent on GlobalBus.
 ---
  packages/opencode/src/agent/agent.ts          | 46 +++++++++++++++++++
+ .../opencode/src/cli/cmd/tui/context/sync.tsx |  8 ++++
  packages/opencode/src/config/config.ts        | 14 ++++++
  packages/opencode/src/project/instance.ts     |  8 ++++
  packages/opencode/src/server/routes/global.ts | 44 ++++++++++++++++++
- 4 files changed, 112 insertions(+)
+ 5 files changed, 120 insertions(+)
 
 diff --git a/packages/opencode/src/agent/agent.ts b/packages/opencode/src/agent/agent.ts
 index 2a8bed0..d3179d6 100644
@@ -117,6 +118,25 @@ index 2a8bed0..d3179d6 100644
 +    return { instances: dirs.length, agents }
 +  }
  }
+diff --git a/packages/opencode/src/cli/cmd/tui/context/sync.tsx b/packages/opencode/src/cli/cmd/tui/context/sync.tsx
+index 11336d5..747c0e2 100644
+--- a/packages/opencode/src/cli/cmd/tui/context/sync.tsx
++++ b/packages/opencode/src/cli/cmd/tui/context/sync.tsx
+@@ -352,6 +352,14 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
+           setStore("vcs", { branch: event.properties.branch })
+           break
+         }
++
++        case "global.agents-reloaded": {
++          sdk.client.app
++            .agents({}, { throwOnError: true })
++            .then((x) => setStore("agent", reconcile(x.data ?? [])))
++            .catch(() => {})
++          break
++        }
+       }
+     })
+
 diff --git a/packages/opencode/src/config/config.ts b/packages/opencode/src/config/config.ts
 index ff79b73..15d7fca 100644
 --- a/packages/opencode/src/config/config.ts

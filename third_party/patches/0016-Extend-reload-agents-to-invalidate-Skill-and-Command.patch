@@ -1,4 +1,4 @@
-From 01aa438151ae1980dceedaad7269ac617818a540 Mon Sep 17 00:00:00 2001
+From 706473d2f8c32e87de7f1011a4f6fb240a37c910 Mon Sep 17 00:00:00 2001
 From: Lucas Santos <lsantos7654@gmail.com>
 Date: Sun, 3 May 2026 19:29:56 -0400
 Subject: [PATCH 16/21] Extend reload-agents to invalidate Skill and Command

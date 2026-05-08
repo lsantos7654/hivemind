@@ -1,4 +1,4 @@
-From 0babe6ab8ad7eb0d735be4f369073a61563aafd3 Mon Sep 17 00:00:00 2001
+From 14b7f65fe7796f904635d8a75246b6334ddcfd66 Mon Sep 17 00:00:00 2001
 From: Lucas Santos <lsantos7654@gmail.com>
 Date: Wed, 29 Apr 2026 22:12:46 -0400
 Subject: [PATCH 12/21] TUI session_footer slot + dual-slot home-footer plugin

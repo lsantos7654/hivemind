@@ -1,4 +1,4 @@
-From d03049921f960a42728421cc9cb5e309bcfb4ae1 Mon Sep 17 00:00:00 2001
+From 2880930e9140945fe8ca65016dba303c0ffa774d Mon Sep 17 00:00:00 2001
 From: Lucas Santos <lsantos7654@gmail.com>
 Date: Mon, 20 Apr 2026 21:22:13 -0400
 Subject: [PATCH 06/21] Bake `bash.sudo *: deny` into Permission.fromConfig

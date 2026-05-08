@@ -1,4 +1,4 @@
-From 3a8f82e97d106891d02b432b97a4d1edc2dd5c71 Mon Sep 17 00:00:00 2001
+From 96cb8bb1e17b738dc32f3a22c94f48bdcc6bb403 Mon Sep 17 00:00:00 2001
 From: Lucas Santos <lsantos7654@gmail.com>
 Date: Sun, 3 May 2026 22:14:10 -0400
 Subject: [PATCH 17/21] TUI SSE loop: catch transient errors and reconnect

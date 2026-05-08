@@ -1,4 +1,4 @@
-From 5fc0561274f7bff23cdce30fea64fd1751b4d9c9 Mon Sep 17 00:00:00 2001
+From 4a08ef097480d5cb70c4ff63bbacec504fd4f955 Mon Sep 17 00:00:00 2001
 From: Lucas Santos <lsantos7654@gmail.com>
 Date: Wed, 29 Apr 2026 00:44:25 -0400
 Subject: [PATCH 11/21] SDK gen: backgroundTasks endpoint +
