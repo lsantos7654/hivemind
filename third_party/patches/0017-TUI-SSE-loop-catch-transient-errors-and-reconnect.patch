@@ -1,7 +1,7 @@
 From 96cb8bb1e17b738dc32f3a22c94f48bdcc6bb403 Mon Sep 17 00:00:00 2001
 From: Lucas Santos <lsantos7654@gmail.com>
 Date: Sun, 3 May 2026 22:14:10 -0400
-Subject: [PATCH 17/21] TUI SSE loop: catch transient errors and reconnect
+Subject: [PATCH 17/22] TUI SSE loop: catch transient errors and reconnect
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
@@ -31,7 +31,7 @@ index 67718c0..9c3ca5c 100644
  import { createGlobalEmitter } from "@solid-primitives/event-bus"
  import { batch, createEffect, onCleanup, onMount } from "solid-js"
 +import { Log } from "@/util/log"
-
+ 
  export type EventSource = {
    subscribe: (directory: string | undefined, handler: (event: Event) => void) => Promise<() => void>
 @@ -74,19 +75,41 @@ export const { use: useSDK, provider: SDKProvider } = createSimpleContext({
@@ -83,7 +83,8 @@ index 67718c0..9c3ca5c 100644
 +        })
 +      })
      }
-
+ 
      // Hivemind: presence client. One WebSocket per TUI process, kept
---
+-- 
 2.50.1
+

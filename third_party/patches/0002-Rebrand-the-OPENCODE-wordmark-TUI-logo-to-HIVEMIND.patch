@@ -1,7 +1,7 @@
 From b74eb5c1bf325f3d37a8f3bfb038e6d263a40b48 Mon Sep 17 00:00:00 2001
 From: Lucas Santos <lsantos7654@gmail.com>
 Date: Mon, 20 Apr 2026 21:22:13 -0400
-Subject: [PATCH 02/21] Rebrand the OPENCODE wordmark + TUI logo to HIVEMIND
+Subject: [PATCH 02/22] Rebrand the OPENCODE wordmark + TUI logo to HIVEMIND
 
 Replaces the two ASCII-art glyph sources in the opencode source tree
 that the user sees: the static `wordmark` array used by the exit screen
@@ -43,14 +43,14 @@ index 44fb93c..f5c1b40 100644
 +    "▀   ▀ ▀▀▀ ▀~~▀ ▀▀▀ ",
 +  ],
  }
-
+ 
  export const marks = "_^~"
 diff --git a/packages/opencode/src/cli/ui.ts b/packages/opencode/src/cli/ui.ts
 index b24a2a2..4cb79d4 100644
 --- a/packages/opencode/src/cli/ui.ts
 +++ b/packages/opencode/src/cli/ui.ts
 @@ -5,10 +5,10 @@ import { logo as glyphs } from "./logo"
-
+ 
  export namespace UI {
    const wordmark = [
 -    `⠀                                ▄     `,
@@ -62,7 +62,8 @@ index b24a2a2..4cb79d4 100644
 +    `█▀▀█  █   █  █ █▀▀▀ █ █ █  █   █  █ █  █`,
 +    `▀  ▀ ▀▀▀   ▀▀  ▀▀▀▀ ▀   ▀ ▀▀▀  ▀  ▀ ▀▀▀▀`,
    ]
-
+ 
    export const CancelledError = NamedError.create("UICancelledError", z.void())
---
+-- 
 2.50.1
+

@@ -73,6 +73,7 @@ def _ext_impl(ctx):
     if opencode_tag:
         dep_patches = ["@//third_party/dep_patches:" + p for p in _OPENCODE_DEP_PATCHES]
         code_patches = ["@//third_party/patches:" + p for p in _OPENCODE_CODE_PATCHES]
+
         # Install repo: download + dep_patches + bun install. Cached by
         # version + sha256 + bun version + dep_patches contents. Survives
         # code_patch edits so the build repo can ctx.symlink its
@@ -83,6 +84,7 @@ def _ext_impl(ctx):
             sha256 = opencode_tag.sha256,
             dep_patches = dep_patches,
         )
+
         # Build repo: download + dep_patches + code_patches + symlink
         # node_modules + bun build. Patches concatenated in that order so
         # the post-patch state matches what the install repo saw.
@@ -106,7 +108,9 @@ _OPENCODE_DEP_PATCHES = [
     "0011-SDK-gen-backgroundTasks-endpoint-SessionBackgroundCh.patch",
     "0014-SDK-gen-liveSessions-endpoint-LiveSessionsChanged-ev.patch",
     "0020-SDK-gen-ephemeral-on-Session-create-fork-inputs.patch",
+    "0022-Strip-placeholder-package.json-scripts.patch",
 ]
+
 # Patches that modify only source files (no dep manifest changes). Applied
 # only in @opencode_src, after dep_patches, after install. Editing one
 # invalidates only the build repo (~3s rebuild). Resolved relative to
@@ -140,7 +144,7 @@ external_engines = module_extension(
         # Opencode tag added in Phase 2b.
         "opencode": tag_class(attrs = {
             "version": attr.string(mandatory = True),
-            "sha256":  attr.string(mandatory = True),
+            "sha256": attr.string(mandatory = True),
         }),
     },
 )

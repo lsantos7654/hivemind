@@ -1,7 +1,7 @@
 From 13c7edbb607163a10bd70b4b9bd01364a7553558 Mon Sep 17 00:00:00 2001
 From: Lucas Santos <lsantos7654@gmail.com>
 Date: Fri, 1 May 2026 02:00:37 -0400
-Subject: [PATCH 15/21] Per-client WebSocket presence and focus tracking
+Subject: [PATCH 15/22] Per-client WebSocket presence and focus tracking
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
@@ -195,13 +195,13 @@ index 348c3ca..67718c0 100644
  import { createGlobalEmitter } from "@solid-primitives/event-bus"
 -import { batch, onCleanup, onMount } from "solid-js"
 +import { batch, createEffect, onCleanup, onMount } from "solid-js"
-
+ 
  export type EventSource = {
    subscribe: (directory: string | undefined, handler: (event: Event) => void) => Promise<() => void>
 @@ -87,18 +89,59 @@ export const { use: useSDK, provider: SDKProvider } = createSimpleContext({
        })().catch(() => {})
      }
-
+ 
 +    // Hivemind: presence client. One WebSocket per TUI process, kept
 +    // alive for the life of the TUI. Lifecycle, reconnect, and focus
 +    // tracking live in `presence-client.ts`; this module only wires
@@ -250,14 +250,14 @@ index 348c3ca..67718c0 100644
 +        })
        }
      })
-
+ 
      onCleanup(() => {
        abort.abort()
        sse?.abort()
 +      presence?.close()
        if (timer) clearTimeout(timer)
      })
-
+ 
 diff --git a/packages/opencode/src/cli/cmd/tui/feature-plugins/home/footer.tsx b/packages/opencode/src/cli/cmd/tui/feature-plugins/home/footer.tsx
 index 0db4889..feea16e 100644
 --- a/packages/opencode/src/cli/cmd/tui/feature-plugins/home/footer.tsx
@@ -270,13 +270,13 @@ index 0db4889..feea16e 100644
  import { homedir } from "node:os"
  import { join } from "node:path"
 -import { Global } from "@/global"
-
+ 
  const id = "internal:home-footer"
-
+ 
 @@ -66,57 +65,87 @@ function HivemindStatus(props: { api: TuiPluginApi }) {
    )
  }
-
+ 
 -function Directory(props: { api: TuiPluginApi }) {
 +// Hivemind: global "● N sessions" pill. Counts every distinct session
 +// ID currently focused by some connected TUI. Driven by
@@ -301,7 +301,7 @@ index 0db4889..feea16e 100644
 +      // best-effort initial fetch; bus event will populate on next change
 +    }
    })
-
+ 
 -  return <text fg={theme().textMuted}>{dir()}</text>
 -}
 -
@@ -315,7 +315,7 @@ index 0db4889..feea16e 100644
 +    setCount(event.properties.sessions.length)
 +  })
 +  onCleanup(unsubscribe)
-
+ 
    return (
 -    <Show when={has()}>
 -      <box gap={1} flexDirection="row" flexShrink={0}>
@@ -339,7 +339,7 @@ index 0db4889..feea16e 100644
 +    </box>
    )
  }
-
+ 
 -function Version(props: { api: TuiPluginApi }) {
 +// Hivemind: per-TUI "● N subagents" pill. Counts the direct DB
 +// children of THIS TUI's currently-focused session — not a global
@@ -381,7 +381,7 @@ index 0db4889..feea16e 100644
 +  })
 +  onCleanup(unsubCreated)
 +  onCleanup(unsubDeleted)
-
+ 
    return (
 -    <box flexShrink={0}>
 -      <text fg={theme().textMuted}>{props.api.app.version}</text>
@@ -391,7 +391,7 @@ index 0db4889..feea16e 100644
      </box>
    )
  }
-
+ 
 -function View(props: { api: TuiPluginApi }) {
 +function View(props: { api: TuiPluginApi; sessionID?: string }) {
    return (
@@ -443,7 +443,7 @@ index b4cfc32..5eb4a7f 100644
  import { SessionBackground } from "@/session/background"
 +import { liveSessions } from "./presence"
  import { errors } from "../error"
-
+ 
  const log = Log.create({ service: "server" })
 @@ -297,6 +298,32 @@ export const GlobalRoutes = lazy(() =>
          return c.json(result)
@@ -1285,5 +1285,6 @@ index 0000000..3c863db
 +    })
 +  })
 +})
---
+-- 
 2.50.1
+

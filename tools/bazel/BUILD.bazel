@@ -1,0 +1,114 @@
+"""Bazel-wrapped quality-gate binaries.
+
+Each tool is exposed as a runnable `py_console_script_binary` so that:
+
+- `bazelisk run //tools/bazel:ruff_bin -- check src/` works locally
+- The `*_test` macros under this directory can use the binary as `data`
+  and resolve a workspace-relative path via `$(rootpath ...)` for an
+  `sh_test` runner.
+
+The binary's runfiles already include the venv + entry-point wrapper,
+so the runner script just `exec`s it. See `tools/bazel/ruff_test.bzl`,
+`tools/bazel/mypy_test.bzl`.
+"""
+
+load("@aspect_rules_py//py/unstable:defs.bzl", "py_venv_binary")
+load("@aspect_rules_py//uv/unstable:defs.bzl", "py_entrypoint_binary")
+load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
+load("//tools/bazel:buildifier_test.bzl", "buildifier_check_test")
+
+package(default_visibility = ["//visibility:public"])
+
+# ruff's wheel ships the binary via the legacy `data/scripts/` mechanism
+# rather than `entry_points.txt`, so the autodiscovery path that
+# `py_console_script_binary` takes fails. Point at the explicit
+# Python wrapper that execs the underlying Rust binary.
+py_entrypoint_binary(
+    name = "ruff_bin",
+    entrypoint = "ruff.__main__:_run",
+    pkg = "@pypi//ruff",
+)
+
+# mypy needs to import hivemind's runtime deps to typecheck call sites
+# (e.g., `import typer`, `import rich`, `import textual`). A
+# py_venv_binary with the project library as a dep gives mypy a venv
+# that contains both mypy and every dep declared on `//src/hivemind:lib`.
+py_venv_binary(
+    name = "mypy_bin",
+    srcs = ["mypy_main.py"],
+    main = "mypy_main.py",
+    deps = [
+        "//src/hivemind:lib",
+        "@pypi//mypy",
+    ],
+)
+
+# Make runner scripts and Starlark sources loadable by other packages.
+exports_files([
+    "ruff_check_runner.sh",
+    "ruff_format_runner.sh",
+    "mypy_runner.sh",
+    "buildifier_check_runner.sh",
+    "buildifier_fix_runner.sh",
+    "bun_test_runner.sh",
+    "format.sh",
+    "tsc_runner.sh",
+    "BUILD.bazel",
+    "bun_test.bzl",
+    "buildifier_test.bzl",
+    "mypy_test.bzl",
+    "ruff_test.bzl",
+    "tsc_test.bzl",
+])
+
+# ---------------------------------------------------------------------------
+# Buildifier — Starlark format + lint
+# ---------------------------------------------------------------------------
+
+# Files checked are listed explicitly so renaming a source automatically
+# breaks the build, surfacing dead targets. Add new .bzl/BUILD.bazel
+# files here as the substages of Stage 0 land.
+buildifier_check_test(
+    name = "buildifier_check",
+    srcs = [
+        "//:BUILD.bazel",
+        "//:MODULE.bazel",
+        "//src/hivemind:BUILD.bazel",
+        "//tests:BUILD.bazel",
+        "//third_party:BUILD.bazel",
+        "//third_party:extensions.bzl",
+        "//third_party:opencode_install.bzl",
+        "//tools:BUILD.bazel",
+        "//tools/bazel:BUILD.bazel",
+        "//tools/bazel:buildifier_test.bzl",
+        "//tools/bazel:bun_test.bzl",
+        "//tools/bazel:mypy_test.bzl",
+        "//tools/bazel:ruff_test.bzl",
+        "//tools/bazel:tsc_test.bzl",
+    ],
+)
+
+# Format mode: `bazelisk run //tools/bazel:buildifier_fix` rewrites in
+# place against the live source tree (uses BUILD_WORKSPACE_DIRECTORY).
+sh_binary(
+    name = "buildifier_fix",
+    srcs = ["buildifier_fix_runner.sh"],
+    args = ["$(rootpath @buildifier_prebuilt//:buildifier)"],
+    data = ["@buildifier_prebuilt//:buildifier"],
+)
+
+# Aggregate format binary: runs ruff format + buildifier fix +
+# ruff check --fix. Invoked via `bazelisk run //tools/bazel:format`
+# (or `make format`).
+sh_binary(
+    name = "format",
+    srcs = ["format.sh"],
+    args = [
+        "$(rootpath :ruff_bin)",
+        "$(rootpath @buildifier_prebuilt//:buildifier)",
+    ],
+    data = [
+        ":ruff_bin",
+        "@buildifier_prebuilt//:buildifier",
+    ],
+)

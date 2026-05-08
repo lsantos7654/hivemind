@@ -72,10 +72,24 @@ _DEP_PATH_PREFIXES = ("packages/sdk/js/",)
 
 
 def _opencode_version() -> str:
+    """Extract `version` from the `ext.opencode(...)` call.
+
+    Buildifier reformats kwargs alphabetically, so `version` may come
+    after `sha256`. Match the call body as a non-greedy block, then
+    pick out the `version` kwarg from anywhere inside.
+    """
     text = MODULE_BAZEL.read_text()
-    m = re.search(r'ext\.opencode\(\s*version\s*=\s*"([^"]+)"', text)
+    # The call spans multiple lines after buildifier formatting. Anchor
+    # on the exact start (`ext.opencode(\n`) to avoid matching comments
+    # like `# lockstep with ext.opencode(version=...)` that contain a
+    # bare `ext.opencode(...)` token. Body ends at the first
+    # `^)` line (Starlark formats closing parens at column 0).
+    call = re.search(r"ext\.opencode\(\n(.*?)\n\)", text, re.DOTALL)
+    if not call:
+        sys.exit(f"error: could not find ext.opencode(...) in {MODULE_BAZEL}")
+    m = re.search(r'version\s*=\s*"([^"]+)"', call.group(1))
     if not m:
-        sys.exit(f"error: could not find ext.opencode(version=...) in {MODULE_BAZEL}")
+        sys.exit(f"error: ext.opencode(...) lacks version= in {MODULE_BAZEL}")
     return m.group(1)
 
 

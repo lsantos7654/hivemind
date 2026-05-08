@@ -1,7 +1,7 @@
 From 9a44ec3230622947e83eae5dca43ec732902ae61 Mon Sep 17 00:00:00 2001
 From: Lucas Santos <lsantos7654@gmail.com>
 Date: Mon, 27 Apr 2026 00:44:03 -0400
-Subject: [PATCH 08/21] Session.fork accepts optional parentID and permission
+Subject: [PATCH 08/22] Session.fork accepts optional parentID and permission
 
 Two related extensions to Session.fork's signature:
 
@@ -39,7 +39,7 @@ index 2e68f22..10f4ef4 100644
 @@ -527,7 +532,12 @@ export namespace Session {
          })
        })
-
+ 
 -      const fork = Effect.fn("Session.fork")(function* (input: { sessionID: SessionID; messageID?: MessageID }) {
 +      const fork = Effect.fn("Session.fork")(function* (input: {
 +        sessionID: SessionID
@@ -70,7 +70,7 @@ index 2e68f22..10f4ef4 100644
 @@ -699,8 +719,14 @@ export namespace Session {
      (input) => runPromise((svc) => svc.create(input)),
    )
-
+ 
 -  export const fork = fn(z.object({ sessionID: SessionID.zod, messageID: MessageID.zod.optional() }), (input) =>
 -    runPromise((svc) => svc.fork(input)),
 +  export const fork = fn(
@@ -82,7 +82,8 @@ index 2e68f22..10f4ef4 100644
 +    }),
 +    (input) => runPromise((svc) => svc.fork(input)),
    )
-
+ 
    export const get = fn(SessionID.zod, (id) => runPromise((svc) => svc.get(id)))
---
+-- 
 2.50.1
+

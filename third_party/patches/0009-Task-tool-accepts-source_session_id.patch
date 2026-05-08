@@ -1,7 +1,7 @@
 From 23eeed7e7cb6df5a82862e25675313dcff3433db Mon Sep 17 00:00:00 2001
 From: Lucas Santos <lsantos7654@gmail.com>
 Date: Tue, 28 Apr 2026 21:08:44 -0400
-Subject: [PATCH 09/21] Task tool accepts source_session_id
+Subject: [PATCH 09/22] Task tool accepts source_session_id
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
@@ -55,11 +55,11 @@ index b97b53b..cfdcaff 100644
 +    .optional(),
    command: z.string().describe("The command that triggered this task").optional(),
  })
-
+ 
 @@ -35,6 +41,18 @@ export const TaskTool = Tool.defineEffect(
      const run = Effect.fn("TaskTool.execute")(function* (params: z.infer<typeof parameters>, ctx: Tool.Context) {
        const cfg = yield* config.get()
-
+ 
 +      // Hivemind: source_session_id and task_id are conceptually
 +      // different operations (fork-from-source vs resume-existing).
 +      // Reject up front so the model gets a clear error instead of
@@ -78,7 +78,7 @@ index b97b53b..cfdcaff 100644
 @@ -57,46 +75,73 @@ export const TaskTool = Tool.defineEffect(
        const canTask = next.permission.some((rule) => rule.permission === id)
        const canTodo = next.permission.some((rule) => rule.permission === "todowrite")
-
+ 
 +      // Permission overlay applied to every Task-spawned child. Built
 +      // once and reused by the create-fresh and fork-from-source paths
 +      // so they share identical hardening (deny todowrite, deny task,
@@ -176,7 +176,7 @@ index b97b53b..cfdcaff 100644
 -        ))
 +        )
 +      }
-
+ 
        const msg = yield* Effect.sync(() => MessageV2.get({ sessionID: ctx.sessionID, messageID: ctx.messageID }))
        if (msg.info.role !== "assistant") return yield* Effect.fail(new Error("Not an assistant message"))
 diff --git a/packages/opencode/src/tool/task.txt b/packages/opencode/src/tool/task.txt
@@ -192,5 +192,6 @@ index fba8470..bd36693 100644
  4. The agent's outputs should generally be trusted
  5. Clearly tell the agent whether you expect it to write code or just to do research (search, file reads, web fetches, etc.), since it is not aware of the user's intent. Tell it how to verify its work if possible (e.g., relevant test commands).
  6. If the agent description mentions that it should be used proactively, then you should try your best to use it without the user having to ask for it first. Use your judgement.
---
+-- 
 2.50.1
+

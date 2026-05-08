@@ -1,7 +1,7 @@
 From 58d5bfe1adc60ad740a3b2909385a31470cde052 Mon Sep 17 00:00:00 2001
 From: Lucas Santos <lsantos7654@gmail.com>
 Date: Thu, 7 May 2026 23:28:59 -0400
-Subject: [PATCH 21/21] Ephemeral subagent sessions
+Subject: [PATCH 21/22] Ephemeral subagent sessions
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
@@ -118,7 +118,7 @@ index d3179d6..dcd2ecd 100644
              item.permission = Permission.merge(item.permission, Permission.fromConfig(value.permission ?? {}))
 +            item.ephemeral = value.ephemeral ?? item.ephemeral
            }
-
+ 
            // Ensure Truncate.GLOB is allowed unless explicitly configured
 diff --git a/packages/opencode/src/config/config.ts b/packages/opencode/src/config/config.ts
 index cee060b..e9c4ecc 100644
@@ -143,7 +143,7 @@ index cee060b..e9c4ecc 100644
          "tools",
 +        "ephemeral",
        ])
-
+ 
        // Extract unknown properties into options
 diff --git a/packages/opencode/src/plugin/hivemind-memory.ts b/packages/opencode/src/plugin/hivemind-memory.ts
 index f85e052..0cfa89d 100644
@@ -151,7 +151,7 @@ index f85e052..0cfa89d 100644
 +++ b/packages/opencode/src/plugin/hivemind-memory.ts
 @@ -103,8 +103,12 @@ export const HivemindMemoryPlugin = async (input: PluginInput): Promise<Hooks> =
          const targetAgent = match[1]
-
+ 
          try {
 +          // Hivemind: `agent`, `metadata`, and `ephemeral` are hivemind
 +          // engine extensions not in the V1 OpenAPI spec the SDK was
@@ -203,7 +203,7 @@ index 907fadb..57288be 100644
 +    void _maybeCleanupEphemeral(taskID)
      return entry
    }
-
+ 
 +  /**
 +   * Hivemind: fire-and-forget. Look up the session and, if `ephemeral`,
 +   * remove it. Errors are logged and swallowed because the caller has
@@ -306,7 +306,7 @@ index 349bcc1..7801efc 100644
 +          ephemeral: input?.ephemeral,
          })
        })
-
+ 
 @@ -549,6 +564,10 @@ export namespace Session {
          messageID?: MessageID
          parentID?: SessionID
@@ -363,7 +363,7 @@ index 6b6e4f4..279341c 100644
  import { SessionID } from "./schema"
  import { SessionStatus } from "./status"
 +import { Log } from "../util/log"
-
+ 
  export namespace SessionRunState {
 +  const log = Log.create({ service: "session.run-state" })
 +
@@ -439,11 +439,11 @@ index f94ccb4..d8bf0b4 100644
 +    .optional(),
    command: z.string().describe("The command that triggered this task").optional(),
  })
-
+ 
 @@ -60,6 +66,18 @@ export const TaskTool = Tool.defineEffect(
          )
        }
-
+ 
 +      // Hivemind: ephemeral + task_id is a caller mistake — resume
 +      // by definition wants the session to persist. Reject at the
 +      // schema layer so the model gets a clear error and doesn't
@@ -462,7 +462,7 @@ index f94ccb4..d8bf0b4 100644
 @@ -79,6 +97,14 @@ export const TaskTool = Tool.defineEffect(
          return yield* Effect.fail(new Error(`Unknown agent type: ${params.subagent_type} is not a valid agent type`))
        }
-
+ 
 +      // Hivemind: effective ephemeral flag = per-spawn override OR
 +      // agent frontmatter default. Per-spawn explicit value (true OR
 +      // false) always wins; falls back to the agent's declared default
@@ -473,7 +473,7 @@ index f94ccb4..d8bf0b4 100644
 +
        const canTask = next.permission.some((rule) => rule.permission === id)
        const canTodo = next.permission.some((rule) => rule.permission === "todowrite")
-
+ 
 @@ -138,6 +164,7 @@ export const TaskTool = Tool.defineEffect(
              sessionID: sourceID,
              parentID: ctx.sessionID,
@@ -976,5 +976,6 @@ index 0000000..4195a7f
 +    ),
 +  )
 +})
---
+-- 
 2.50.1
+

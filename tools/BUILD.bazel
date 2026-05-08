@@ -1,14 +1,17 @@
 load("@bazel_skylib//rules:build_test.bzl", "build_test")
+load("@rules_shell//shell:sh_test.bzl", "sh_test")
 
 package(default_visibility = ["//visibility:public"])
+
+exports_files(["BUILD.bazel"])
 
 # Smoke test: runs `bun --version`. Confirms the per-platform select() resolves
 # and the fetched bun binary is executable.
 sh_test(
     name = "bun_smoke",
     srcs = ["bun_smoke.sh"],
-    data = ["//third_party:bun"],
     args = ["$(rootpath //third_party:bun)"],
+    data = ["//third_party:bun"],
 )
 
 # Smoke test: runs `hivemind-engine --version`. Confirms the bun-compiled
@@ -16,8 +19,8 @@ sh_test(
 sh_test(
     name = "engine_smoke",
     srcs = ["engine_smoke.sh"],
-    data = ["@opencode_src//:hivemind_engine"],
     args = ["$(rootpath @opencode_src//:hivemind_engine)"],
+    data = ["@opencode_src//:hivemind_engine"],
 )
 
 # Build-only check: makes sure the engine target compiles cleanly (catches

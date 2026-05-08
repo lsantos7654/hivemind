@@ -1,7 +1,7 @@
 From f213e3f15c0a34e94989b7a5e2df06a6a1c1e0a4 Mon Sep 17 00:00:00 2001
 From: Lucas Santos <lsantos7654@gmail.com>
 Date: Mon, 20 Apr 2026 21:22:13 -0400
-Subject: [PATCH 04/21] Non-destructive agent reload endpoint
+Subject: [PATCH 04/22] Non-destructive agent reload endpoint
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
@@ -48,13 +48,13 @@ index 2a8bed0..d3179d6 100644
  import { makeRuntime } from "@/effect/run-service"
 +import { Bus } from "@/bus"
 +import { BusEvent } from "@/bus/bus-event"
-
+ 
  export namespace Agent {
    export const Info = z
 @@ -51,10 +53,18 @@ export namespace Agent {
      })
    export type Info = z.infer<typeof Info>
-
+ 
 +  // Hivemind: emitted by reload() so subscribers can refresh agent UI
 +  // without going through /global/dispose (which kills MCP subprocesses).
 +  export const AgentsChanged = BusEvent.define(
@@ -136,7 +136,7 @@ index 11336d5..747c0e2 100644
 +        }
        }
      })
-
+ 
 diff --git a/packages/opencode/src/config/config.ts b/packages/opencode/src/config/config.ts
 index ff79b73..15d7fca 100644
 --- a/packages/opencode/src/config/config.ts
@@ -152,7 +152,7 @@ index ff79b73..15d7fca 100644
 @@ -1584,6 +1585,14 @@ export namespace Config {
            else void task
          })
-
+ 
 +        // Hivemind: non-destructive cache invalidation. Clears the per-instance
 +        // Config cache for the current directory so the next get() re-reads
 +        // config files from disk (including agents/*.md). Does NOT call
@@ -175,7 +175,7 @@ index ff79b73..15d7fca 100644
 @@ -1650,6 +1660,10 @@ export namespace Config {
      return runPromise((svc) => svc.invalidate(wait))
    }
-
+ 
 +  export async function invalidateState() {
 +    return runPromise((svc) => svc.invalidateState())
 +  }
@@ -188,7 +188,7 @@ index a0d6f24..ed7de63 100644
 --- a/packages/opencode/src/project/instance.ts
 +++ b/packages/opencode/src/project/instance.ts
 @@ -172,4 +172,12 @@ export const Instance = {
-
+ 
      return disposal.all
    },
 +  /**
@@ -210,11 +210,11 @@ index 16b9e55..8abef06 100644
  import { Config } from "../../config/config"
 +import { Agent } from "@/agent/agent"
  import { errors } from "../error"
-
+ 
  const log = Log.create({ service: "server" })
-
+ 
  export const GlobalDisposedEvent = BusEvent.define("global.disposed", z.object({}))
-
+ 
 +export const AgentsReloadedEvent = BusEvent.define(
 +  "global.agents-reloaded",
 +  z.object({
@@ -268,5 +268,6 @@ index 16b9e55..8abef06 100644
      .post(
        "/upgrade",
        describeRoute({
---
+-- 
 2.50.1
+

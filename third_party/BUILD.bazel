@@ -2,33 +2,51 @@ load("@bazel_skylib//lib:selects.bzl", "selects")
 
 package(default_visibility = ["//visibility:public"])
 
+exports_files([
+    "BUILD.bazel",
+    "extensions.bzl",
+    "opencode_install.bzl",
+])
+
 selects.config_setting_group(
     name = "macos_arm64",
-    match_all = ["@platforms//os:macos", "@platforms//cpu:arm64"],
+    match_all = [
+        "@platforms//os:macos",
+        "@platforms//cpu:arm64",
+    ],
 )
 
 selects.config_setting_group(
     name = "macos_x86_64",
-    match_all = ["@platforms//os:macos", "@platforms//cpu:x86_64"],
+    match_all = [
+        "@platforms//os:macos",
+        "@platforms//cpu:x86_64",
+    ],
 )
 
 selects.config_setting_group(
     name = "linux_arm64",
-    match_all = ["@platforms//os:linux", "@platforms//cpu:arm64"],
+    match_all = [
+        "@platforms//os:linux",
+        "@platforms//cpu:arm64",
+    ],
 )
 
 selects.config_setting_group(
     name = "linux_x86_64",
-    match_all = ["@platforms//os:linux", "@platforms//cpu:x86_64"],
+    match_all = [
+        "@platforms//os:linux",
+        "@platforms//cpu:x86_64",
+    ],
 )
 
 # Aggregator alias used by downstream tools/smoke tests.
 alias(
     name = "bun",
     actual = select({
-        ":macos_arm64":  "@bun_macos_arm64//:bin",
+        ":macos_arm64": "@bun_macos_arm64//:bin",
         ":macos_x86_64": "@bun_macos_x86_64//:bin",
-        ":linux_arm64":  "@bun_linux_arm64//:bin",
+        ":linux_arm64": "@bun_linux_arm64//:bin",
         ":linux_x86_64": "@bun_linux_x86_64//:bin",
     }),
 )

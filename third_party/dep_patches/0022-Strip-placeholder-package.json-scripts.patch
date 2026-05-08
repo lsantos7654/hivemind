@@ -1,0 +1,35 @@
+From aa6231dc9af705d948337ca1e5d5930ab773e588 Mon Sep 17 00:00:00 2001
+From: Lucas Santos <lsantos7654@gmail.com>
+Date: Fri, 8 May 2026 01:54:49 -0400
+Subject: [PATCH 22/22] Strip placeholder package.json scripts
+
+---
+ packages/opencode/package.json | 7 -------
+ 1 file changed, 7 deletions(-)
+
+diff --git a/packages/opencode/package.json b/packages/opencode/package.json
+index 7cce131..3a56c62 100644
+--- a/packages/opencode/package.json
++++ b/packages/opencode/package.json
+@@ -14,18 +14,11 @@
+     "fix-node-pty": "bun run script/fix-node-pty.ts",
+     "upgrade-opentui": "bun run script/upgrade-opentui.ts",
+     "dev": "bun run --conditions=browser ./src/index.ts",
+-    "random": "echo 'Random script updated at $(date)' && echo 'Change queued successfully' && echo 'Another change made' && echo 'Yet another change' && echo 'One more change' && echo 'Final change' && echo 'Another final change' && echo 'Yet another final change'",
+-    "clean": "echo 'Cleaning up...' && rm -rf node_modules dist",
+-    "lint": "echo 'Running lint checks...' && bun test --coverage",
+-    "format": "echo 'Formatting code...' && bun run --prettier --write src/**/*.ts",
+-    "docs": "echo 'Generating documentation...' && find src -name '*.ts' -exec echo 'Processing: {}' \\;",
+-    "deploy": "echo 'Deploying application...' && bun run build && echo 'Deployment completed successfully'",
+     "db": "bun drizzle-kit"
+   },
+   "bin": {
+     "opencode": "./bin/opencode"
+   },
+-  "randomField": "this-is-a-random-value-12345",
+   "exports": {
+     "./*": "./src/*.ts"
+   },
+-- 
+2.50.1
+

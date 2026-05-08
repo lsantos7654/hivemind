@@ -96,7 +96,7 @@ def _engine_path() -> str:
         msg = "hivemind-engine not found: $RUNFILES_DIR unset (not running under Bazel)."
         raise RuntimeError(msg)
 
-    from hivemind._engine_rlocation import ENGINE_RLOCATION  # type: ignore[import-untyped]
+    from hivemind._engine_rlocation import ENGINE_RLOCATION
 
     path = Path(runfiles_dir) / ENGINE_RLOCATION
     if not path.exists():

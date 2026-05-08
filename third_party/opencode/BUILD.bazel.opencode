@@ -4,15 +4,65 @@ Symlinked in by `opencode_install` after the source has been fetched,
 patched, `bun install`'d, and `bun build --compile`'d. The produced
 binary is exposed via a stable `:hivemind_engine` filegroup that downstream
 targets (`//:hivemind` py_binary `data`) consume.
+
+Engine `*.test.ts` files under `packages/opencode/test/**` are wrapped
+as per-file `bun_test` targets via the macro at
+`@@//tools/bazel:bun_test.bzl`. They are tagged `engine` so that
+`bazelisk test //... --test_tag_filters=engine` (or `--test_tag_filters=-engine`
+to exclude) works as documented in `tools/bazel/README.md`.
 """
+
+load("@@//tools/bazel:bun_test.bzl", "bun_test")
+load("@@//tools/bazel:tsc_test.bzl", "tsc_test")
 
 package(default_visibility = ["//visibility:public"])
 
 # `hivemind-engine` is symlinked at the repo root by opencode_install,
 # pointing at packages/opencode/dist/<platform>/bin/opencode.
-exports_files(["hivemind-engine"])
+exports_files([
+    "hivemind-engine",
+    "packages/opencode/package.json",
+])
 
 filegroup(
     name = "hivemind_engine",
     srcs = ["hivemind-engine"],
+)
+
+# ---------------------------------------------------------------------------
+# Engine bun:test targets (Stage 0.3)
+#
+# One target per `*.test.ts` file under packages/opencode/test/. The
+# target name is the test path with `/` -> `_` and `.test.ts` stripped,
+# rooted at the test/ dir. e.g.,
+#   packages/opencode/test/server/presence.test.ts
+#     -> //external:server_presence_test
+# ---------------------------------------------------------------------------
+
+_TEST_FILES = glob(["packages/opencode/test/**/*.test.ts"])
+
+[
+    bun_test(
+        name = (
+            f.removeprefix("packages/opencode/test/")
+                .removesuffix(".test.ts")
+                .replace("/", "_") + "_test"
+        ),
+        src = f,
+    )
+    for f in _TEST_FILES
+]
+
+# ---------------------------------------------------------------------------
+# Engine TypeScript type-check (Stage 0.4)
+# ---------------------------------------------------------------------------
+
+# `engine_typecheck` tagged `manual` so it doesn't run by default —
+# the patched engine has pre-existing TS errors (upstream + patch
+# drift) that Stage 6 of the testing roadmap addresses. Once that
+# lands, drop the `manual` tag.
+tsc_test(
+    name = "engine_typecheck",
+    package_marker = "packages/opencode/package.json",
+    tags = ["manual"],
 )

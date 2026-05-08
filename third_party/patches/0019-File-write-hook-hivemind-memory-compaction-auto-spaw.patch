@@ -1,7 +1,7 @@
 From cd0efa0a87a6d23bbd5f630f7f48df496e7dda9d Mon Sep 17 00:00:00 2001
 From: Lucas Santos <lsantos7654@gmail.com>
 Date: Thu, 7 May 2026 21:58:46 -0400
-Subject: [PATCH 19/21] File-write hook + hivemind memory-compaction auto-spawn
+Subject: [PATCH 19/22] File-write hook + hivemind memory-compaction auto-spawn
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
@@ -238,7 +238,7 @@ index 814e787..396ea95 100644
 +      tool: "write" | "edit"
 +    }) => Effect.Effect<void>
    }
-
+ 
    export class Service extends ServiceMap.Service<Service, Interface>()("@opencode/Plugin") {}
 @@ -54,6 +61,7 @@ export namespace Plugin {
      PoeAuthPlugin,
@@ -246,12 +246,12 @@ index 814e787..396ea95 100644
      CloudflareAIGatewayAuthPlugin,
 +    HivemindMemoryPlugin,
    ]
-
+ 
    function isServerPlugin(value: unknown): value is PluginInstance {
 @@ -265,7 +273,36 @@ export namespace Plugin {
          yield* InstanceState.get(state)
        })
-
+ 
 -      return Service.of({ trigger, list, init })
 +      // Hivemind: scoped post-write notifier. Walks loaded hooks once,
 +      // matches the absolute write path against any registered glob
@@ -285,7 +285,7 @@ index 814e787..396ea95 100644
 +      return Service.of({ trigger, list, init, notifyFileWrite })
      }),
    )
-
+ 
 @@ -287,4 +324,17 @@ export namespace Plugin {
    export async function init() {
      return runPromise((svc) => svc.init())
@@ -315,11 +315,11 @@ index 9505dd9..9eb6e79 100644
 +import { Plugin } from "../plugin"
  import { Snapshot } from "@/snapshot"
  import { assertExternalDirectory } from "./external-directory"
-
+ 
 @@ -121,6 +122,22 @@ export const EditTool = Tool.define("edit", {
        await FileTime.read(ctx.sessionID, filePath)
      })
-
+ 
 +    // Hivemind: dispatch onFileWrite hooks (pattern-matched at registration).
 +    // Both Edit code paths funnel through Filesystem.write inside the
 +    // withLock above; we notify once here after the lock releases. No-op
@@ -350,11 +350,11 @@ index 6b134e5..aaf8d9d 100644
 +import { Plugin } from "../plugin"
  import { trimDiff } from "./edit"
  import { assertExternalDirectory } from "./external-directory"
-
+ 
 @@ -51,6 +52,20 @@ export const WriteTool = Tool.define("write", {
      })
      await FileTime.read(ctx.sessionID, filepath)
-
+ 
 +    // Hivemind: dispatch onFileWrite hooks (pattern-matched at registration).
 +    // No-op if no plugin registered a matching pattern.
 +    try {
@@ -739,5 +739,6 @@ index 1afb55d..8e3698a 100644
    "experimental.chat.messages.transform"?: (
      input: {},
      output: {
---
+-- 
 2.50.1
+

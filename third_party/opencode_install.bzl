@@ -54,9 +54,9 @@ fail later with confusing module-not-found errors.
 _OPENCODE_URL = "https://github.com/sst/opencode/archive/refs/tags/v{version}.tar.gz"
 
 _BUN_LABELS = {
-    ("mac",   "arm64"):  Label("@bun_macos_arm64//:bun"),
-    ("mac",   "x86_64"): Label("@bun_macos_x86_64//:bun"),
-    ("linux", "arm64"):  Label("@bun_linux_arm64//:bun"),
+    ("mac", "arm64"): Label("@bun_macos_arm64//:bun"),
+    ("mac", "x86_64"): Label("@bun_macos_x86_64//:bun"),
+    ("linux", "arm64"): Label("@bun_linux_arm64//:bun"),
     ("linux", "x86_64"): Label("@bun_linux_x86_64//:bun"),
 }
 
@@ -101,7 +101,10 @@ def _run(ctx, args, env, step, working_directory = ""):
     )
     if result.return_code != 0:
         fail("opencode_install: {} failed (exit {}):\nstdout:\n{}\nstderr:\n{}".format(
-            step, result.return_code, result.stdout, result.stderr,
+            step,
+            result.return_code,
+            result.stdout,
+            result.stderr,
         ))
 
 def _apply_patches(ctx, patches):
@@ -126,7 +129,9 @@ def _apply_patches(ctx, patches):
         )
         if result.return_code != 0:
             fail("opencode_install: failed to apply {}\nstdout:\n{}\nstderr:\n{}".format(
-                patch_path, result.stdout, result.stderr,
+                patch_path,
+                result.stdout,
+                result.stderr,
             ))
 
 def _bun_env(repo_root, version):
@@ -190,8 +195,8 @@ def _opencode_node_modules_install_impl(ctx):
 opencode_node_modules_install = repository_rule(
     implementation = _opencode_node_modules_install_impl,
     attrs = {
-        "version":     attr.string(mandatory = True),
-        "sha256":      attr.string(mandatory = True),
+        "version": attr.string(mandatory = True),
+        "sha256": attr.string(mandatory = True),
         "dep_patches": attr.label_list(allow_files = True),
     },
 )
@@ -304,10 +309,10 @@ def _opencode_install_impl(ctx):
 opencode_install = repository_rule(
     implementation = _opencode_install_impl,
     attrs = {
-        "version":              attr.string(mandatory = True),
-        "sha256":               attr.string(mandatory = True),
-        "patches":              attr.label_list(allow_files = True),
-        "build_file":           attr.label(allow_single_file = True, mandatory = True),
-        "node_modules_anchor":  attr.label(allow_single_file = True, mandatory = True),
+        "version": attr.string(mandatory = True),
+        "sha256": attr.string(mandatory = True),
+        "patches": attr.label_list(allow_files = True),
+        "build_file": attr.label(allow_single_file = True, mandatory = True),
+        "node_modules_anchor": attr.label(allow_single_file = True, mandatory = True),
     },
 )

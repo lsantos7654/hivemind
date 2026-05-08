@@ -1,7 +1,7 @@
 From 2880930e9140945fe8ca65016dba303c0ffa774d Mon Sep 17 00:00:00 2001
 From: Lucas Santos <lsantos7654@gmail.com>
 Date: Mon, 20 Apr 2026 21:22:13 -0400
-Subject: [PATCH 06/21] Bake `bash.sudo *: deny` into Permission.fromConfig
+Subject: [PATCH 06/22] Bake `bash.sudo *: deny` into Permission.fromConfig
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
@@ -31,7 +31,7 @@ index b2cc0f9..ffc0b7e 100644
 @@ -276,8 +276,21 @@ export namespace Permission {
      return pattern
    }
-
+ 
 +  // Hivemind hardening: every ruleset includes `bash.sudo *: deny`
 +  // prepended so sudo is denied by default. User config rules appear
 +  // later in the merged ruleset and findLast() in evaluate() picks the
@@ -51,5 +51,6 @@ index b2cc0f9..ffc0b7e 100644
      for (const [key, value] of Object.entries(permission)) {
        if (typeof value === "string") {
          ruleset.push({ permission: key, action: value, pattern: "*" })
---
+-- 
 2.50.1
+

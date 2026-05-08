@@ -3,4 +3,7 @@ package(default_visibility = ["//visibility:public"])
 # Dep-modifying patches (package.json / bun.lock changes). Applied in BOTH
 # @opencode_node_modules and @opencode_src before bun install. Empty by
 # default — see _OPENCODE_DEP_PATCHES in third_party/extensions.bzl.
-exports_files(glob(["*.patch"], allow_empty = True))
+exports_files(glob(
+    ["*.patch"],
+    allow_empty = True,
+))

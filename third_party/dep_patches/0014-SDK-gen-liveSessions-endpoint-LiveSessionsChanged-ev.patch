@@ -1,7 +1,7 @@
 From 3ecb5d9549e8f678f213f85241fa898d634af532 Mon Sep 17 00:00:00 2001
 From: Lucas Santos <lsantos7654@gmail.com>
 Date: Fri, 1 May 2026 01:52:42 -0400
-Subject: [PATCH 14/21] SDK gen: liveSessions endpoint + LiveSessionsChanged
+Subject: [PATCH 14/22] SDK gen: liveSessions endpoint + LiveSessionsChanged
  event type
 
 Adds the typed bindings the TUI footer plugin uses:
@@ -28,7 +28,7 @@ index f1dfacf..010c1f4 100644
 @@ -351,6 +351,31 @@ export class Global extends HeyApiClient {
      })
    }
-
+ 
 +  /**
 +   * List live sessions
 +   *
@@ -64,7 +64,7 @@ index 7dccc5f..4ce2c9d 100644
 @@ -450,6 +450,20 @@ export type EventSessionBackgroundChanged = {
    }
  }
-
+ 
 +/**
 + * Hivemind: emitted when the per-client presence map changes — a TUI
 + * connects/disconnects its `/presence` WebSocket or sends a focus
@@ -79,7 +79,7 @@ index 7dccc5f..4ce2c9d 100644
 +    sessions: Array<string>
 +  }
 +}
-
+ 
  export type EventSessionCompacted = {
    type: "session.compacted"
 @@ -1015,6 +1029,7 @@ export type Event =
@@ -90,5 +90,6 @@ index 7dccc5f..4ce2c9d 100644
    | EventSessionCompacted
    | EventTodoUpdated
    | EventPtyCreated
---
+-- 
 2.50.1
+

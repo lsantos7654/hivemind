@@ -10,13 +10,13 @@ module(
 # Python toolchain + PyPI deps
 # ---------------------------------------------------------------------------
 
-bazel_dep(name = "rules_python",    version = "1.0.0")
+bazel_dep(name = "rules_python", version = "1.0.0")
 bazel_dep(name = "aspect_rules_py", version = "1.11.2")
 
 python = use_extension("@rules_python//python/extensions:python.bzl", "python")
 python.toolchain(
-    python_version = "3.11",
     is_default = True,
+    python_version = "3.11",
 )
 use_repo(python, "python_3_11", "python_versions")
 
@@ -28,8 +28,8 @@ uv = use_extension("@aspect_rules_py//uv/unstable:extension.bzl", "uv")
 uv.declare_hub(hub_name = "pypi")
 uv.project(
     hub_name = "pypi",
-    pyproject = "//:pyproject.toml",
     lock = "//:uv.lock",
+    pyproject = "//:pyproject.toml",
 )
 use_repo(uv, "pypi")
 
@@ -38,27 +38,34 @@ use_repo(uv, "pypi")
 # ---------------------------------------------------------------------------
 
 bazel_dep(name = "aspect_bazel_lib", version = "2.19.3")
-bazel_dep(name = "bazel_skylib",     version = "1.8.1")
-bazel_dep(name = "rules_testing",    version = "0.6.0")
-bazel_dep(name = "platforms",        version = "1.0.0")
+bazel_dep(name = "bazel_skylib", version = "1.8.1")
+bazel_dep(name = "rules_testing", version = "0.6.0")
+bazel_dep(name = "platforms", version = "1.0.0")
+bazel_dep(name = "rules_shell", version = "0.8.0")
+
+# buildifier — Starlark formatter and linter. Dev-only because end users
+# of the hivemind binary don't need it.
+bazel_dep(name = "buildifier_prebuilt", version = "8.5.1.2", dev_dependency = True)
 
 # ---------------------------------------------------------------------------
 # External engine sources
 # ---------------------------------------------------------------------------
 
 ext = use_extension("//third_party:extensions.bzl", "external_engines")
+
 # Bun version MUST match opencode's package.json:packageManager. Bump in
 # lockstep with ext.opencode(version=...).
 ext.bun(version = "1.3.11")
 ext.opencode(
-    version = "1.4.3",
     sha256 = "27c90c1573edba308f0ccaad077157b88b851041396395780edee526f4654a26",
+    version = "1.4.3",
 )
-use_repo(ext,
-    "bun_macos_arm64",
-    "bun_macos_x86_64",
+use_repo(
+    ext,
     "bun_linux_arm64",
     "bun_linux_x86_64",
+    "bun_macos_arm64",
+    "bun_macos_x86_64",
     "opencode_node_modules",
     "opencode_src",
 )

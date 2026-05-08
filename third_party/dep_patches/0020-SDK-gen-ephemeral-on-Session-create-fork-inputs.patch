@@ -1,7 +1,7 @@
 From 79155408e193ff0ebea80e8fbc54b1598682ccbe Mon Sep 17 00:00:00 2001
 From: Lucas Santos <lsantos7654@gmail.com>
 Date: Thu, 7 May 2026 23:28:37 -0400
-Subject: [PATCH 20/21] SDK gen: ephemeral on Session + create/fork inputs
+Subject: [PATCH 20/22] SDK gen: ephemeral on Session + create/fork inputs
 
 Regenerated bindings for the ephemeral session column. The new
 field appears on the Session response type, on Session.create's
@@ -45,7 +45,7 @@ index 010c1f4..bf4c1f1 100644
    SessionListResponses,
 @@ -325,28 +330,13 @@ export class Global extends HeyApiClient {
    }
-
+ 
    /**
 -   * List background tasks
 +   * Reload agent, skill, and command registries
@@ -104,7 +104,7 @@ index 010c1f4..bf4c1f1 100644
        ...options,
      })
    }
-
+ 
 +  /**
 +   * List background tasks
 +   *
@@ -163,7 +163,7 @@ index 010c1f4..bf4c1f1 100644
 @@ -2325,6 +2326,66 @@ export class Session2 extends HeyApiClient {
      })
    }
-
+ 
 +  /**
 +   * Send message via inbox
 +   *
@@ -234,7 +234,7 @@ index 4ce2c9d..a33d709 100644
 @@ -330,6 +330,13 @@ export type EventWorkspaceFailed = {
    }
  }
-
+ 
 +export type EventAgentChanged = {
 +  type: "agent.changed"
 +  properties: {
@@ -248,7 +248,7 @@ index 4ce2c9d..a33d709 100644
 @@ -401,6 +408,14 @@ export type EventQuestionRejected = {
    }
  }
-
+ 
 +export type EventSessionMessageQueued = {
 +  type: "session.message.queued"
 +  properties: {
@@ -263,7 +263,7 @@ index 4ce2c9d..a33d709 100644
 @@ -430,15 +445,13 @@ export type EventSessionIdle = {
    }
  }
-
+ 
 -/**
 - * Hivemind: emitted when the SessionBackground registry mutates — a
 - * background-mode Task spawn (status=running), its completion
@@ -286,7 +286,7 @@ index 4ce2c9d..a33d709 100644
 @@ -450,28 +463,6 @@ export type EventSessionBackgroundChanged = {
    }
  }
-
+ 
 -/**
 - * Hivemind: emitted when the per-client presence map changes — a TUI
 - * connects/disconnects its `/presence` WebSocket or sends a focus
@@ -315,7 +315,7 @@ index 4ce2c9d..a33d709 100644
 @@ -549,6 +540,23 @@ export type EventWorktreeFailed = {
    }
  }
-
+ 
 +export type EventSessionLiveChanged = {
 +  type: "session.live.changed"
 +  properties: {
@@ -345,7 +345,7 @@ index 4ce2c9d..a33d709 100644
 +  }
 +  ephemeral?: boolean
  }
-
+ 
  export type EventSessionCreated = {
 @@ -1023,14 +1035,15 @@ export type Event =
    | EventCommandExecuted
@@ -406,19 +406,19 @@ index 4ce2c9d..a33d709 100644
 +  ephemeral?: boolean
    project: ProjectSummary | null
  }
-
+ 
 @@ -2088,6 +2115,7 @@ export type Agent = {
      [key: string]: unknown
    }
    steps?: number
 +  ephemeral?: boolean
  }
-
+ 
  export type LspStatus = {
 @@ -2212,6 +2240,67 @@ export type GlobalDisposeResponses = {
-
+ 
  export type GlobalDisposeResponse = GlobalDisposeResponses[keyof GlobalDisposeResponses]
-
+ 
 +export type GlobalReloadAgentsData = {
 +  body?: never
 +  path?: never
@@ -505,9 +505,9 @@ index 4ce2c9d..a33d709 100644
    path: {
      sessionID: string
 @@ -3888,6 +3984,62 @@ export type SessionPromptAsyncResponses = {
-
+ 
  export type SessionPromptAsyncResponse = SessionPromptAsyncResponses[keyof SessionPromptAsyncResponses]
-
+ 
 +export type SessionInboxData = {
 +  body?: {
 +    messageID?: string
@@ -567,5 +567,6 @@ index 4ce2c9d..a33d709 100644
  export type SessionCommandData = {
    body?: {
      messageID?: string
---
+-- 
 2.50.1
+

@@ -1,6 +1,7 @@
 SHELL := /bin/bash
 
-.PHONY: help install update test clean engine dev dev-save dev-reset
+.PHONY: help install update test unit lint typecheck engine-test format \
+        coverage engine clean dev dev-save dev-reset
 
 BAZELISK ?= bazelisk
 LAUNCHER := $(HOME)/.local/bin/hivemind
@@ -8,14 +9,17 @@ LAUNCHER := $(HOME)/.local/bin/hivemind
 .DEFAULT_GOAL := help
 
 # ---------------------------------------------------------------------------
-# User-facing targets
+# User-facing targets — every action wraps `bazelisk`. Direct invocations
+# of pytest, bun, ruff, mypy, tsgo, buildifier, or pre-commit are
+# intentionally absent: Bazel is the universal entry point. (Stage 0 of
+# docs/TESTING_ROADMAP.md.)
 # ---------------------------------------------------------------------------
 
 help: ## Show this help.
 	@printf "Hivemind — Bazel-native build for the Python CLI + bundled opencode engine.\n\n"
 	@printf "Usage: make <target>\n\n"
 	@printf "Targets:\n"
-	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / { printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
+	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / { printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
 	@printf "\nFirst-time setup: \033[36mmake install\033[0m  (bazelisk is the only required system dep)\n"
 
 install: ## Build hivemind and write a launcher wrapper into ~/.local/bin/.
@@ -43,11 +47,33 @@ install: ## Build hivemind and write a launcher wrapper into ~/.local/bin/.
 update: ## Pull, rebuild, refresh launcher (binary refreshes; Python source is live via runfiles).
 	$(MAKE) install
 
+# ---------------------------------------------------------------------------
+# Test / quality-gate targets
+# ---------------------------------------------------------------------------
+
+test: ## Run every Bazel test (unit + lint + typecheck + engine + smoke).
+	$(BAZELISK) test //... '@opencode_src//...'
+
+unit: ## Run only Python pytest targets.
+	$(BAZELISK) test //... --test_tag_filters=unit
+
+lint: ## Run ruff + buildifier.
+	$(BAZELISK) test //... --test_tag_filters=lint
+
+typecheck: ## Run mypy on Python; tsgo on engine (engine excluded by default — `manual` tag pending Stage 6).
+	$(BAZELISK) test //... --test_tag_filters=typecheck
+
+engine-test: ## Run every engine bun:test target (~155 targets).
+	$(BAZELISK) test '@opencode_src//...' --test_tag_filters=engine
+
+format: ## Apply ruff format + buildifier fix + ruff check --fix in place.
+	$(BAZELISK) run //tools/bazel:format
+
+coverage: ## Generate coverage reports (Stage 1 — not yet implemented).
+	@echo "ERROR: 'make coverage' is a Stage 1 deliverable in docs/TESTING_ROADMAP.md."; exit 1
+
 engine: ## Rebuild only the bun-compiled engine.
 	$(BAZELISK) build //:engine
-
-test: ## Run the full Bazel test suite (Python tests + bun/engine smoke tests).
-	$(BAZELISK) test //...
 
 clean: ## Clean Bazel outputs and remove the launcher symlink.
 	$(BAZELISK) clean
@@ -55,7 +81,9 @@ clean: ## Clean Bazel outputs and remove the launcher symlink.
 
 # ---------------------------------------------------------------------------
 # Patch dev workflow — clone opencode into dev/, edit, save patches.
-# See scripts/dev-opencode.py for details.
+# See scripts/dev-opencode.py for details. These are the ONLY targets
+# that shell out (to a Python helper script) — everything else wraps
+# bazelisk.
 # ---------------------------------------------------------------------------
 
 dev: ## Clone opencode into dev/opencode and apply patches as commits.
@@ -63,6 +91,10 @@ dev: ## Clone opencode into dev/opencode and apply patches as commits.
 
 dev-save: ## Regenerate third_party/patches/*.patch from dev/opencode commits.
 	@python3 scripts/dev-opencode.py save
+	@# `_rewrite_patches_list` adds new entries to the list and may
+	@# leave whitespace drift that buildifier wants normalized. Run
+	@# fix-mode so `make lint` after `make dev-save` stays green.
+	$(BAZELISK) run //tools/bazel:buildifier_fix
 
 dev-reset: ## Wipe dev/opencode and re-clone from scratch.
 	rm -rf dev/opencode

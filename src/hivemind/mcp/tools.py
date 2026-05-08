@@ -905,7 +905,7 @@ async def _handle_list_sessions(
     from hivemind import opencode
 
     try:
-        sessions = opencode.session_list(roots=roots if roots else None, limit=limit)
+        sessions = opencode.session_list(roots=roots or None, limit=limit)
     except RuntimeError as exc:
         return _text(f"Error: {exc}")
 

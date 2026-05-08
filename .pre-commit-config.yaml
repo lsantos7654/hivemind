@@ -10,14 +10,17 @@ repos:
       - id: destroyed-symlinks
       - id: fix-byte-order-marker
       - id: check-docstring-first
-      # Formatters
+      # Formatters — patches in third_party/{patches,dep_patches}/
+      # are git format-patch output; mangling whitespace breaks
+      # `git am` reproducibility, so exclude them from auto-fixers.
       - id: trailing-whitespace
         args: [--markdown-linebreak-ext=md]
-        exclude: '^experts/'
+        exclude: '^(experts/|third_party/(patches|dep_patches)/)'
       - id: end-of-file-fixer
-        exclude: '^experts/'
+        exclude: '^(experts/|third_party/(patches|dep_patches)/)'
       - id: mixed-line-ending
         args: [--fix=lf]
+        exclude: '^third_party/(patches|dep_patches)/'
       # Validators
       - id: check-yaml
       - id: check-toml

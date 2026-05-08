@@ -1,7 +1,7 @@
 From 706473d2f8c32e87de7f1011a4f6fb240a37c910 Mon Sep 17 00:00:00 2001
 From: Lucas Santos <lsantos7654@gmail.com>
 Date: Sun, 3 May 2026 19:29:56 -0400
-Subject: [PATCH 16/21] Extend reload-agents to invalidate Skill and Command
+Subject: [PATCH 16/22] Extend reload-agents to invalidate Skill and Command
  state
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
@@ -55,12 +55,12 @@ index 088d7c5..866f1a4 100644
      readonly list: () => Effect.Effect<Info[]>
 +    readonly reload: () => Effect.Effect<{ count: number }>
    }
-
+ 
    export class Service extends ServiceMap.Service<Service, Interface>()("@opencode/Command") {}
 @@ -177,7 +179,18 @@ export namespace Command {
          return Object.values(s.commands)
        })
-
+ 
 -      return Service.of({ get, list })
 +      // Hivemind: invalidate the per-instance Command cache so the next
 +      // get/list call re-runs the `init` effect, picking up newly-added
@@ -76,7 +76,7 @@ index 088d7c5..866f1a4 100644
 +      return Service.of({ get, list, reload })
      }),
    )
-
+ 
 @@ -192,4 +205,32 @@ export namespace Command {
    export async function list() {
      return runPromise((svc) => svc.list())
@@ -131,7 +131,7 @@ index 5eb4a7f..0929612 100644
 +    commands: z.number(),
    }),
  )
-
+ 
 @@ -266,19 +270,21 @@ export const GlobalRoutes = lazy(() =>
      .post(
        "/reload-agents",
@@ -196,12 +196,12 @@ index cde36dd..f167b56 100644
      readonly available: (agent?: Agent.Info) => Effect.Effect<Info[]>
 +    readonly reload: () => Effect.Effect<{ count: number }>
    }
-
+ 
    const add = Effect.fnUntraced(function* (state: State, match: string, bus: Bus.Interface) {
 @@ -226,7 +228,17 @@ export namespace Skill {
          return list.filter((skill) => Permission.evaluate("skill", skill.name, agent.permission).action !== "deny")
        })
-
+ 
 -      return Service.of({ get, all, dirs, available })
 +      // Hivemind: invalidate the per-instance Skill cache so the next
 +      // get/all/dirs/available call re-runs `loadSkills` and picks up
@@ -216,7 +216,7 @@ index cde36dd..f167b56 100644
 +      return Service.of({ get, all, dirs, available, reload })
      }),
    )
-
+ 
 @@ -280,4 +292,31 @@ export namespace Skill {
    export async function available(agent?: Agent.Info) {
      return runPromise((skill) => skill.available(agent))
@@ -249,5 +249,6 @@ index cde36dd..f167b56 100644
 +    return { instances: dirs.length, skills }
 +  }
  }
---
+-- 
 2.50.1
+

@@ -1,7 +1,7 @@
 From 68573673c1fdadfb3d2fd4dc9dfddde9547d4892 Mon Sep 17 00:00:00 2001
 From: Lucas Santos <lsantos7654@gmail.com>
 Date: Mon, 20 Apr 2026 21:22:13 -0400
-Subject: [PATCH 03/21] Inline connection indicator into home + sidebar footers
+Subject: [PATCH 03/22] Inline connection indicator into home + sidebar footers
 
 Replaces the deprecated `opencode/plugins/connection-indicator.js` TUI
 plugin with a native source-level patch that renders the same indicator
@@ -35,9 +35,9 @@ index 8047c26..c876c4a 100644
 +import { homedir } from "node:os"
 +import { join } from "node:path"
  import { Global } from "@/global"
-
+ 
  const id = "internal:home-footer"
-
+ 
 +// Hivemind: detect connection mode (standalone / hivemind-managed / remote).
 +// Replaces the `opencode/plugins/connection-indicator.js` external plugin.
 +type HivemindMode = "standalone" | "hivemind" | "remote"
@@ -119,9 +119,9 @@ index b468d85..8438851 100644
 +import { homedir } from "node:os"
 +import { join } from "node:path"
  import { Global } from "@/global"
-
+ 
  const id = "internal:sidebar-footer"
-
+ 
 +// Hivemind: detect connection mode (standalone / hivemind-managed / remote).
 +// Replaces the `opencode/plugins/connection-indicator.js` external plugin.
 +type HivemindMode = "standalone" | "hivemind" | "remote"
@@ -188,5 +188,6 @@ index b468d85..8438851 100644
      </box>
    )
  }
---
+-- 
 2.50.1
+

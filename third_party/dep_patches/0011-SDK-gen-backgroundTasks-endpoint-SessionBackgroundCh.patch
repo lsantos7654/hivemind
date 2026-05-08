@@ -1,7 +1,7 @@
 From 4a08ef097480d5cb70c4ff63bbacec504fd4f955 Mon Sep 17 00:00:00 2001
 From: Lucas Santos <lsantos7654@gmail.com>
 Date: Wed, 29 Apr 2026 00:44:25 -0400
-Subject: [PATCH 11/21] SDK gen: backgroundTasks endpoint +
+Subject: [PATCH 11/22] SDK gen: backgroundTasks endpoint +
  SessionBackgroundChanged event
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
@@ -36,7 +36,7 @@ index b2e37db..f1dfacf 100644
 @@ -324,6 +324,33 @@ export class Global extends HeyApiClient {
      })
    }
-
+ 
 +  /**
 +   * List background tasks
 +   *
@@ -74,7 +74,7 @@ index 62c62e1..7dccc5f 100644
 @@ -430,6 +430,27 @@ export type EventSessionIdle = {
    }
  }
-
+ 
 +/**
 + * Hivemind: emitted when the SessionBackground registry mutates — a
 + * background-mode Task spawn (status=running), its completion
@@ -107,5 +107,6 @@ index 62c62e1..7dccc5f 100644
    | EventSessionCompacted
    | EventTodoUpdated
    | EventPtyCreated
---
+-- 
 2.50.1
+

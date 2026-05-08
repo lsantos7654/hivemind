@@ -95,6 +95,13 @@ max-complexity = 15
 quote-style = "double"
 indent-style = "space"
 
+# Declare first-party packages explicitly so ruff doesn't have to
+# auto-detect them via filesystem layout — Bazel-driven invocations
+# run against partial source trees (only the target's runfiles)
+# where `src/hivemind/` may not be present.
+[tool.ruff.lint.isort]
+known-first-party = ["hivemind"]
+
 [tool.mypy]
 python_version = "3.11"
 show_error_codes = true
