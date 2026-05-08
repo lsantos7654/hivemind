@@ -68,7 +68,13 @@ ses_main
 Main's TUI subagents pill ticks from 1 to 2 briefly while the daemon
 runs. The daemon reads `short_memory.md`, lists the directory for
 context, decides which entries are durable vs ephemeral, writes
-back atomically, then exits. Pill drops back to 1.
+back atomically, then exits. Because the daemon's `agent.md`
+declares `ephemeral: true`, the engine deletes its session as soon
+as the runner reaches idle on the terminal turn — the pill drops
+back to 1 **and** the `compact memory: bazel` entry vanishes from
+the subagent tree. The compaction artifacts on disk
+(`long_memory.md`, topic files) are untouched; only the in-memory
+session record goes away.
 
 ## Architectural commitments
 
@@ -90,6 +96,13 @@ back atomically, then exits. Pill drops back to 1.
   `list_sessions`, future tooling).
 - **One-shot** — daemon completes one pass and exits. No loop, no
   cron, no external process.
+- **Ephemeral session** — daemon's frontmatter declares
+  `ephemeral: true`, and the auto-spawn plugin passes
+  `ephemeral: true` explicitly so the call site documents the
+  intent. Engine deletes the session on terminal state
+  (completed | failed | cancelled). The subagent tree never
+  accumulates `compact memory: <agent>` corpses no matter how
+  many threshold-crossing writes you do per day.
 - **Restricted permissions** — daemon's frontmatter scopes its
   Read/Write/Edit to `~/.config/opencode/hivemind/memory/**`
   exclusively. No Bash, no Task, no shell, no network.
@@ -103,6 +116,7 @@ back atomically, then exits. Pill drops back to 1.
 | 3 | Daemon agent: `templates/agents/hivemind-memory-daemon.md.j2` + two `_seed_system_templated` call sites in `lifecycle.py` |
 | 4 | Auto-spawn plugin: `dev/opencode/.../plugin/hivemind-memory.ts` registered as an internal plugin |
 | 5 | Tests: 11 new engine tests (`bun:test`) + 14 new Python tests (`pytest`) |
+| 6 | Ephemeral cleanup: patches 0020 (SDK regen) + 0021 (`ephemeral` schema column, terminal-state finalizers, Task tool plumbing, frontmatter resolution); daemon template + auto-spawn callsite both flag `ephemeral: true` |
 
 ## Files
 
@@ -123,6 +137,17 @@ back atomically, then exits. Pill drops back to 1.
   — auto-spawn behavior tests
 - `third_party/patches/0018-Session-metadata-column.patch`
 - `third_party/patches/0019-File-write-hook-hivemind-memory-compaction-auto-spaw.patch`
+- `dev/opencode/packages/opencode/migration/20260508023927_session_ephemeral/migration.sql`
+  — schema migration adding the `ephemeral` column
+- `dev/opencode/packages/opencode/test/session/ephemeral.test.ts`
+  — round-trip + finalizer tests (5 tests)
+- `dev/opencode/packages/opencode/test/tool/task-ephemeral.test.ts`
+  — Task tool override + frontmatter default tests (5 tests)
+- `tests/test_ephemeral_invariants.py` — pin daemon + curator
+  templates declare `ephemeral: true`, HIVEMIND.md docs the
+  feature, skills mention it (5 tests)
+- `third_party/dep_patches/0020-SDK-gen-ephemeral-on-Session-create-fork-inputs.patch`
+- `third_party/patches/0021-Ephemeral-subagent-sessions.patch`
 
 ### Modified
 
@@ -150,6 +175,12 @@ back atomically, then exits. Pill drops back to 1.
   register `HivemindMemoryPlugin`
 - `dev/opencode/packages/plugin/src/index.ts` — `Hooks.onFileWrite`
   type
+- `src/hivemind/templates/agents/hivemind-memory-daemon.md.j2` —
+  declare `ephemeral: true` in frontmatter
+- `dev/opencode/packages/opencode/src/plugin/hivemind-memory.ts` —
+  pass `ephemeral: true` on the auto-spawn `client.session.create`
+- `dev/opencode/packages/opencode/test/plugin/hivemind-memory.test.ts`
+  — assert spawned daemon session has `ephemeral === true`
 
 ### Deleted
 
@@ -161,14 +192,22 @@ back atomically, then exits. Pill drops back to 1.
 Mostly nothing — that's the point. The daemon is invisible until
 needed and self-correcting when triggered. But:
 
-- **See it run** — when active, the daemon shows in main's session
-  tree with title `compact memory: <agent>`. Subagents pill ticks
-  up briefly.
-- **Drill into it** — ctrl-x-down on the daemon's session entry
-  shows what it's doing.
-- **Kill it** — standard subagent kill. Idempotent: the next
-  over-threshold write triggers it again. Cancelling main also
-  cascades-cancels the daemon (existing patch 0010 behavior).
+- **See it run** — while active, the daemon shows in main's session
+  tree with title `compact memory: <agent>` and the subagents pill
+  ticks up briefly. Once the compaction pass completes the session
+  is auto-deleted; the pill returns to baseline and the entry
+  disappears from the tree. If you blink, you might miss it
+  entirely — the daemon's whole life is usually under a second.
+- **Drill into it (while running)** — ctrl-x-down on the daemon's
+  session entry shows what it's doing. Only works while the daemon
+  is alive; once it finishes the session record is gone. The
+  compaction artifacts (`long_memory.md` and topic files) are the
+  durable trace.
+- **Kill it** — standard subagent kill. The session deletes itself
+  after cancellation just like a clean exit (cancelled is a
+  terminal state). Idempotent: the next over-threshold write
+  triggers a fresh daemon. Cancelling main also cascades-cancels
+  the daemon (existing patch 0010 behavior).
 - **Tune the threshold** — edit
   `hivemind.json:memory.compaction_threshold_bytes`. Plugin
   picks up changes via mtime invalidation; no restart needed.
@@ -196,16 +235,23 @@ needed and self-correcting when triggered. But:
 
 ## References
 
-- Plan file (now superseded by this doc):
-  `~/.claude/plans/purring-stirring-blossom.md`
+- Plan files (now superseded by this doc): the memory-daemon plan
+  and the ephemeral-spawns plan, both folded into the sections above.
 - Patch files:
   - `third_party/patches/0018-Session-metadata-column.patch`
   - `third_party/patches/0019-File-write-hook-hivemind-memory-compaction-auto-spaw.patch`
+  - `third_party/dep_patches/0020-SDK-gen-ephemeral-on-Session-create-fork-inputs.patch`
+  - `third_party/patches/0021-Ephemeral-subagent-sessions.patch`
 - Daemon template: `src/hivemind/templates/agents/hivemind-memory-daemon.md.j2`
 - Auto-spawn plugin: `dev/opencode/packages/opencode/src/plugin/hivemind-memory.ts`
 - Test coverage:
   - `tests/test_memory_daemon.py` (14 tests)
+  - `tests/test_ephemeral_invariants.py` (5 tests)
   - `dev/opencode/packages/opencode/test/session/metadata.test.ts` (3)
+  - `dev/opencode/packages/opencode/test/session/ephemeral.test.ts` (5)
   - `dev/opencode/packages/opencode/test/plugin/file-write-hook.test.ts` (5)
   - `dev/opencode/packages/opencode/test/plugin/hivemind-memory.test.ts` (3)
-- Commit: `ec7d98d` — *feat: Memory-compaction daemon with auto-spawn*
+  - `dev/opencode/packages/opencode/test/tool/task-ephemeral.test.ts` (5)
+- Commits:
+  - `ec7d98d` — *feat: Memory-compaction daemon with auto-spawn*
+  - `2c9277c` — *feat: Ephemeral subagent sessions*
