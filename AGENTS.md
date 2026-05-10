@@ -1,8 +1,10 @@
-# CLAUDE.md
+# AGENTS.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides the single comprehensive reference for AI agents working on this
+repository (architecture, data flow, patched-engine internals, MCP mutation semantics,
+and high-signal guardrails).
 
-## Build & Run
+## Build & run
 
 `bazelisk` is the only required system dependency. Everything else (Python
 toolchain, PyPI deps, bun, opencode source, patches) is fetched and built
@@ -10,8 +12,11 @@ hermetically by Bazel.
 
 ```bash
 make install            # Build + symlink ~/.local/bin/hivemind (first-time setup)
-make update             # Pull, rebuild, refresh launcher
-make test               # bazel test //...
+make update             # Pull, rebuild, refresh launcher (only when deps / patches / engine version change)
+make test               # Full suite: unit + lint + typecheck + engine smoke
+make lint               # ruff + buildifier
+make typecheck          # mypy
+make format             # ruff format + ruff check --fix + buildifier fix
 make engine             # Rebuild the bun-compiled engine only
 make clean              # bazel clean + remove launcher symlink
 
@@ -21,42 +26,31 @@ hivemind status         # Full dashboard
 hivemind -- -s ses_xxx  # Forward args to opencode (explicit -- separator)
 ```
 
-Source edits in `src/hivemind/*.py` are live without rebuild — the Bazel
-launcher uses a runfiles tree of symlinks to workspace source. Only
-`pyproject.toml`, `uv.lock`, a `third_party/patches/*.patch`, or an engine
-version bump in `MODULE.bazel` requires `make update`.
-
-Verify changes:
-```bash
-bazelisk test //...                                      # full Bazel test suite
-bazelisk test //tests:test_core                          # single test target
-bazelisk run //src/hivemind:hivemind -- redeploy         # smoke: regenerate agents
-```
-
 Lint/format/type-check tools (`ruff`, `mypy`, `pre-commit`) are pinned in
 `pyproject.toml` and locked in `uv.lock`, but not exposed as Bazel targets.
 Install them however you prefer (e.g., `brew install ruff mypy pre-commit`).
 
-### User-supplied opencode content
+**Source edits in `src/hivemind/*.py` are live without rebuild.** The Bazel
+launcher uses a runfiles tree of symlinks to workspace source. Only
+`pyproject.toml`, `uv.lock`, `third_party/patches/*.patch`, or an engine
+version bump in `MODULE.bazel` requires `make update`.
 
-Three slots under `opencode/` for user-authored content; see
-`opencode/README.md` for the full author-facing reference.
+**After editing anything under `src/hivemind/mcp/`** (or anything imported by
+the MCP handlers), restart opencode so the long-lived MCP subprocess loads
+the new bytecode.
 
-- `opencode/commands/<name>.md` — slash commands invoked as `/<name>`.
-  Symlinked into `~/.config/opencode/commands/`.
-- `opencode/skills/<name>/SKILL.md` — LLM-discovered skills. Symlinked
-  into `~/.config/opencode/skills/`.
-- `opencode/agents/<name>.md` — hand-authored agent prompts. Auto-
-  registered in the catalog as `user_supplied` agents on every
-  redeploy; `enable_agent` deploys the file verbatim into
-  `~/.config/opencode/agents/<name>.md`.
+## Single-test invocation
 
-`hivemind redeploy` re-establishes the symlinks and reconciles the
-catalog with `opencode/agents/`. All three flows are idempotent —
-drop / edit / remove a file then redeploy, no separate `hivemind init`
-required.
+```bash
+bazelisk test //tests:test_core                      # Single test target
+bazelisk test //... --test_tag_filters=unit           # Python unit tests only
+bazelisk test //... --test_tag_filters=lint           # ruff + buildifier only
+bazelisk test //... --test_tag_filters=typecheck      # mypy only
+bazelisk test '@opencode_src//...' --test_tag_filters=engine  # Engine tests
+bazelisk run //src/hivemind:hivemind -- redeploy      # Smoke test
+```
 
-### Patching opencode
+## Patching opencode
 
 The bundled engine is a patched fork. Patches live in
 `third_party/patches/*.patch` and are applied at build time. To author or
@@ -71,6 +65,71 @@ make dev-reset      # Wipe dev/opencode and re-clone from scratch
 ```
 
 `scripts/dev-opencode.py` drives this workflow.
+
+## Hard-won conventions (do not break)
+
+- **`from __future__ import annotations` at the top of every module.** Imports
+  used only for typing live under `if TYPE_CHECKING:`. ruff's TC003 rule
+  enforces this. Use `typing.assert_never(x)` for exhaustiveness on
+  discriminated unions (see `agents/registry.py:_body_from_catalog`,
+  `opencode.py:format_agent`, `opencode.py:agent_filename`).
+- **Modern Python type hints (PEP 604):** `str | None`, `list[str]`, etc.
+- **Body params are typed Pydantic models** (`GitAnalyzedParams` /
+  `RosterTemplatedParams`). Never reintroduce loose `dict[str, object]` for
+  body params. Remaining `Any` usages are at JSON I/O boundaries only
+  (generic `load_json`/`save_json`, opencode's own `opencode.json` /
+  `tui.json` dicts).
+- **No backwards-compat shims, re-export facades, or alias layers.** Update
+  callers directly.
+- **Never reintroduce deleted modules:** `provider.py`, `experts.py`,
+  `teams.py`, `redeploy.py`, `mutations.py`, `get_active_provider()`. All are
+  folded into the current layout.
+- **`enable_agent` does NOT call `validate_engine`.** Validation is only done
+  by the creator paths (`create_git_expert`, `update_git_expert`). This keeps
+  the MCP handler fast (~5 ms vs ~900 ms).
+- **`run_coro_sync(coro)`** (in `agents/base.py`) is needed whenever calling
+  async code from a sync caller that may be nested inside a running event
+  loop (the MCP handler path). Do not use bare `asyncio.run()` in such callers.
+- **Templates in `src/hivemind/templates/` affect NEW agents only.** Existing
+  agents deploy from their `lead.md` or `agent.md` files. To update an existing
+  agent, edit `experts/<name>/HEAD/agent.md` then run `hivemind redeploy`.
+- **Bun version and opencode version are pinned in lockstep** at
+  `MODULE.bazel:58-61`. opencode's `package.json:packageManager` declares
+  the Bun version it expects — bump both together.
+- **Ruff format:** double quotes, space indent, 120-char line length.
+- **mypy is strict** except `hivemind.crawl.*` and `hivemind.tui.*` (see
+  `pyproject.toml` overrides).
+- **When editing experts,** edit `experts/<name>/HEAD/agent.md` then
+  `hivemind redeploy`. (MCP mutations are non-destructive now, but the
+  CLI is still convenient for manual edits.)
+
+## Config files
+
+| File | Tracked? | Purpose |
+|------|----------|---------|
+| `hivemind.json` | Yes | Engine settings + agent catalog (shared) |
+| `config.json` | No | Per-machine enabled/disabled agent names |
+
+After editing `hivemind.json` (agent catalog entries), run `hivemind redeploy`.
+
+## User-supplied opencode content
+
+Three slots under `opencode/`. Drop a file, run `hivemind redeploy`.
+See `opencode/README.md` for the full authoring reference.
+
+- `opencode/commands/<name>.md` — slash commands invoked as `/<name>`.
+  Symlinked into `~/.config/opencode/commands/`.
+- `opencode/skills/<name>/SKILL.md` — LLM-discovered skills. Symlinked
+  into `~/.config/opencode/skills/`.
+- `opencode/agents/<name>.md` — hand-authored agent prompts. Auto-
+  registered in the catalog as `user_supplied` agents on every
+  redeploy; `enable_agent` deploys the file verbatim into
+  `~/.config/opencode/agents/<name>.md`.
+
+`hivemind redeploy` re-establishes the symlinks and reconciles the
+catalog with `opencode/agents/`. All three flows are idempotent —
+drop / edit / remove a file then redeploy, no separate `hivemind init`
+required.
 
 ## Architecture
 
@@ -206,7 +265,7 @@ navigation.
 all folded into the current layout. `get_active_provider()` is gone;
 opencode functions are module-level and importable directly.
 
-### Data flow
+## Data flow
 
 1. `hivemind expert add <url>` (CLI) or `create_git_expert` (MCP) →
    clones repo to staging → `run_async_analysis()` generates
@@ -215,6 +274,7 @@ opencode functions are module-level and importable directly.
    `registry.add(agent)` writes the catalog entry to `hivemind.json`.
    Agent lands in the catalog as **unlisted**. Call `enable_agent` to
    deploy.
+
 2. `enable_agent(name)` → flips `config.json:enabled` →
    `agent.deploy(agents_dir)` → `opencode.format_agent()` +
    `opencode.write_agent_file()` → `body.on_deploy()` (ensures repo is
@@ -223,23 +283,14 @@ opencode functions are module-level and importable directly.
    listeners POST `/global/reload-agents` to refresh opencode's agent
    cache without disposing the in-flight session (custom endpoint
    added by `//third_party/patches/0004-Non-destructive-agent-reload-endpoint.patch`).
+
 3. Librarian aggregates every `registry.enabled()` agent into
    `agents/librarian.md` via each body's `.librarian_entry()`.
+
 4. `HIVEMIND.md` is generated once at `bootstrap_workspace()` from
    `templates/hivemind.md.j2`.
 
-### Config files
-
-- **`hivemind.json`** (tracked) — engine settings + agent catalog
-  (`agents: dict[str, CatalogEntry]`).
-- **`config.json`** (gitignored) — local overlay (`enabled`/`disabled`
-  agent names on this machine).
-
-## Patched engine: runtime + presence
-
-The bundled engine is a patched opencode fork. Two things in
-`third_party/patches/` are non-obvious enough that future work
-should know about them up front:
+## The patched engine
 
 ### Native `Bun.serve` HTTP listener (patch 0017)
 
@@ -301,6 +352,13 @@ fake-fetch) and exercise the close-frame path. If you add to the
 presence model, test against real `Bun.serve`; in-process
 fake-fetch hides the disconnect bugs.
 
+### Non-destructive reload (patch 0004)
+
+The bundled opencode fork exposes a custom
+`POST /global/reload-agents` endpoint that rereads `agents/*.md` without
+disposing in-flight sessions. When working on the engine side, test against
+real `Bun.serve` — in-process fake-fetch hides disconnect bugs.
+
 ## MCP mutation semantics
 
 Mutations via MCP return cleanly without interrupting the session. The
@@ -316,37 +374,3 @@ opencode upstream exposed was `POST /global/dispose`, which tore down
 every cached `InstanceState` finalizer including the SIGTERM-the-MCP
 finalizer at `mcp/index.ts:527-548`. That killed the in-flight tool
 call and required the user to type `continue` to resume.
-
-## Code Conventions
-
-- Modern Python type hints (PEP 604): `str | None`, `list[str]`, etc.
-- `from __future__ import annotations` at the top of every module.
-- Imports used only for typing live under `if TYPE_CHECKING:` — ruff's
-  TC003 rule enforces this.
-- Use `typing.assert_never(x)` for exhaustiveness on discriminated
-  unions (see `agents/registry.py:_body_from_catalog`,
-  `opencode.py:format_agent`, `opencode.py:agent_filename`).
-- **Body params are typed.** All `Any` / `dict[str, object]` usages that
-  cross the agent-body layer have been replaced with Pydantic
-  `GitAnalyzedParams` / `RosterTemplatedParams`. Don't reintroduce loose
-  dicts for body params. Remaining `Any` usages are at JSON I/O
-  boundaries (generic `load_json`/`save_json`, opencode's own
-  `opencode.json` / `tui.json` dicts).
-- No backwards-compat shims, re-export facades, or alias layers —
-  update callers directly.
-- Bazel produces a launcher whose runfiles are symlinks to workspace source — Python edits in `src/hivemind/*.py` are live without rebuild. Only `pyproject.toml` / `uv.lock` / patch / engine-version changes need `make update`.
-- When editing experts, edit `experts/<name>/HEAD/agent.md` then
-  `hivemind redeploy`. (MCP mutations are non-destructive now, but the
-  CLI is still convenient for manual edits.)
-- Templates in `templates.py` affect NEW agents only; existing agents
-  deploy from their `lead.md` or `agent.md` files.
-
-## When changing MCP-server code
-
-The `hivemind mcp` subprocess is spawned once by opencode and held for
-the life of the opencode instance. After editing anything under
-`src/hivemind/mcp/` (or anything imported by the MCP handlers),
-**restart opencode** so the subprocess loads the new bytecode. The
-launcher's runfiles tree is live (symlinks to workspace source), so
-source edits are visible immediately — but the subprocess still has to
-restart to re-import.

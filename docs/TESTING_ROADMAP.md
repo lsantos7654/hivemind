@@ -64,7 +64,7 @@ shown below).
 - `docs/MEMORY_DAEMON.md` — feature reference for the memory
   daemon (Phases 6 + 11 of the scenario doc).
 - `docs/ARCHITECTURE.md` — layered architecture.
-- `CLAUDE.md` — project conventions; in particular the patched-
+- `AGENTS.md` — project conventions; in particular the patched-
   engine + native `Bun.serve` notes.
 
 ---

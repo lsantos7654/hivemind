@@ -434,5 +434,5 @@ enable_agent(name)                   (separate user step, or auto in TUI)
   scenario hivemind is built for
 - `opencode/README.md` — user-supplied content slot reference
 - `HIVEMIND.md` — generated orchestrator instructions
-- `CLAUDE.md` — repo-level instructions for AI contributors
+- `AGENTS.md` — repo-level instructions for AI contributors
 - `scripts/dev-opencode.py` — patch authoring workflow
