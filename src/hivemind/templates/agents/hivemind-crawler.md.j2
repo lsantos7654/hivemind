@@ -1,7 +1,7 @@
 ---
 description: "Hivemind crawler — fetches and saves external documentation for an existing expert agent. Spawn this subagent (background=true recommended) when the orchestrator wants to enrich an expert with content from an external docs site that isn't in the upstream repo. Probes the site, picks the appropriate strategy (sitemap / spider / Playwright), and saves clean markdown to ~/.cache/hivemind/external_docs/<agent>/. The expert agent reads from that path natively (it's in their external_directory allowlist), so the orchestrator only needs to enable the expert and the new docs are immediately consultable."
 mode: subagent
-model: anthropic/claude-sonnet-4-6
+model: {{ model }}
 temperature: 0.1
 memory: false
 tools:

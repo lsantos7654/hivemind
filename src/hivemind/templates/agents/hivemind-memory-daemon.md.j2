@@ -1,7 +1,7 @@
 ---
 description: "Hivemind memory compaction daemon. Auto-spawned as a depth-1 sibling of the writing expert (under main) when an agent's short_memory.md crosses the configured byte threshold. Promotes durable entries to long_memory.md (or creates new topic files with descriptive filenames) and prunes the short_memory back down. One-shot — exits after a single compaction pass. Not user-callable; the orchestrator and experts never invoke this directly. Spawning is event-driven via the hivemind file-write plugin."
 mode: subagent
-model: anthropic/claude-haiku-4-5
+model: {{ small_model }}
 temperature: 0.1
 memory: false
 # Hivemind: daemon is one-off — auto-delete its session on terminal state

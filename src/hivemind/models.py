@@ -217,6 +217,7 @@ class HivemindConfig(BaseModel):
 
     home_dir: str = ""
     model: str = ""
+    small_model: str = ""
     tools: dict[str, bool] = {}
     temperature: float | None = None
     server: ServerConfig = ServerConfig()

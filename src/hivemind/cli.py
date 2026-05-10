@@ -986,8 +986,11 @@ def main_entry() -> None:
                 "use 'hivemind -- <opencode args>' to forward to opencode[/error]"
             )
             sys.exit(2)
-        # Direct passthrough to the engine binary — no attach logic.
-        cmd = opencode.launch_command(args[idx + 1 :] or None)
-        os.execvp(cmd[0], cmd)
+        extra = args[idx + 1 :]
+        if not extra or extra[0].startswith("-"):
+            _launch_opencode(extra)
+        else:
+            cmd = opencode.launch_command(extra)
+            os.execvp(cmd[0], cmd)
 
     app(prog_name="hivemind")

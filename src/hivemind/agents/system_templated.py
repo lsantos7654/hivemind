@@ -50,15 +50,16 @@ class SystemTemplatedBody:
     # --- body protocol -----------------------------------------------------
 
     def render(self) -> str:
-        """Render the template — no kwargs.
+        """Render the template with model config injected from hivemind.json.
 
-        System-templated bodies are self-contained: any runtime
-        placeholders (e.g. ``<repo_dir from prep>`` in the curator) are
-        baked in as literal sentinel strings via ``{% set %}`` bindings
-        inside the template itself. Callers that need per-render
-        substitution should use ``hivemind.templates.render`` directly.
+        System-templated agents pass through their frontmatter verbatim,
+        so model / small_model are injected as Jinja variables. If either
+        is unset the render raises (StrictUndefined).
         """
-        return render(self.params.template)
+        from hivemind.opencode import _cfg
+
+        cfg = _cfg()
+        return render(self.params.template, model=cfg.model, small_model=cfg.small_model)
 
     def description(self) -> str:
         """Pull ``description`` out of the rendered template's frontmatter."""

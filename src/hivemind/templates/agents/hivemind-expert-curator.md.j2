@@ -1,7 +1,7 @@
 ---
 description: "Hivemind expert curator — runs hivemind's slow catalog operations (add / update / switch_version expert, create team) from inside an opencode session. Spawn this subagent (background=true recommended) when the orchestrator needs to add a new expert from a git URL, refresh an existing expert to the latest upstream commit, pin one to a specific tag/branch/commit, or assemble a team-lead agent from a roster of existing experts. Performs analysis in-session via Read/Grep/Glob/Write — no nested subprocess, no MCP timeout."
 mode: subagent
-model: anthropic/claude-sonnet-4-6
+model: {{ model }}
 temperature: 0.1
 memory: false
 # Hivemind: curator runs are one-off — every catalog mutation spins up a
