@@ -748,6 +748,34 @@
         "commit": "b5addb64f0161ff6bfe94c124ef76f6a1fba5254",
         "ref_name": "master"
       }
+    },
+    "hivemind": {
+      "kind": "roster_templated",
+      "body": {
+        "description": "Hivemind agent catalog manager \u2014 Bazel-built Python CLI + Textual TUI + patched opencode engine",
+        "experts": [
+          "bazel",
+          "bazel-lib",
+          "bazel-skylib",
+          "bun",
+          "crawl4ai",
+          "httpx",
+          "jinja",
+          "mypy",
+          "opencode",
+          "pre-commit",
+          "pydantic",
+          "python-sdk",
+          "rich",
+          "rules_py",
+          "rules_python",
+          "rules_testing",
+          "ruff",
+          "textual",
+          "trafilatura",
+          "typer"
+        ]
+      }
     }
   }
 }

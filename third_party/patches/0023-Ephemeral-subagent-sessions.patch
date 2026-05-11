@@ -1,7 +1,7 @@
-From 25f4c81c07cd2ab5a8d1c7938b984f6e0657c982 Mon Sep 17 00:00:00 2001
+From 1f4551aaf04d3030731695d650542a57c00330d1 Mon Sep 17 00:00:00 2001
 From: Lucas Santos <lsantos7654@gmail.com>
 Date: Thu, 7 May 2026 23:28:59 -0400
-Subject: [PATCH 22/35] Ephemeral subagent sessions
+Subject: [PATCH 23/26] Ephemeral subagent sessions
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
@@ -97,7 +97,7 @@ index 0000000..935e452
 @@ -0,0 +1 @@
 +ALTER TABLE `session` ADD `ephemeral` integer DEFAULT 0;
 diff --git a/packages/opencode/src/agent/agent.ts b/packages/opencode/src/agent/agent.ts
-index d3179d6..dcd2ecd 100644
+index 16b2e3a..44d00fd 100644
 --- a/packages/opencode/src/agent/agent.ts
 +++ b/packages/opencode/src/agent/agent.ts
 @@ -47,6 +47,11 @@ export namespace Agent {

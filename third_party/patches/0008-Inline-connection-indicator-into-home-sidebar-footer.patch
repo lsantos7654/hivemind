@@ -1,7 +1,7 @@
-From 3369d344afd0866739a8caec00f36265008f8b12 Mon Sep 17 00:00:00 2001
+From 4dda6fd09de2553529c383c438143217ecf53610 Mon Sep 17 00:00:00 2001
 From: Lucas Santos <lsantos7654@gmail.com>
 Date: Mon, 20 Apr 2026 21:22:13 -0400
-Subject: [PATCH 07/35] Inline connection indicator into home + sidebar footers
+Subject: [PATCH 08/26] Inline connection indicator into home + sidebar footers
 
 Replaces the deprecated `opencode/plugins/connection-indicator.js` TUI
 plugin with a native source-level patch that renders the same indicator

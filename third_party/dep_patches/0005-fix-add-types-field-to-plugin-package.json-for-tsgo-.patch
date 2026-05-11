@@ -1,18 +1,18 @@
-From dff66406f642b2e4aabf56782ee389f26e681839 Mon Sep 17 00:00:00 2001
+From d9fc02037d3be0a94ddcffc56d504a7c34ee8eff Mon Sep 17 00:00:00 2001
 From: Lucas Santos <lsantos7654@gmail.com>
-Date: Mon, 11 May 2026 00:44:16 -0400
-Subject: [PATCH 27/35] fix: add types condition to plugin exports for tsgo
+Date: Mon, 11 May 2026 00:21:00 -0400
+Subject: [PATCH 05/26] fix: add types field to plugin package.json for tsgo
  resolution
 
 ---
- packages/plugin/package.json | 5 ++++-
- 1 file changed, 4 insertions(+), 1 deletion(-)
+ packages/plugin/package.json | 6 +++++-
+ 1 file changed, 5 insertions(+), 1 deletion(-)
 
 diff --git a/packages/plugin/package.json b/packages/plugin/package.json
-index bd18cb8..56ea00e 100644
+index ced1523..56ea00e 100644
 --- a/packages/plugin/package.json
 +++ b/packages/plugin/package.json
-@@ -9,7 +9,10 @@
+@@ -9,10 +9,14 @@
      "build": "tsc"
    },
    "exports": {
@@ -24,6 +24,10 @@ index bd18cb8..56ea00e 100644
      "./tool": "./src/tool.ts",
      "./tui": "./src/tui.ts"
    },
++  "types": "./src/index.ts",
+   "files": [
+     "dist"
+   ],
 -- 
 2.50.1
 

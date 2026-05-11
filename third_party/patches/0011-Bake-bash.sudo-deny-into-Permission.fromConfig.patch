@@ -1,20 +1,57 @@
-From 8eaf7331eac6ba008d4fd3c83b8ad03221625ae3 Mon Sep 17 00:00:00 2001
+From e876909dbad0aed02b7603e344c5e71045ceff94 Mon Sep 17 00:00:00 2001
 From: Lucas Santos <lsantos7654@gmail.com>
-Date: Mon, 11 May 2026 13:00:55 -0400
-Subject: [PATCH 35/35] fix: update permission fromConfig test assertions for
- HIVEMIND_DENY_SUDO
+Date: Mon, 20 Apr 2026 21:22:13 -0400
+Subject: [PATCH 11/26] Bake `bash.sudo *: deny` into Permission.fromConfig
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
-All 9 fromConfig tests now expect the {bash, sudo *, deny} prefix
-that patch 0010 prepends to every fromConfig result. The tilde/HOME
-expansion tests were also affected by this change, not sandbox
-issues — os.homedir() resolves correctly in the sandbox.
----
- .../opencode/test/permission/next.test.ts     | 36 +++++++++++++++----
- 1 file changed, 29 insertions(+), 7 deletions(-)
+Replaces hivemind's runtime injection of `permissions.bash."sudo *":
+"deny"` into ~/.config/opencode/opencode.json with a default that's
+baked into opencode's own permission ruleset builder.
 
+Every Permission.fromConfig() call now produces a ruleset prefixed with
+{permission: "bash", pattern: "sudo *", action: "deny"}. Because
+permission/evaluate.ts:9-15 uses findLast() to pick the matching rule,
+user-supplied rules placed later in the merged ruleset still win — so
+a user with `bash: { "sudo *": "allow" }` in their config opts back in.
+
+A blanket `bash: { "*": "allow" }` will also override (the catch-all
+matches and is later in the list) — that is intentional; explicit user
+opt-out remains possible. Users without any bash config get sudo deny
+by default.
+---
+ packages/opencode/src/permission/index.ts     | 15 +++++++-
+ .../opencode/test/permission/next.test.ts     | 36 +++++++++++++++----
+ 2 files changed, 43 insertions(+), 8 deletions(-)
+
+diff --git a/packages/opencode/src/permission/index.ts b/packages/opencode/src/permission/index.ts
+index b2cc0f9..ffc0b7e 100644
+--- a/packages/opencode/src/permission/index.ts
++++ b/packages/opencode/src/permission/index.ts
+@@ -276,8 +276,21 @@ export namespace Permission {
+     return pattern
+   }
+ 
++  // Hivemind hardening: every ruleset includes `bash.sudo *: deny`
++  // prepended so sudo is denied by default. User config rules appear
++  // later in the merged ruleset and findLast() in evaluate() picks the
++  // last match, so a user-supplied `bash: { "sudo *": "allow" }` still
++  // wins. A blanket `bash: { "*": "allow" }` will also override (the
++  // catch-all matches and is later in the list) — that is intentional;
++  // explicit user opt-out remains possible.
++  const HIVEMIND_DENY_SUDO: Rule = {
++    permission: "bash",
++    pattern: "sudo *",
++    action: "deny",
++  }
++
+   export function fromConfig(permission: Config.Permission) {
+-    const ruleset: Ruleset = []
++    const ruleset: Ruleset = [HIVEMIND_DENY_SUDO]
+     for (const [key, value] of Object.entries(permission)) {
+       if (typeof value === "string") {
+         ruleset.push({ permission: key, action: value, pattern: "*" })
 diff --git a/packages/opencode/test/permission/next.test.ts b/packages/opencode/test/permission/next.test.ts
 index 043e325..2087253 100644
 --- a/packages/opencode/test/permission/next.test.ts

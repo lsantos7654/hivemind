@@ -1,7 +1,7 @@
-From 29ec3b21c52ba20472a3e5a7d54e1bd1154c799a Mon Sep 17 00:00:00 2001
+From cec74baa1f926cf5a6e222dafdcc3042340ef1f2 Mon Sep 17 00:00:00 2001
 From: Lucas Santos <lsantos7654@gmail.com>
 Date: Mon, 11 May 2026 00:14:03 -0400
-Subject: [PATCH 24/35] fix: stabilize engine typecheck + autoshare migration
+Subject: [PATCH 25/26] fix: stabilize engine typecheck + autoshare migration
  for Stage 1
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
@@ -30,7 +30,7 @@ Content-Transfer-Encoding: 8bit
  9 files changed, 23 insertions(+), 12 deletions(-)
 
 diff --git a/packages/opencode/src/agent/agent.ts b/packages/opencode/src/agent/agent.ts
-index dcd2ecd..0a79067 100644
+index 44d00fd..10d0207 100644
 --- a/packages/opencode/src/agent/agent.ts
 +++ b/packages/opencode/src/agent/agent.ts
 @@ -80,7 +80,7 @@ export namespace Agent {
@@ -42,7 +42,7 @@ index dcd2ecd..0a79067 100644
  
    export class Service extends ServiceMap.Service<Service, Interface>()("@opencode/Agent") {}
  
-@@ -465,7 +465,7 @@ export namespace Agent {
+@@ -467,7 +467,7 @@ export namespace Agent {
      let agents = 0
      for (const directory of dirs) {
        try {

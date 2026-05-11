@@ -1,7 +1,7 @@
-From 679608b88f556510be20015fe0799bd4ac95a6fd Mon Sep 17 00:00:00 2001
+From 7dd189bfb5c3876f78bcffbff09e9705d304b7e3 Mon Sep 17 00:00:00 2001
 From: Lucas Santos <lsantos7654@gmail.com>
 Date: Wed, 29 Apr 2026 22:12:46 -0400
-Subject: [PATCH 15/35] TUI session_footer slot + dual-slot home-footer plugin
+Subject: [PATCH 16/26] TUI session_footer slot + dual-slot home-footer plugin
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
@@ -26,7 +26,8 @@ convention — see sidebar.tsx).
 ---
  .../src/cli/cmd/tui/feature-plugins/home/footer.tsx  |  7 +++++++
  .../src/cli/cmd/tui/routes/session/index.tsx         | 12 ++++++++++++
- 2 files changed, 19 insertions(+)
+ packages/plugin/src/tui.ts                           |  3 +++
+ 3 files changed, 22 insertions(+)
 
 diff --git a/packages/opencode/src/cli/cmd/tui/feature-plugins/home/footer.tsx b/packages/opencode/src/cli/cmd/tui/feature-plugins/home/footer.tsx
 index c876c4a..0db4889 100644
@@ -69,6 +70,20 @@ index 1f061cc..7bc2607 100644
          </box>
          <Show when={sidebarVisible()}>
            <Switch>
+diff --git a/packages/plugin/src/tui.ts b/packages/plugin/src/tui.ts
+index 8f8439f..93d6f40 100644
+--- a/packages/plugin/src/tui.ts
++++ b/packages/plugin/src/tui.ts
+@@ -345,6 +345,9 @@ export type TuiHostSlotMap = {
+   }
+   home_bottom: {}
+   home_footer: {}
++  session_footer: {
++    session_id: string
++  }
+   sidebar_title: {
+     session_id: string
+     title: string
 -- 
 2.50.1
 

@@ -1,7 +1,7 @@
-From 24fa1b8b113cf555a6996d4945b7caba6c8e6f4c Mon Sep 17 00:00:00 2001
+From 9d7bd38734b1480892a32497da8db004076983cf Mon Sep 17 00:00:00 2001
 From: Lucas Santos <lsantos7654@gmail.com>
 Date: Mon, 20 Apr 2026 21:22:13 -0400
-Subject: [PATCH 08/35] Non-destructive agent reload endpoint
+Subject: [PATCH 09/26] Non-destructive agent reload endpoint
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
@@ -31,19 +31,23 @@ Mechanism:
   - Adds POST /global/reload-agents route that calls Agent.reloadAll()
     and emits a new AgentsReloadedEvent on GlobalBus.
 ---
- packages/opencode/src/agent/agent.ts          | 46 +++++++++++++++++++
- .../opencode/src/cli/cmd/tui/context/sync.tsx |  8 ++++
+ packages/opencode/src/agent/agent.ts          | 50 ++++++++++++++++++-
+ .../opencode/src/cli/cmd/tui/context/sync.tsx |  8 +++
  packages/opencode/src/config/config.ts        | 14 ++++++
- packages/opencode/src/project/instance.ts     |  8 ++++
- packages/opencode/src/server/routes/global.ts | 44 ++++++++++++++++++
- 5 files changed, 120 insertions(+)
+ packages/opencode/src/project/instance.ts     |  8 +++
+ packages/opencode/src/server/routes/global.ts | 44 ++++++++++++++++
+ 5 files changed, 123 insertions(+), 1 deletion(-)
 
 diff --git a/packages/opencode/src/agent/agent.ts b/packages/opencode/src/agent/agent.ts
-index 2a8bed0..d3179d6 100644
+index 2a8bed0..16b2e3a 100644
 --- a/packages/opencode/src/agent/agent.ts
 +++ b/packages/opencode/src/agent/agent.ts
-@@ -22,6 +22,8 @@ import { Skill } from "../skill"
- import { Effect, ServiceMap, Layer } from "effect"
+@@ -19,9 +19,11 @@ import { Global } from "@/global"
+ import path from "path"
+ import { Plugin } from "@/plugin"
+ import { Skill } from "../skill"
+-import { Effect, ServiceMap, Layer } from "effect"
++import { Effect, ServiceMap, Layer, Option } from "effect"
  import { InstanceState } from "@/effect/instance-state"
  import { makeRuntime } from "@/effect/run-service"
 +import { Bus } from "@/bus"
@@ -66,11 +70,11 @@ index 2a8bed0..d3179d6 100644
      readonly get: (agent: string) => Effect.Effect<Agent.Info>
      readonly list: () => Effect.Effect<Agent.Info[]>
      readonly defaultAgent: () => Effect.Effect<string>
-+    readonly reload: () => Effect.Effect<{ count: number }, never, Bus.Service>
++    readonly reload: () => Effect.Effect<{ count: number }>
      readonly generate: (input: {
        description: string
        model?: { providerID: ProviderID; modelID: ModelID }
-@@ -326,6 +336,17 @@ export namespace Agent {
+@@ -326,6 +336,19 @@ export namespace Agent {
          defaultAgent: Effect.fn("Agent.defaultAgent")(function* () {
            return yield* InstanceState.useEffect(state, (s) => s.defaultAgent())
          }),
@@ -81,14 +85,16 @@ index 2a8bed0..d3179d6 100644
 +          yield* config.invalidateState()
 +          yield* InstanceState.invalidate(state)
 +          const list = yield* InstanceState.useEffect(state, (s) => s.list())
-+          const bus = yield* Bus.Service
-+          yield* bus.publish(AgentsChanged, { count: list.length }).pipe(Effect.ignore)
++          const busOpt = yield* Effect.serviceOption(Bus.Service)
++          if (Option.isSome(busOpt)) {
++            yield* busOpt.value.publish(AgentsChanged, { count: list.length })
++          }
 +          return { count: list.length }
 +        }),
          generate: Effect.fn("Agent.generate")(function* (input: {
            description: string
            model?: { providerID: ProviderID; modelID: ModelID }
-@@ -424,4 +445,29 @@ export namespace Agent {
+@@ -424,4 +447,29 @@ export namespace Agent {
    export async function generate(input: { description: string; model?: { providerID: ProviderID; modelID: ModelID } }) {
      return runPromise((svc) => svc.generate(input))
    }
