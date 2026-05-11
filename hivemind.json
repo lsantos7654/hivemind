@@ -740,6 +740,14 @@
       "body": {
         "template": "agents/hivemind-memory-daemon.md.j2"
       }
+    },
+    "httpx": {
+      "kind": "git_analyzed",
+      "body": {
+        "remote": "https://github.com/encode/httpx",
+        "commit": "b5addb64f0161ff6bfe94c124ef76f6a1fba5254",
+        "ref_name": "master"
+      }
     }
   }
 }
