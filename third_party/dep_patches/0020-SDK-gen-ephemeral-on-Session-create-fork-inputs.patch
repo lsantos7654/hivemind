@@ -1,7 +1,7 @@
 From 79155408e193ff0ebea80e8fbc54b1598682ccbe Mon Sep 17 00:00:00 2001
 From: Lucas Santos <lsantos7654@gmail.com>
 Date: Thu, 7 May 2026 23:28:37 -0400
-Subject: [PATCH 20/22] SDK gen: ephemeral on Session + create/fork inputs
+Subject: [PATCH 20/23] SDK gen: ephemeral on Session + create/fork inputs
 
 Regenerated bindings for the ephemeral session column. The new
 field appears on the Session response type, on Session.create's

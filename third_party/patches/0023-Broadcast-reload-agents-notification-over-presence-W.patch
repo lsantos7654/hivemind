@@ -1,0 +1,142 @@
+From 27b1c6eefa031b3320d5675eb0fef115686f2e3c Mon Sep 17 00:00:00 2001
+From: Lucas Santos <lsantos7654@gmail.com>
+Date: Sun, 10 May 2026 23:40:19 -0400
+Subject: [PATCH 23/23] Broadcast reload-agents notification over presence
+ WebSocket
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Push a reload-agents message to every connected TUI client over the
+existing presence WebSocket after /global/reload-agents succeeds.
+The TUI re-fetches its agent list on receipt, so the Task tool's
+subagent-type registry picks up newly-enabled agents without
+restarting the engine.
+
+Server: broadcastReload() in presence.ts mirrors _broadcast() exactly
+— module-scoped, cross-worktree by construction.
+
+Client: presence-client.ts handles incoming {type:"reload-agents"}
+messages, calling the new onReloadAgents callback. sdk.tsx wires it
+to synthesize a global.agents-reloaded event through the existing
+handleEvent pipeline, reusing the sync.tsx agent-list re-fetch.
+
+The reloadAll() functions in agent/skill/command continue to use
+Instance.directories() (unchanged from patch 0004) — the broadcast
+is additive, not a replacement.
+---
+ .../src/cli/cmd/tui/context/presence-client.ts   |  9 +++++++++
+ .../opencode/src/cli/cmd/tui/context/sdk.tsx     |  6 ++++++
+ packages/opencode/src/server/routes/global.ts    |  3 ++-
+ packages/opencode/src/server/routes/presence.ts  | 16 ++++++++++++++++
+ 4 files changed, 33 insertions(+), 1 deletion(-)
+
+diff --git a/packages/opencode/src/cli/cmd/tui/context/presence-client.ts b/packages/opencode/src/cli/cmd/tui/context/presence-client.ts
+index da34243..89a4e89 100644
+--- a/packages/opencode/src/cli/cmd/tui/context/presence-client.ts
++++ b/packages/opencode/src/cli/cmd/tui/context/presence-client.ts
+@@ -6,6 +6,7 @@
+ // Bidirectional protocol on the same socket:
+ //   client → server: { "type": "focus",         "sessionID": "ses_..." | null }
+ //   server → client: { "type": "live-sessions", "sessions":  string[] }
++//   server → client: { "type": "reload-agents" }
+ //
+ // `currentFocus` is a single source of truth for "what does this
+ // TUI claim to be focused on right now". `setFocus` updates it
+@@ -22,6 +23,7 @@ export interface PresenceClient {
+ export interface PresenceClientOptions {
+   url: string
+   onLiveSessions: (sessions: string[]) => void
++  onReloadAgents?: () => void
+   WebSocketCtor?: typeof WebSocket
+   reconnectMs?: number
+ }
+@@ -39,6 +41,11 @@ function isLiveSessionsMessage(value: unknown): value is LiveSessionsMessage {
+   return obj.sessions.every((s) => typeof s === "string")
+ }
+ 
++function isReloadMessage(value: unknown): value is { type: "reload-agents" } {
++  if (!value || typeof value !== "object") return false
++  return (value as Record<string, unknown>).type === "reload-agents"
++}
++
+ export function createPresenceClient(opts: PresenceClientOptions): PresenceClient {
+   const Ctor = opts.WebSocketCtor ?? WebSocket
+   const reconnectMs = opts.reconnectMs ?? 500
+@@ -68,6 +75,8 @@ export function createPresenceClient(opts: PresenceClientOptions): PresenceClien
+         const parsed = JSON.parse(raw)
+         if (isLiveSessionsMessage(parsed)) {
+           opts.onLiveSessions(parsed.sessions)
++        } else if (isReloadMessage(parsed)) {
++          opts.onReloadAgents?.()
+         }
+       } catch {
+         // ignore malformed payload
+diff --git a/packages/opencode/src/cli/cmd/tui/context/sdk.tsx b/packages/opencode/src/cli/cmd/tui/context/sdk.tsx
+index 9c3ca5c..e6b4aa0 100644
+--- a/packages/opencode/src/cli/cmd/tui/context/sdk.tsx
++++ b/packages/opencode/src/cli/cmd/tui/context/sdk.tsx
+@@ -148,6 +148,12 @@ export const { use: useSDK, provider: SDKProvider } = createSimpleContext({
+               properties: { sessions },
+             } as Event)
+           },
++          onReloadAgents: () => {
++            handleEvent({
++              type: "global.agents-reloaded",
++              properties: { instances: 0, agents: 0, skills: 0, commands: 0 },
++            } as Event)
++          },
+         })
+         // Mirror the active route into the server's presence map.
+         // SolidJS reruns this effect whenever `route.data` changes,
+diff --git a/packages/opencode/src/server/routes/global.ts b/packages/opencode/src/server/routes/global.ts
+index 0929612..9d5ecce 100644
+--- a/packages/opencode/src/server/routes/global.ts
++++ b/packages/opencode/src/server/routes/global.ts
+@@ -15,7 +15,7 @@ import { Agent } from "@/agent/agent"
+ import { Skill } from "@/skill"
+ import { Command } from "@/command"
+ import { SessionBackground } from "@/session/background"
+-import { liveSessions } from "./presence"
++import { liveSessions, broadcastReload } from "./presence"
+ import { errors } from "../error"
+ 
+ const log = Log.create({ service: "server" })
+@@ -300,6 +300,7 @@ export const GlobalRoutes = lazy(() =>
+         const agentResult = await Agent.reloadAll()
+         const skillResult = await Skill.reloadAll()
+         const commandResult = await Command.reloadAll()
++        broadcastReload()
+         const result = {
+           instances: agentResult.instances,
+           agents: agentResult.agents,
+diff --git a/packages/opencode/src/server/routes/presence.ts b/packages/opencode/src/server/routes/presence.ts
+index c35f91e..335d1b8 100644
+--- a/packages/opencode/src/server/routes/presence.ts
++++ b/packages/opencode/src/server/routes/presence.ts
+@@ -80,6 +80,22 @@ function _broadcast(): void {
+   }
+ }
+ 
++// Hivemind: push a reload-agents notification to every connected
++// client. Mirrors _broadcast() exactly — module-scoped, cross-worktree
++// by construction. Each TUI re-fetches its agent/skill/command lists
++// on receipt so the Task tool's subagent-type registry picks up
++// newly-enabled agents without restarting the engine.
++export function broadcastReload(): void {
++  const msg = JSON.stringify({ type: "reload-agents" })
++  for (const key of _clients.keys()) {
++    try {
++      ;(key as { send: (data: string) => void }).send(msg)
++    } catch (err) {
++      log.error("presence: reload broadcast send failed", { err })
++    }
++  }
++}
++
+ const FocusMessage = z.object({
+   type: z.literal("focus"),
+   sessionID: z.string().nullable(),
+-- 
+2.50.1
+

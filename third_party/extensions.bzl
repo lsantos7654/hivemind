@@ -110,7 +110,6 @@ _OPENCODE_DEP_PATCHES = [
     "0020-SDK-gen-ephemeral-on-Session-create-fork-inputs.patch",
     "0022-Strip-placeholder-package.json-scripts.patch",
 ]
-
 # Patches that modify only source files (no dep manifest changes). Applied
 # only in @opencode_src, after dep_patches, after install. Editing one
 # invalidates only the build repo (~3s rebuild). Resolved relative to
@@ -134,6 +133,7 @@ _OPENCODE_CODE_PATCHES = [
     "0018-Session-metadata-column.patch",
     "0019-File-write-hook-hivemind-memory-compaction-auto-spaw.patch",
     "0021-Ephemeral-subagent-sessions.patch",
+    "0023-Broadcast-reload-agents-notification-over-presence-W.patch",
 ]
 external_engines = module_extension(
     implementation = _ext_impl,

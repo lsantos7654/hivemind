@@ -187,7 +187,7 @@ def _opencode_node_modules_install_impl(ctx):
     # 4. Run bun install. NOT --frozen-lockfile — the released bun.lock
     #    needs minor metadata refresh on first install with bun 1.3.11,
     #    which --frozen-lockfile rejects.
-    _run(ctx, [bun_path, "install"], _bun_env(repo_root, ctx.attr.version), "bun install")
+    _run(ctx, [bun_path, "install", "--ignore-scripts"], _bun_env(repo_root, ctx.attr.version), "bun install")
 
     # 5. Drop in the BUILD file that exposes BUILD.bazel as a label.
     ctx.file("BUILD.bazel", _NODE_MODULES_BUILD)
