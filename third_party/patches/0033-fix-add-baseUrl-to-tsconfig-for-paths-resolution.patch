@@ -1,0 +1,24 @@
+From b635fbc7e3cd831bdea993953ad1abbdea709d71 Mon Sep 17 00:00:00 2001
+From: Lucas Santos <lsantos7654@gmail.com>
+Date: Mon, 11 May 2026 01:13:35 -0400
+Subject: [PATCH 33/35] fix: add baseUrl to tsconfig for paths resolution
+
+---
+ packages/opencode/tsconfig.json | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/packages/opencode/tsconfig.json b/packages/opencode/tsconfig.json
+index b73593b..f5848e7 100644
+--- a/packages/opencode/tsconfig.json
++++ b/packages/opencode/tsconfig.json
+@@ -7,6 +7,7 @@
+     "lib": ["ESNext", "DOM", "DOM.Iterable"],
+     "types": [],
+     "noUncheckedIndexedAccess": false,
++    "baseUrl": ".",
+     "customConditions": ["browser"],
+     "paths": {
+       "@/*": ["./src/*"],
+-- 
+2.50.1
+

@@ -1,0 +1,26 @@
+From 855471ded616fe726cbef0d49412289e4986bf80 Mon Sep 17 00:00:00 2001
+From: Lucas Santos <lsantos7654@gmail.com>
+Date: Mon, 11 May 2026 00:44:16 -0400
+Subject: [PATCH 28/35] fix: add session_footer slot to TuiHostSlotMap
+
+---
+ packages/plugin/src/tui.ts | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/packages/plugin/src/tui.ts b/packages/plugin/src/tui.ts
+index 8f8439f..93d6f40 100644
+--- a/packages/plugin/src/tui.ts
++++ b/packages/plugin/src/tui.ts
+@@ -345,6 +345,9 @@ export type TuiHostSlotMap = {
+   }
+   home_bottom: {}
+   home_footer: {}
++  session_footer: {
++    session_id: string
++  }
+   sidebar_title: {
+     session_id: string
+     title: string
+-- 
+2.50.1
+

@@ -1,0 +1,128 @@
+From 1e7dca7e1c1e588e3171969bb226f66cbd07b6d9 Mon Sep 17 00:00:00 2001
+From: Lucas Santos <lsantos7654@gmail.com>
+Date: Mon, 11 May 2026 00:21:31 -0400
+Subject: [PATCH 26/35] =?UTF-8?q?fix:=20remaining=20tsgo=20errors=20?=
+ =?UTF-8?q?=E2=80=94=20port!=20assertions,=20slot=20types,=20nextSession?=
+ =?UTF-8?q?=20guard?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+- agent.ts: handle possibly-undefined Instance.provide result
+- server.ts + presence tests: non-null port assertions after
+  ReturnType<typeof Bun.serve> type change
+- footer.tsx: use Record<string,unknown> for slot props
+- task.ts: non-null assertion on nextSession in cancel callback
+---
+ packages/opencode/src/agent/agent.ts                   |  4 ++--
+ .../src/cli/cmd/tui/feature-plugins/home/footer.tsx    |  2 +-
+ packages/opencode/src/server/server.ts                 |  2 +-
+ packages/opencode/src/tool/task.ts                     |  2 +-
+ packages/opencode/test/server/presence-client.test.ts  | 10 +++++-----
+ packages/opencode/test/server/presence.test.ts         |  4 ++--
+ 6 files changed, 12 insertions(+), 12 deletions(-)
+
+diff --git a/packages/opencode/src/agent/agent.ts b/packages/opencode/src/agent/agent.ts
+index 0a79067..f78aca3 100644
+--- a/packages/opencode/src/agent/agent.ts
++++ b/packages/opencode/src/agent/agent.ts
+@@ -465,11 +465,11 @@ export namespace Agent {
+     let agents = 0
+     for (const directory of dirs) {
+       try {
+-        const result: { count: number } = await Instance.provide({
++        const result = await Instance.provide({
+           directory,
+           fn: () => runPromise((svc) => svc.reload()),
+         })
+-        agents += result.count
++        if (result) agents += result.count
+       } catch {
+         // Skip instances that failed to load; the dispose path skips them too.
+       }
+diff --git a/packages/opencode/src/cli/cmd/tui/feature-plugins/home/footer.tsx b/packages/opencode/src/cli/cmd/tui/feature-plugins/home/footer.tsx
+index 3092063..fb9d553 100644
+--- a/packages/opencode/src/cli/cmd/tui/feature-plugins/home/footer.tsx
++++ b/packages/opencode/src/cli/cmd/tui/feature-plugins/home/footer.tsx
+@@ -177,7 +177,7 @@ const tui: TuiPlugin = async (api) => {
+       // include `session_id` (set by `routes/session/index.tsx`
+       // when invoking the slot), which feeds the per-TUI Subagents
+       // pill.
+-      session_footer(_ctx: unknown, props: { session_id: string }) {
++      session_footer(_ctx: unknown, props: Record<string, unknown>) {
+         return <View api={api} sessionID={props.session_id} />
+       },
+     },
+diff --git a/packages/opencode/src/server/server.ts b/packages/opencode/src/server/server.ts
+index 833489c..762a66e 100644
+--- a/packages/opencode/src/server/server.ts
++++ b/packages/opencode/src/server/server.ts
+@@ -329,7 +329,7 @@ export namespace Server {
+     } else {
+       server = start(opts.port)
+     }
+-    const port = server.port
++    const port = server.port!
+ 
+     const next = new URL("http://localhost")
+     next.hostname = opts.hostname
+diff --git a/packages/opencode/src/tool/task.ts b/packages/opencode/src/tool/task.ts
+index 80149aa..a3fc55c 100644
+--- a/packages/opencode/src/tool/task.ts
++++ b/packages/opencode/src/tool/task.ts
+@@ -266,7 +266,7 @@ export const TaskTool = Tool.defineEffect(
+       }
+ 
+       function cancel() {
+-        SessionPrompt.cancel(nextSession.id)
++        SessionPrompt.cancel(nextSession!.id)
+       }
+ 
+       return yield* Effect.acquireUseRelease(
+diff --git a/packages/opencode/test/server/presence-client.test.ts b/packages/opencode/test/server/presence-client.test.ts
+index 269dc4a..af523c0 100644
+--- a/packages/opencode/test/server/presence-client.test.ts
++++ b/packages/opencode/test/server/presence-client.test.ts
+@@ -41,9 +41,9 @@ async function startServer(): Promise<{ url: string; wsURL: string; port: number
+     hostname: "127.0.0.1",
+   })
+   return {
+-    url: `http://127.0.0.1:${server.port}`,
+-    wsURL: `ws://127.0.0.1:${server.port}`,
+-    port: server.port,
++    url: `http://127.0.0.1:${server.port!}`,
++    wsURL: `ws://127.0.0.1:${server.port!}`,
++    port: server.port!,
+     stop: async () => {
+       await server.stop(true)
+     },
+@@ -128,9 +128,9 @@ describe("presence-client", () => {
+             port,
+             hostname: "127.0.0.1",
+           })
+-          port = second.port
++          port = second.port!
+           try {
+-            await waitForLiveSessions(`http://127.0.0.1:${second.port}`, ["ses_persist"], 3000)
++            await waitForLiveSessions(`http://127.0.0.1:${second.port!}`, ["ses_persist"], 3000)
+           } finally {
+             await second.stop(true)
+           }
+diff --git a/packages/opencode/test/server/presence.test.ts b/packages/opencode/test/server/presence.test.ts
+index b8e82f9..1a9e34f 100644
+--- a/packages/opencode/test/server/presence.test.ts
++++ b/packages/opencode/test/server/presence.test.ts
+@@ -40,8 +40,8 @@ async function startServer(): Promise<{ url: string; wsURL: string; stop: () =>
+     hostname: "127.0.0.1",
+   })
+   return {
+-    url: `http://127.0.0.1:${server.port}`,
+-    wsURL: `ws://127.0.0.1:${server.port}`,
++    url: `http://127.0.0.1:${server.port!}`,
++    wsURL: `ws://127.0.0.1:${server.port!}`,
+     stop: async () => {
+       await server.stop(true)
+     },
+-- 
+2.50.1
+

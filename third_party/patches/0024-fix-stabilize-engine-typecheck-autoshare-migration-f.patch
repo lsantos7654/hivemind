@@ -1,0 +1,202 @@
+From 29ec3b21c52ba20472a3e5a7d54e1bd1154c799a Mon Sep 17 00:00:00 2001
+From: Lucas Santos <lsantos7654@gmail.com>
+Date: Mon, 11 May 2026 00:14:03 -0400
+Subject: [PATCH 24/35] fix: stabilize engine typecheck + autoshare migration
+ for Stage 1
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+- agent.ts: omit reload from State type, type reloadAll result
+- config.ts: remove Zod .default() from share/autoshare/autoupdate,
+  apply hardened defaults post-migration so autoshare→share isn't blocked
+- server.ts: use ReturnType<typeof Bun.serve> instead of generic
+  Server<WebSocketData> (avoids TS2314)
+- presence test files: same BunServer type fix
+- footer.tsx: add explicit param types for session_footer slot
+- hivemind-memory.ts: add explicit handler param types
+- read-task-result.ts: add explicit return type with running status
+- task.ts: add explicit nextSession type annotation
+---
+ packages/opencode/src/agent/agent.ts                   |  4 ++--
+ .../src/cli/cmd/tui/feature-plugins/home/footer.tsx    |  2 +-
+ packages/opencode/src/config/config.ts                 | 10 +++++++---
+ packages/opencode/src/plugin/hivemind-memory.ts        |  2 +-
+ packages/opencode/src/server/server.ts                 |  4 +++-
+ packages/opencode/src/tool/read-task-result.ts         |  5 ++++-
+ packages/opencode/src/tool/task.ts                     |  2 +-
+ packages/opencode/test/server/presence-client.test.ts  |  3 ++-
+ packages/opencode/test/server/presence.test.ts         |  3 ++-
+ 9 files changed, 23 insertions(+), 12 deletions(-)
+
+diff --git a/packages/opencode/src/agent/agent.ts b/packages/opencode/src/agent/agent.ts
+index dcd2ecd..0a79067 100644
+--- a/packages/opencode/src/agent/agent.ts
++++ b/packages/opencode/src/agent/agent.ts
+@@ -80,7 +80,7 @@ export namespace Agent {
+     }>
+   }
+ 
+-  type State = Omit<Interface, "generate">
++  type State = Omit<Interface, "generate" | "reload">
+ 
+   export class Service extends ServiceMap.Service<Service, Interface>()("@opencode/Agent") {}
+ 
+@@ -465,7 +465,7 @@ export namespace Agent {
+     let agents = 0
+     for (const directory of dirs) {
+       try {
+-        const result = await Instance.provide({
++        const result: { count: number } = await Instance.provide({
+           directory,
+           fn: () => runPromise((svc) => svc.reload()),
+         })
+diff --git a/packages/opencode/src/cli/cmd/tui/feature-plugins/home/footer.tsx b/packages/opencode/src/cli/cmd/tui/feature-plugins/home/footer.tsx
+index feea16e..3092063 100644
+--- a/packages/opencode/src/cli/cmd/tui/feature-plugins/home/footer.tsx
++++ b/packages/opencode/src/cli/cmd/tui/feature-plugins/home/footer.tsx
+@@ -177,7 +177,7 @@ const tui: TuiPlugin = async (api) => {
+       // include `session_id` (set by `routes/session/index.tsx`
+       // when invoking the slot), which feeds the per-TUI Subagents
+       // pill.
+-      session_footer(_ctx, props) {
++      session_footer(_ctx: unknown, props: { session_id: string }) {
+         return <View api={api} sessionID={props.session_id} />
+       },
+     },
+diff --git a/packages/opencode/src/config/config.ts b/packages/opencode/src/config/config.ts
+index e9c4ecc..8d03cf0 100644
+--- a/packages/opencode/src/config/config.ts
++++ b/packages/opencode/src/config/config.ts
+@@ -939,19 +939,16 @@ export namespace Config {
+       share: z
+         .enum(["manual", "auto", "disabled"])
+         .optional()
+-        .default("disabled")
+         .describe(
+           "Control sharing behavior:'manual' allows manual sharing via commands, 'auto' enables automatic sharing, 'disabled' disables all sharing",
+         ),
+       autoshare: z
+         .boolean()
+         .optional()
+-        .default(false)
+         .describe("@deprecated Use 'share' field instead. Share newly created sessions automatically"),
+       autoupdate: z
+         .union([z.boolean(), z.literal("notify")])
+         .optional()
+-        .default(false)
+         .describe(
+           "Automatically update to the latest version. Set to true to auto-update, false to disable, or 'notify' to show update notifications",
+         ),
+@@ -1527,6 +1524,13 @@ export namespace Config {
+             result.share = "auto"
+           }
+ 
++          // Hivemind hardened defaults: apply after migrations so
++          // autoshare→share migration isn't blocked by a defaulted
++          // share field. Users can override these in opencode.json.
++          result.share ??= "disabled"
++          result.autoshare ??= false
++          result.autoupdate ??= false
++
+           if (Flag.OPENCODE_DISABLE_AUTOCOMPACT) {
+             result.compaction = { ...result.compaction, auto: false }
+           }
+diff --git a/packages/opencode/src/plugin/hivemind-memory.ts b/packages/opencode/src/plugin/hivemind-memory.ts
+index 0cfa89d..d2ff901 100644
+--- a/packages/opencode/src/plugin/hivemind-memory.ts
++++ b/packages/opencode/src/plugin/hivemind-memory.ts
+@@ -70,7 +70,7 @@ export const HivemindMemoryPlugin = async (input: PluginInput): Promise<Hooks> =
+   return {
+     onFileWrite: {
+       patterns: [MEMORY_PATH_PATTERN],
+-      handler: async ({ sessionID, path: writePath, bytes, tool }) => {
++      handler: async ({ sessionID, path: writePath, bytes, tool }: { sessionID: string; path: string; bytes: number; tool: "write" | "edit" }) => {
+         const config = await readMemoryConfig()
+         if (bytes < config.threshold_bytes) return
+ 
+diff --git a/packages/opencode/src/server/server.ts b/packages/opencode/src/server/server.ts
+index 99cefe5..833489c 100644
+--- a/packages/opencode/src/server/server.ts
++++ b/packages/opencode/src/server/server.ts
+@@ -6,8 +6,10 @@ import { createBunWebSocket } from "hono/bun"
+ import { cors } from "hono/cors"
+ import { basicAuth } from "hono/basic-auth"
+ import type { UpgradeWebSocket } from "hono/ws"
+-import type { Server as BunServer, ServerWebSocket } from "bun"
++import type { ServerWebSocket } from "bun"
+ import z from "zod"
++
++type BunServer = ReturnType<typeof Bun.serve>
+ import { Auth } from "../auth"
+ import { Flag } from "../flag/flag"
+ import { ProviderID } from "../provider/schema"
+diff --git a/packages/opencode/src/tool/read-task-result.ts b/packages/opencode/src/tool/read-task-result.ts
+index b5281a3..3eaca6b 100644
+--- a/packages/opencode/src/tool/read-task-result.ts
++++ b/packages/opencode/src/tool/read-task-result.ts
+@@ -34,7 +34,10 @@ type Metadata = {
+ export const ReadTaskResultTool = Tool.define("read_task_result", {
+   description: DESCRIPTION,
+   parameters,
+-  async execute(params: z.infer<typeof parameters>, ctx: Tool.Context<Metadata>) {
++  async execute(
++    params: z.infer<typeof parameters>,
++    ctx: Tool.Context<Metadata>,
++  ): Promise<{ title: string; metadata: Metadata; output: string }> {
+     const taskID = SessionID.make(params.task_id)
+     const entry = SessionBackground.consume(ctx.sessionID, taskID)
+     if (!entry) {
+diff --git a/packages/opencode/src/tool/task.ts b/packages/opencode/src/tool/task.ts
+index d8bf0b4..80149aa 100644
+--- a/packages/opencode/src/tool/task.ts
++++ b/packages/opencode/src/tool/task.ts
+@@ -148,7 +148,7 @@ export const TaskTool = Tool.defineEffect(
+ 
+       // Resolve the subagent session: existing (resume) >
+       // fork-from-source (Hivemind) > create fresh (default).
+-      let nextSession
++      let nextSession: Awaited<ReturnType<typeof Session.get>> | undefined
+       if (existing) {
+         nextSession = existing
+       } else if (params.source_session_id) {
+diff --git a/packages/opencode/test/server/presence-client.test.ts b/packages/opencode/test/server/presence-client.test.ts
+index 9d0c753..269dc4a 100644
+--- a/packages/opencode/test/server/presence-client.test.ts
++++ b/packages/opencode/test/server/presence-client.test.ts
+@@ -1,5 +1,4 @@
+ import { afterEach, describe, expect, test } from "bun:test"
+-import type { Server as BunServer } from "bun"
+ import { createBunWebSocket } from "hono/bun"
+ import { Instance } from "../../src/project/instance"
+ import { Server } from "../../src/server/server"
+@@ -7,6 +6,8 @@ import { Log } from "../../src/util/log"
+ import { tmpdir } from "../fixture/fixture"
+ import { createPresenceClient } from "../../src/cli/cmd/tui/context/presence-client"
+ 
++type BunServer = ReturnType<typeof Bun.serve>
++
+ Log.init({ print: false })
+ 
+ afterEach(async () => {
+diff --git a/packages/opencode/test/server/presence.test.ts b/packages/opencode/test/server/presence.test.ts
+index 3c863db..b8e82f9 100644
+--- a/packages/opencode/test/server/presence.test.ts
++++ b/packages/opencode/test/server/presence.test.ts
+@@ -1,11 +1,12 @@
+ import { afterEach, describe, expect, test } from "bun:test"
+-import type { Server as BunServer } from "bun"
+ import { createBunWebSocket } from "hono/bun"
+ import { Instance } from "../../src/project/instance"
+ import { Server } from "../../src/server/server"
+ import { Log } from "../../src/util/log"
+ import { tmpdir } from "../fixture/fixture"
+ 
++type BunServer = ReturnType<typeof Bun.serve>
++
+ Log.init({ print: false })
+ 
+ afterEach(async () => {
+-- 
+2.50.1
+

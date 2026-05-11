@@ -1,0 +1,106 @@
+From 8eaf7331eac6ba008d4fd3c83b8ad03221625ae3 Mon Sep 17 00:00:00 2001
+From: Lucas Santos <lsantos7654@gmail.com>
+Date: Mon, 11 May 2026 13:00:55 -0400
+Subject: [PATCH 35/35] fix: update permission fromConfig test assertions for
+ HIVEMIND_DENY_SUDO
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+All 9 fromConfig tests now expect the {bash, sudo *, deny} prefix
+that patch 0010 prepends to every fromConfig result. The tilde/HOME
+expansion tests were also affected by this change, not sandbox
+issues — os.homedir() resolves correctly in the sandbox.
+---
+ .../opencode/test/permission/next.test.ts     | 36 +++++++++++++++----
+ 1 file changed, 29 insertions(+), 7 deletions(-)
+
+diff --git a/packages/opencode/test/permission/next.test.ts b/packages/opencode/test/permission/next.test.ts
+index 043e325..2087253 100644
+--- a/packages/opencode/test/permission/next.test.ts
++++ b/packages/opencode/test/permission/next.test.ts
+@@ -34,12 +34,16 @@ async function waitForPending(count: number) {
+ 
+ test("fromConfig - string value becomes wildcard rule", () => {
+   const result = Permission.fromConfig({ bash: "allow" })
+-  expect(result).toEqual([{ permission: "bash", pattern: "*", action: "allow" }])
++  expect(result).toEqual([
++    { permission: "bash", pattern: "sudo *", action: "deny" },
++    { permission: "bash", pattern: "*", action: "allow" },
++  ])
+ })
+ 
+ test("fromConfig - object value converts to rules array", () => {
+   const result = Permission.fromConfig({ bash: { "*": "allow", rm: "deny" } })
+   expect(result).toEqual([
++    { permission: "bash", pattern: "sudo *", action: "deny" },
+     { permission: "bash", pattern: "*", action: "allow" },
+     { permission: "bash", pattern: "rm", action: "deny" },
+   ])
+@@ -52,6 +56,7 @@ test("fromConfig - mixed string and object values", () => {
+     webfetch: "ask",
+   })
+   expect(result).toEqual([
++    { permission: "bash", pattern: "sudo *", action: "deny" },
+     { permission: "bash", pattern: "*", action: "allow" },
+     { permission: "bash", pattern: "rm", action: "deny" },
+     { permission: "edit", pattern: "*", action: "allow" },
+@@ -61,32 +66,49 @@ test("fromConfig - mixed string and object values", () => {
+ 
+ test("fromConfig - empty object", () => {
+   const result = Permission.fromConfig({})
+-  expect(result).toEqual([])
++  expect(result).toEqual([
++    { permission: "bash", pattern: "sudo *", action: "deny" },
++  ])
+ })
+ 
+ test("fromConfig - expands tilde to home directory", () => {
+   const result = Permission.fromConfig({ external_directory: { "~/projects/*": "allow" } })
+-  expect(result).toEqual([{ permission: "external_directory", pattern: `${os.homedir()}/projects/*`, action: "allow" }])
++  expect(result).toEqual([
++    { permission: "bash", pattern: "sudo *", action: "deny" },
++    { permission: "external_directory", pattern: `${os.homedir()}/projects/*`, action: "allow" },
++  ])
+ })
+ 
+ test("fromConfig - expands $HOME to home directory", () => {
+   const result = Permission.fromConfig({ external_directory: { "$HOME/projects/*": "allow" } })
+-  expect(result).toEqual([{ permission: "external_directory", pattern: `${os.homedir()}/projects/*`, action: "allow" }])
++  expect(result).toEqual([
++    { permission: "bash", pattern: "sudo *", action: "deny" },
++    { permission: "external_directory", pattern: `${os.homedir()}/projects/*`, action: "allow" },
++  ])
+ })
+ 
+ test("fromConfig - expands $HOME without trailing slash", () => {
+   const result = Permission.fromConfig({ external_directory: { $HOME: "allow" } })
+-  expect(result).toEqual([{ permission: "external_directory", pattern: os.homedir(), action: "allow" }])
++  expect(result).toEqual([
++    { permission: "bash", pattern: "sudo *", action: "deny" },
++    { permission: "external_directory", pattern: os.homedir(), action: "allow" },
++  ])
+ })
+ 
+ test("fromConfig - does not expand tilde in middle of path", () => {
+   const result = Permission.fromConfig({ external_directory: { "/some/~/path": "allow" } })
+-  expect(result).toEqual([{ permission: "external_directory", pattern: "/some/~/path", action: "allow" }])
++  expect(result).toEqual([
++    { permission: "bash", pattern: "sudo *", action: "deny" },
++    { permission: "external_directory", pattern: "/some/~/path", action: "allow" },
++  ])
+ })
+ 
+ test("fromConfig - expands exact tilde to home directory", () => {
+   const result = Permission.fromConfig({ external_directory: { "~": "allow" } })
+-  expect(result).toEqual([{ permission: "external_directory", pattern: os.homedir(), action: "allow" }])
++  expect(result).toEqual([
++    { permission: "bash", pattern: "sudo *", action: "deny" },
++    { permission: "external_directory", pattern: os.homedir(), action: "allow" },
++  ])
+ })
+ 
+ test("evaluate - matches expanded tilde pattern", () => {
+-- 
+2.50.1
+

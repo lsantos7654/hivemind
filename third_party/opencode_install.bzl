@@ -259,22 +259,44 @@ def _opencode_install_impl(ctx):
                 "stays at ~3s."
             ).format(fname))
 
-    # 6. Symlink ALL node_modules trees from the install repo. Bun
-    #    workspaces produce a node_modules at the workspace root AND a
-    #    node_modules in each `packages/*` workspace package. Both must
-    #    be present for `bun build` to resolve direct + workspace deps.
-    #    The pnpm-style relative symlinks inside node_modules/.bun/ resolve
-    #    correctly through these outer symlinks because they're walked by
-    #    bun relative to their containing dir (which after following the
-    #    outer symlink is the install repo's dir, where the original
-    #    relative paths still work).
+    # 6. Symlink node_modules trees from the install repo. For the root
+    #    node_modules we symlink the whole directory — bun walks pnpm-style
+    #    relative symlinks inside node_modules/.bun/ through the outer
+    #    symlink normally. For per-package node_modules/ we use selective
+    #    item-level symlinking: tsgo (TypeScript type checker) resolves
+    #    @opencode-ai/plugin through the workspace symlink, which in a
+    #    wholesale directory symlink would resolve to the install repo's
+    #    pristine copy (no code_patches). By creating node_modules/ as a
+    #    real directory and symlinking items individually, we substitute
+    #    patched workspace packages with symlinks to our @opencode_src copy.
     ctx.symlink(nm_repo_root.get_child("node_modules"), "node_modules")
     packages_dir = ctx.path("packages")
     if packages_dir.exists:
         for pkg_entry in packages_dir.readdir():
-            install_nm = nm_repo_root.get_child("packages", pkg_entry.basename, "node_modules")
-            if install_nm.exists:
-                ctx.symlink(install_nm, "packages/" + pkg_entry.basename + "/node_modules")
+            pkg_name = pkg_entry.basename
+            install_nm = nm_repo_root.get_child("packages", pkg_name, "node_modules")
+            if not install_nm.exists:
+                continue
+
+            # Create as a real directory so we can selectively override
+            # workspace-package symlinks inside it.
+            ctx.file("packages/" + pkg_name + "/node_modules/.gitkeep", "")
+
+            for item in install_nm.readdir():
+                item_name = item.basename
+                dest = "packages/" + pkg_name + "/node_modules/" + item_name
+                if item_name.startswith("@opencode-ai"):
+                    ctx.file(dest + "/.gitkeep", "")
+                    for sub in item.readdir():
+                        sub_name = sub.basename
+                        sub_dest = dest + "/" + sub_name
+                        patched = ctx.path("packages/" + sub_name)
+                        if patched.exists:
+                            ctx.symlink(patched, sub_dest)
+                        else:
+                            ctx.symlink(sub, sub_dest)
+                else:
+                    ctx.symlink(item, dest)
 
     # 7. Compile the CLI in place. opencode's own build script handles
     #    SQL migration loading, the Solid plugin, web-UI embedding, etc.

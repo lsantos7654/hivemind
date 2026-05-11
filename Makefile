@@ -22,10 +22,10 @@ help: ## Show this help.
 	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / { printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
 	@printf "\nFirst-time setup: \033[36mmake install\033[0m  (bazelisk is the only required system dep)\n"
 
-install: ## Build hivemind and write a launcher wrapper into ~/.local/bin/.
+install: ## Build hivemind + engine and write a launcher wrapper into ~/.local/bin/.
 	@command -v $(BAZELISK) >/dev/null || { \
 	  echo "ERROR: bazelisk required. brew install bazelisk"; exit 1; }
-	$(BAZELISK) build //:hivemind
+	$(BAZELISK) build //:hivemind //:engine
 	@mkdir -p $(HOME)/.local/bin
 	@# Resolve the launcher via cquery, not the workspace bazel-bin/ symlink.
 	@# rules_py applies a configuration transition, so the binary lives at

@@ -41,7 +41,6 @@ mypy_test(name = "mypy", srcs = glob(["**/*.py"]))
 | `scenario` | reserved for Stage 9+ |
 | `e2e` | reserved for Stage 11+ |
 | `manual` | excluded from `bazelisk test //...` |
-| `requires-network` | reserved for Stage 4 |
 
 Filter from the command line:
 
@@ -55,57 +54,27 @@ Or via Make (preferred):
 
 ```bash
 make lint            # ruff + buildifier
-make typecheck       # mypy + (tsgo, when un-deferred)
+make typecheck       # mypy + tsgo
 make unit            # Python pytest
 make engine-test     # all bun:test targets in @opencode_src
 make format          # ruff format + buildifier fix + ruff check --fix
 make test            # everything
 ```
 
-## Known engine test failures (Stage 6 cleanup pending)
+## Skipped upstream tests
 
-The following ~5 engine tests fail under Bazel's `darwin-sandbox` due
-to pre-existing environment dependencies. They are NOT Stage 0
-regressions — they are surfaced by Stage 0's wiring:
+Three upstream tests are excluded from `BUILD.bazel.opencode` because
+they cannot run under Bazel's `darwin-sandbox`:
 
-- `config_config_test`, `provider_provider_test` — depend on real
-  network or system config
-- `effect_cross-spawn-spawner_test` — needs `node` in PATH (sandbox
-  doesn't include it)
-- `lsp_index_test` — calls `npm install` to fetch
-  `typescript-language-server` (network required)
-- `memory_abort-leak_test`, `permission_next_test` — sandbox-sensitive
-  process spawn
-
-Stage 6 of `docs/TESTING_ROADMAP.md` ("engine test cleanup") fixes
-these. Until then, these targets are visible failures — `make test`
-exits non-zero. To run only the green subset:
-
-```bash
-make engine-test --keep_going    # see all results, exits non-zero
-bazelisk test '@opencode_src//...' --test_tag_filters=engine \
-  -- -@opencode_src//:config_config_test \
-     -@opencode_src//:provider_provider_test \
-     -@opencode_src//:lsp_index_test \
-     -@opencode_src//:effect_cross-spawn-spawner_test \
-     -@opencode_src//:memory_abort-leak_test \
-     -@opencode_src//:permission_next_test
-```
-
-## Pending sub-stages
-
-| Sub-stage | Status |
+| File | Reason |
 |---|---|
-| 0.1 — Python lint/typecheck wrapper macros | done |
-| 0.2 — buildifier integration | done |
-| 0.3 — `bun_test` macro for engine `*.test.ts` | done (96% pass) |
-| 0.4 — `tsc_test`, format binary, Makefile rewrite | done |
-| 0.5 — strip placeholder engine package.json scripts | done (patch 0022) |
+| `effect/cross-spawn-spawner.test.ts` | Spawns `node -e ...` — sandbox has only `bun` in PATH |
+| `lsp/index.test.ts` | Runs `npm install` — sandbox has no network |
+| `memory/abort-leak.test.ts` | Fetches `https://example.com` + sandbox memory profile skew |
 
-`tests/mypy` is intentionally absent — Stage 2 of the roadmap fixes
-the test suite's untyped functions before adding strict mypy there.
-`engine_typecheck` is tagged `manual` because the patched engine has
-pre-existing TS errors that Stage 6 addresses.
+If the sandbox gains `node` or network access, remove entries from
+`_SKIP` in `third_party/opencode/BUILD.bazel.opencode`. No tags,
+no silent failures — the targets don't exist.
 
 ## Adding a new tool wrapper
 

@@ -1,0 +1,56 @@
+From 53b031895db9db1ff3514f9a02c98bdb29c9c29d Mon Sep 17 00:00:00 2001
+From: Lucas Santos <lsantos7654@gmail.com>
+Date: Mon, 11 May 2026 00:44:26 -0400
+Subject: [PATCH 29/35] fix: agent reloadAll typed boundary + revert footer
+ slot types
+
+- agent.ts: single typed boundary assertion in reloadAll;
+  Instance.provide cannot fully infer the return type through
+  the Effect scope chain but the runtime is backed by
+  makeRuntime's layer tree providing all services
+- footer.tsx: let types flow from updated TuiHostSlotMap
+  (session_footer now has { session_id: string } props)
+---
+ packages/opencode/src/agent/agent.ts                     | 9 +++++++--
+ .../src/cli/cmd/tui/feature-plugins/home/footer.tsx      | 2 +-
+ 2 files changed, 8 insertions(+), 3 deletions(-)
+
+diff --git a/packages/opencode/src/agent/agent.ts b/packages/opencode/src/agent/agent.ts
+index f78aca3..5bb21b0 100644
+--- a/packages/opencode/src/agent/agent.ts
++++ b/packages/opencode/src/agent/agent.ts
+@@ -465,11 +465,16 @@ export namespace Agent {
+     let agents = 0
+     for (const directory of dirs) {
+       try {
+-        const result = await Instance.provide({
++        const reloaded = await Instance.provide({
+           directory,
+           fn: () => runPromise((svc) => svc.reload()),
+         })
+-        if (result) agents += result.count
++        // Instance.provide can't fully infer the return type
++        // through the Effect scope chain (Bus.Service ⊆
++        // Agent.Service via InstanceContext). The runtime is
++        // backed by makeRuntime's layer tree which provides
++        // all services.  Single typed boundary.
++        agents += (reloaded as { count: number }).count
+       } catch {
+         // Skip instances that failed to load; the dispose path skips them too.
+       }
+diff --git a/packages/opencode/src/cli/cmd/tui/feature-plugins/home/footer.tsx b/packages/opencode/src/cli/cmd/tui/feature-plugins/home/footer.tsx
+index fb9d553..feea16e 100644
+--- a/packages/opencode/src/cli/cmd/tui/feature-plugins/home/footer.tsx
++++ b/packages/opencode/src/cli/cmd/tui/feature-plugins/home/footer.tsx
+@@ -177,7 +177,7 @@ const tui: TuiPlugin = async (api) => {
+       // include `session_id` (set by `routes/session/index.tsx`
+       // when invoking the slot), which feeds the per-TUI Subagents
+       // pill.
+-      session_footer(_ctx: unknown, props: Record<string, unknown>) {
++      session_footer(_ctx, props) {
+         return <View api={api} sessionID={props.session_id} />
+       },
+     },
+-- 
+2.50.1
+

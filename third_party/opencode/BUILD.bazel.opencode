@@ -41,6 +41,18 @@ filegroup(
 
 _TEST_FILES = glob(["packages/opencode/test/**/*.test.ts"])
 
+# Tests that cannot run under Bazel's darwin-sandbox:
+#   effect/cross-spawn-spawner — requires `node` in PATH (sandbox has only bun)
+#   lsp/index               — runs `npm install` (network needed)
+#   memory/abort-leak        — fetches https://example.com + sandbox memory profile
+_TEST_FILES = [
+    f
+    for f in _TEST_FILES
+    if not ("effect/cross-spawn-spawner.test.ts" in f or
+            "lsp/index.test.ts" in f or
+            "memory/abort-leak.test.ts" in f)
+]
+
 [
     bun_test(
         name = (
@@ -57,12 +69,7 @@ _TEST_FILES = glob(["packages/opencode/test/**/*.test.ts"])
 # Engine TypeScript type-check (Stage 0.4)
 # ---------------------------------------------------------------------------
 
-# `engine_typecheck` tagged `manual` so it doesn't run by default —
-# the patched engine has pre-existing TS errors (upstream + patch
-# drift) that Stage 6 of the testing roadmap addresses. Once that
-# lands, drop the `manual` tag.
 tsc_test(
     name = "engine_typecheck",
     package_marker = "packages/opencode/package.json",
-    tags = ["manual"],
 )
