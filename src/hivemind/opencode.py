@@ -263,7 +263,10 @@ def format_agent(kind: Kind, name: str, description: str, body: str) -> str:
             name=name,
             description=description,
             tools=tools,
-            extra_permissions=[f'"{teams_base_path()}/**": allow'],
+            extra_permissions=[
+                f'"{teams_base_path()}/**": allow',
+                f'"{memory_dir()}/**": allow',
+            ],
             body=body,
         )
     if kind == "user_supplied":
