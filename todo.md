@@ -59,3 +59,8 @@ Ordered top-to-bottom by what's most actionable. Drop or refile items that no lo
 
 - ~~**Rename `commands` → `skills`**~~ — these are NOT the same thing in opencode. `Command` is the slash-command system loaded from `/.opencode/command*/`. `Skill` is a separate system loaded from `**/SKILL.md`. Renaming would lose the distinction.
 - ~~**opencode file watcher on `agents/**/*.md`**~~ — superseded. `/global/reload-agents` (patch 0004 + 0016 extension) handles the use case across agents, skills, and commands. If a regression appears, fix it there rather than introducing a watcher.
+
+
+
+
+- [ ] while attached to ephemeral agents, kicked out of session on delete should instead go back to main session

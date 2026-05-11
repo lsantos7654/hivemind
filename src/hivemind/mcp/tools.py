@@ -864,10 +864,17 @@ async def _handle_remove_expert_from_team(team: str, expert: str) -> list[TextCo
 
 
 def _slim_session(session: dict[str, Any]) -> dict[str, Any]:
+    project = session.get("project") or {}
+    meta = session.get("metadata") or {}
     return {
         "id": session.get("id"),
         "parentID": session.get("parentID"),
         "title": session.get("title"),
+        "slug": session.get("slug"),
+        "directory": session.get("directory"),
+        "project": project.get("name") or project.get("worktree"),
+        "branch": meta.get("git_branch"),
+        "remote": meta.get("git_remote_url"),
         "updated": session.get("time", {}).get("updated"),
         "ephemeral": session.get("ephemeral"),
     }
@@ -940,6 +947,8 @@ async def _handle_list_sessions(
         sessions = [s for s in sessions if s.get("id") in kept_ids]
 
     slim = [_slim_session(s) for s in sessions]
+    for i, s in enumerate(slim):
+        s["index"] = i + 1
     if tree:
         return _json_text(_build_session_tree(slim))
     return _json_text(slim)

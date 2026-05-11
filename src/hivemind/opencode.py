@@ -547,14 +547,19 @@ def _server_url() -> str:
 
 
 def session_list(roots: bool | None = None, limit: int | None = None) -> list[dict[str, Any]]:
-    """GET /session — list sessions, optionally filtered to root sessions."""
+    """GET /experimental/session — list sessions across projects (cross-directory).
+
+    Returns Session.GlobalInfo[] which includes ``project: {id, name, worktree}``
+    joined from the project table in addition to the standard Session.Info fields
+    (directory, metadata, etc.).
+    """
     params: dict[str, str] = {}
     if roots is not None:
         params["roots"] = "true" if roots else "false"
     if limit is not None:
         params["limit"] = str(limit)
     resp = httpx.get(
-        f"{_server_url()}/session",
+        f"{_server_url()}/experimental/session",
         params=params,
         timeout=SESSION_HTTP_TIMEOUT,
     )

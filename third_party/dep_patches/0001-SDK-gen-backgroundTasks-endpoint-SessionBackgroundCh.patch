@@ -1,7 +1,7 @@
 From 0cc59748589491292ccb47c761cff19f9a91b584 Mon Sep 17 00:00:00 2001
 From: Lucas Santos <lsantos7654@gmail.com>
 Date: Wed, 29 Apr 2026 00:44:25 -0400
-Subject: [PATCH 01/26] SDK gen: backgroundTasks endpoint +
+Subject: [PATCH 01/31] SDK gen: backgroundTasks endpoint +
  SessionBackgroundChanged event
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8

@@ -138,6 +138,11 @@ _OPENCODE_CODE_PATCHES = [
     "0024-Broadcast-reload-agents-notification-over-presence-W.patch",
     "0025-fix-stabilize-engine-typecheck-autoshare-migration-f.patch",
     "0026-fix-remaining-tsgo-errors-port-assertions-slot-types.patch",
+    "0027-Capture-git-branch-and-remote-URL-in-session-metadat.patch",
+    "0028-Add-TUI-metadata-to-presence-WebSocket-protocol.patch",
+    "0029-fix-inline-git-info-read-into-createNext-drop-broken.patch",
+    "0030-fix-forward-TUI-process.cwd-when-dir-not-passed.patch",
+    "0031-fix-stop-remote-URL-regex-at-first-non-space-token.patch",
 ]
 external_engines = module_extension(
     implementation = _ext_impl,

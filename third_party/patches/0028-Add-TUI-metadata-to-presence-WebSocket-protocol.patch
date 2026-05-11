@@ -1,0 +1,290 @@
+From 0195955cafd8df30ec47cf4208d037cc5ec242b6 Mon Sep 17 00:00:00 2001
+From: Lucas Santos <lsantos7654@gmail.com>
+Date: Mon, 11 May 2026 14:01:34 -0400
+Subject: [PATCH 28/31] Add TUI metadata to presence WebSocket protocol
+
+Expands _clients entries with dir, branch, remote so observers
+can see which worktree each TUI connection belongs to. The TUI
+presence client now sends its directory on connect/focus; the
+server derives git branch and origin remote via filesystem reads.
+
+GET /global/live-sessions now accepts ?with_meta=true to return
+per-client metadata alongside session IDs. Broadcast messages
+include the client list so the TUI footer can render richer info.
+---
+ .../cli/cmd/tui/context/presence-client.ts    | 22 ++---
+ .../opencode/src/cli/cmd/tui/context/sdk.tsx  |  1 +
+ packages/opencode/src/server/routes/global.ts | 20 ++++-
+ .../opencode/src/server/routes/presence.ts    | 86 +++++++++++++++++--
+ 4 files changed, 105 insertions(+), 24 deletions(-)
+
+diff --git a/packages/opencode/src/cli/cmd/tui/context/presence-client.ts b/packages/opencode/src/cli/cmd/tui/context/presence-client.ts
+index 89a4e89..83299a0 100644
+--- a/packages/opencode/src/cli/cmd/tui/context/presence-client.ts
++++ b/packages/opencode/src/cli/cmd/tui/context/presence-client.ts
+@@ -4,8 +4,8 @@
+ // the server reads to remove the entry from `_clients`.
+ //
+ // Bidirectional protocol on the same socket:
+-//   client → server: { "type": "focus",         "sessionID": "ses_..." | null }
+-//   server → client: { "type": "live-sessions", "sessions":  string[] }
++//   client → server: { "type": "focus", "sessionID": "ses_..." | null, "dir"?: "/path" }
++//   server → client: { "type": "live-sessions", "sessions":  string[], "clients": ClientMeta[] }
+ //   server → client: { "type": "reload-agents" }
+ //
+ // `currentFocus` is a single source of truth for "what does this
+@@ -22,6 +22,7 @@ export interface PresenceClient {
+ 
+ export interface PresenceClientOptions {
+   url: string
++  dir?: string
+   onLiveSessions: (sessions: string[]) => void
+   onReloadAgents?: () => void
+   WebSocketCtor?: typeof WebSocket
+@@ -58,15 +59,11 @@ export function createPresenceClient(opts: PresenceClientOptions): PresenceClien
+     if (closed) return
+     const next = new Ctor(opts.url)
+     ws = next
+-    next.onopen = () => {
+-      // Always send currentFocus on connect/reconnect — the server's
+-      // _clients map starts a fresh entry at focus=null on every open,
+-      // so we have to re-assert focus every time the socket comes up.
+-      try {
+-        next.send(JSON.stringify({ type: "focus", sessionID: currentFocus }))
+-      } catch {
+-        // ignore — onclose will fire and we'll reconnect
+-      }
++      next.onopen = () => {
++        try {
++          next.send(JSON.stringify({ type: "focus", sessionID: currentFocus, dir: opts.dir }))
++        } catch {
++        }
+     }
+     next.onmessage = (ev: MessageEvent) => {
+       try {
+@@ -100,9 +97,8 @@ export function createPresenceClient(opts: PresenceClientOptions): PresenceClien
+       const sock = ws
+       if (sock && sock.readyState === Ctor.OPEN) {
+         try {
+-          sock.send(JSON.stringify({ type: "focus", sessionID }))
++          sock.send(JSON.stringify({ type: "focus", sessionID, dir: opts.dir }))
+         } catch {
+-          // onclose will reconnect; currentFocus will re-send
+         }
+       }
+     },
+diff --git a/packages/opencode/src/cli/cmd/tui/context/sdk.tsx b/packages/opencode/src/cli/cmd/tui/context/sdk.tsx
+index e6b4aa0..bcb7f4d 100644
+--- a/packages/opencode/src/cli/cmd/tui/context/sdk.tsx
++++ b/packages/opencode/src/cli/cmd/tui/context/sdk.tsx
+@@ -136,6 +136,7 @@ export const { use: useSDK, provider: SDKProvider } = createSimpleContext({
+         startSSE()
+         presence = createPresenceClient({
+           url: presenceURL(),
++          dir: props.directory,
+           onLiveSessions: (sessions) => {
+             // Synthesize the bus event the footer plugin still listens
+             // for. The server no longer publishes through `Bus.publish`
+diff --git a/packages/opencode/src/server/routes/global.ts b/packages/opencode/src/server/routes/global.ts
+index 9d5ecce..1244085 100644
+--- a/packages/opencode/src/server/routes/global.ts
++++ b/packages/opencode/src/server/routes/global.ts
+@@ -15,7 +15,7 @@ import { Agent } from "@/agent/agent"
+ import { Skill } from "@/skill"
+ import { Command } from "@/command"
+ import { SessionBackground } from "@/session/background"
+-import { liveSessions, broadcastReload } from "./presence"
++import { liveSessions, liveClients, broadcastReload } from "./presence"
+ import { errors } from "../error"
+ 
+ const log = Log.create({ service: "server" })
+@@ -322,7 +322,7 @@ export const GlobalRoutes = lazy(() =>
+       describeRoute({
+         summary: "List live sessions",
+         description:
+-          "Hivemind: return the deduplicated set of session IDs currently focused by at least one connected client (TUI). Each TUI opens a single WebSocket on `/presence` and signals its currently-attached session via JSON messages on that connection. The TUI footer's `● N sessions` pill reads `sessions.length`. Subagent counts are computed per-TUI from the focused session's direct DB children and do not flow through this endpoint.",
++          "Hivemind: return the deduplicated set of session IDs currently focused by at least one connected client (TUI). Each TUI opens a single WebSocket on `/presence` and signals its currently-attached session via JSON messages on that connection. The TUI footer's `● N sessions` pill reads `sessions.length`. Subagent counts are computed per-TUI from the focused session's direct DB children and do not flow through this endpoint. Pass `?with_meta=true` to include per-client metadata (dir, branch, remote) alongside session IDs.",
+         operationId: "global.liveSessions",
+         responses: {
+           200: {
+@@ -332,6 +332,12 @@ export const GlobalRoutes = lazy(() =>
+                 schema: resolver(
+                   z.object({
+                     sessions: z.array(z.string()),
++                    clients: z.array(z.object({
++                      focus: z.string().nullable(),
++                      dir: z.string().optional(),
++                      branch: z.string().optional(),
++                      remote: z.string().optional(),
++                    })).optional(),
+                   }),
+                 ),
+               },
+@@ -339,8 +345,16 @@ export const GlobalRoutes = lazy(() =>
+           },
+         },
+       }),
++      validator("query", z.object({
++        with_meta: z.coerce.boolean().optional(),
++      })),
+       async (c) => {
+-        return c.json({ sessions: liveSessions() })
++        const query = c.req.valid("query")
++        const result: { sessions: string[]; clients?: unknown[] } = { sessions: liveSessions() }
++        if (query.with_meta) {
++          result.clients = liveClients()
++        }
++        return c.json(result)
+       },
+     )
+     .get(
+diff --git a/packages/opencode/src/server/routes/presence.ts b/packages/opencode/src/server/routes/presence.ts
+index 335d1b8..3f75d8c 100644
+--- a/packages/opencode/src/server/routes/presence.ts
++++ b/packages/opencode/src/server/routes/presence.ts
+@@ -1,11 +1,42 @@
+ import { Hono } from "hono"
+ import type { UpgradeWebSocket } from "hono/ws"
+ import z from "zod"
++import path from "path"
++import { readFileSync } from "fs"
+ import { Log } from "@/util/log"
+ import { BusEvent } from "@/bus/bus-event"
+ 
+ const log = Log.create({ service: "server" })
+ 
++function gitMeta(dir: string): Record<string, string> {
++  const out: Record<string, string> = {}
++  try {
++    let root = path.join(dir, ".git")
++    let head: string
++    try {
++      head = new TextDecoder().decode(readFileSync(path.join(root, "HEAD")))
++    } catch {
++      const text = new TextDecoder().decode(readFileSync(root))
++      const m = text.match(/^gitdir:\s*(.+)$/m)
++      if (!m) return out
++      root = path.resolve(dir, m[1])
++      head = new TextDecoder().decode(readFileSync(path.join(root, "HEAD")))
++    }
++    head = head.trim()
++    if (head.startsWith("ref: refs/heads/")) {
++      out.branch = head.slice(16)
++    } else if (head.length >= 7) {
++      out.branch = head.slice(0, 7)
++    }
++    try {
++      const cfg = new TextDecoder().decode(readFileSync(path.join(root, "config")))
++      const m = cfg.match(/\[remote\s+"origin"\][^\[]*url\s*=\s*(.+)/s)
++      if (m) out.remote = m[1].trim()
++    } catch {}
++  } catch {}
++  return out
++}
++
+ // Hivemind: kept for SDK type generation. The TUI receives presence
+ // updates over the `/presence` WebSocket itself (see _broadcast below);
+ // this BusEvent is no longer published from the server, but its
+@@ -41,12 +72,22 @@ export const LiveSessionsChanged = BusEvent.define(
+ // silently drop cross-directory deliveries.
+ //
+ // Focus is signaled in-band over the same WebSocket via JSON messages:
+-//   client → server: { "type": "focus",          "sessionID": "ses_..." | null }
+-//   server → client: { "type": "live-sessions",  "sessions":  string[] }
++//   client → server: { "type": "focus", "sessionID": "ses_..." | null, "dir"?: "/path" }
++//   server → client: { "type": "live-sessions", "sessions":  string[] }
+ // Updating focus is a single state mutation on the existing entry —
+ // no separate POST endpoint, no race between the WebSocket handshake
+ // and a subsequent focus call.
+-const _clients = new Map<object, { focus: string | null }>()
++//
++// `dir`, `branch`, and `remote` carry TUI-local metadata so observers
++// (MCP `list_sessions`, TUI footer, cross-session tooling) can see
++// which worktree each connection belongs to without shelling out on
++// every query.
++const _clients = new Map<object, {
++  focus: string | null
++  dir?: string
++  branch?: string
++  remote?: string
++}>()
+ 
+ /**
+  * Hivemind: deduplicated set of session IDs focused by at least one
+@@ -61,6 +102,24 @@ export function liveSessions(): string[] {
+   return [...focused]
+ }
+ 
++export interface ClientMeta {
++  focus: string | null
++  dir?: string
++  branch?: string
++  remote?: string
++}
++
++/** Return every connected client with its metadata. Exposed via
++ *  GET /global/live-sessions?with_meta=true. */
++export function liveClients(): ClientMeta[] {
++  return [..._clients.values()].map((c) => ({
++    focus: c.focus,
++    dir: c.dir,
++    branch: c.branch,
++    remote: c.remote,
++  }))
++}
++
+ // Hivemind: fan-out updated live-sessions list to every connected
+ // client over their existing presence WebSocket. Cross-directory by
+ // construction — `_clients` is module-scoped, no InstanceState lookup.
+@@ -68,7 +127,7 @@ export function liveSessions(): string[] {
+ // which only reached subscribers in the publisher's directory.
+ function _broadcast(): void {
+   const sessions = liveSessions()
+-  const msg = JSON.stringify({ type: "live-sessions", sessions })
++  const msg = JSON.stringify({ type: "live-sessions", sessions, clients: liveClients() })
+   for (const key of _clients.keys()) {
+     try {
+       ;(key as { send: (data: string) => void }).send(msg)
+@@ -99,6 +158,7 @@ export function broadcastReload(): void {
+ const FocusMessage = z.object({
+   type: z.literal("focus"),
+   sessionID: z.string().nullable(),
++  dir: z.string().optional(),
+ })
+ 
+ export function PresenceRoutes(upgradeWebSocket: UpgradeWebSocket) {
+@@ -115,7 +175,7 @@ export function PresenceRoutes(upgradeWebSocket: UpgradeWebSocket) {
+         const key = (ws.raw ?? ws) as object
+         const entry = _clients.get(key)
+         if (!entry) return
+-        let parsed: { type: "focus"; sessionID: string | null }
++        let parsed: { type: "focus"; sessionID: string | null; dir?: string }
+         try {
+           const raw = typeof ev.data === "string" ? ev.data : new TextDecoder().decode(ev.data as ArrayBuffer)
+           parsed = FocusMessage.parse(JSON.parse(raw))
+@@ -123,9 +183,19 @@ export function PresenceRoutes(upgradeWebSocket: UpgradeWebSocket) {
+           log.error("presence: bad message", { err })
+           return
+         }
+-        if (entry.focus === parsed.sessionID) return
+-        entry.focus = parsed.sessionID
+-        _broadcast()
++        let changed = false
++        if (entry.focus !== parsed.sessionID) {
++          entry.focus = parsed.sessionID
++          changed = true
++        }
++        if (parsed.dir && parsed.dir !== entry.dir) {
++          entry.dir = parsed.dir
++          const meta = gitMeta(parsed.dir)
++          entry.branch = meta.branch
++          entry.remote = meta.remote
++          changed = true
++        }
++        if (changed) _broadcast()
+       },
+       onClose(_ev, ws) {
+         const key = (ws.raw ?? ws) as object
+-- 
+2.50.1
+

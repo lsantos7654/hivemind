@@ -1,0 +1,42 @@
+From 1e77d036f5ad64a324690713752f76602a16da68 Mon Sep 17 00:00:00 2001
+From: Lucas Santos <lsantos7654@gmail.com>
+Date: Mon, 11 May 2026 18:02:09 -0400
+Subject: [PATCH 31/31] fix: stop remote URL regex at first non-space token
+
+The (.+) with /s flag greedily captured everything after url= to
+end of file, producing URLs like 'https://x.git\n\tfetch = ...'.
+Switch to (\S+)/m which stops at the newline after the URL.
+---
+ packages/opencode/src/server/routes/presence.ts | 2 +-
+ packages/opencode/src/session/index.ts          | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/packages/opencode/src/server/routes/presence.ts b/packages/opencode/src/server/routes/presence.ts
+index 3f75d8c..3d3e9b1 100644
+--- a/packages/opencode/src/server/routes/presence.ts
++++ b/packages/opencode/src/server/routes/presence.ts
+@@ -30,7 +30,7 @@ function gitMeta(dir: string): Record<string, string> {
+     }
+     try {
+       const cfg = new TextDecoder().decode(readFileSync(path.join(root, "config")))
+-      const m = cfg.match(/\[remote\s+"origin"\][^\[]*url\s*=\s*(.+)/s)
++      const m = cfg.match(/\[remote\s+"origin"\][^\[]*url\s*=\s*(\S+)/m)
+       if (m) out.remote = m[1].trim()
+     } catch {}
+   } catch {}
+diff --git a/packages/opencode/src/session/index.ts b/packages/opencode/src/session/index.ts
+index 0f080be..4e295e7 100644
+--- a/packages/opencode/src/session/index.ts
++++ b/packages/opencode/src/session/index.ts
+@@ -446,7 +446,7 @@ export namespace Session {
+             }
+             try {
+               const cfg = new TextDecoder().decode(readFileSync(path.join(root, "config")))
+-              const m = cfg.match(/\[remote\s+"origin"\][^\[]*url\s*=\s*(.+)/s)
++              const m = cfg.match(/\[remote\s+"origin"\][^\[]*url\s*=\s*(\S+)/m)
+               if (m) out.git_remote_url = m[1].trim()
+             } catch {}
+           } catch {}
+-- 
+2.50.1
+

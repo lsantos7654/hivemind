@@ -1,7 +1,7 @@
 From 1f4551aaf04d3030731695d650542a57c00330d1 Mon Sep 17 00:00:00 2001
 From: Lucas Santos <lsantos7654@gmail.com>
 Date: Thu, 7 May 2026 23:28:59 -0400
-Subject: [PATCH 23/26] Ephemeral subagent sessions
+Subject: [PATCH 23/31] Ephemeral subagent sessions
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
