@@ -15,13 +15,6 @@ config.json
 # User-specific teams (track on your own branch)
 teams/
 
-# Private experts (NEVER commit)
-private-experts/
-private-repos.json
-
-# User-specific provider overrides
-providers/*/overrides.json
-
 # Python
 __pycache__/
 *.pyc

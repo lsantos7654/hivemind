@@ -869,6 +869,7 @@ def _slim_session(session: dict[str, Any]) -> dict[str, Any]:
         "parentID": session.get("parentID"),
         "title": session.get("title"),
         "updated": session.get("time", {}).get("updated"),
+        "ephemeral": session.get("ephemeral"),
     }
 
 
