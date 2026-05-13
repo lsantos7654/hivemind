@@ -174,13 +174,12 @@ def is_enabled(name: str) -> bool:
 
 
 def add(agent: Agent) -> None:
-    """Add a new agent to the catalog in the *unlisted* state.
+    """Add a new agent to the catalog.
 
     Writes the catalog entry to the appropriate file:
     ``hivemind.json`` for most kinds, ``config.json.teams`` for
-    ``roster_templated``. Does NOT flip enabled state — callers that
-    want the agent live must also call ``set_enabled(name, True)``
-    (and deploy it).
+    ``roster_templated``. Does NOT flip enabled state — callers
+    decide the agent's initial state.
     """
     if agent.kind == "roster_templated":
         from hivemind.agents.roster_templated import RosterTemplatedBody

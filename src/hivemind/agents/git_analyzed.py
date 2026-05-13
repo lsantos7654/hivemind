@@ -10,7 +10,7 @@ backing repo is cloned and the expert dir is symlinked into opencode's
 
 Module-level creators / mutators:
 
-- :func:`create_git_expert` — async; registers in catalog as *unlisted*
+- :func:`create_git_expert` — async; registers in catalog as *enabled*
 - :func:`update_git_expert` — async; fetch + analyze + rotate HEAD
 - :func:`switch_version` — async; switch to a specific commit
 - :func:`get_git_versions` — read-only; tags + recent commits
@@ -36,6 +36,7 @@ from hivemind.analysis import (
     run_async_analysis,
 )
 from hivemind.config import (
+    AGENTS_DIR,
     EXPERTS_DIR,
     GIT_FETCH_TIMEOUT,
     GIT_LOCAL_TIMEOUT,
@@ -47,6 +48,7 @@ from hivemind.config import (
     make_emit,
 )
 from hivemind.constants import DESCRIPTION_FILENAME, EXPERTISE_FILENAME
+from hivemind.deployment import regenerate_librarian
 from hivemind.git import (
     clone_from_remote,
     commit_analysis_results,
@@ -548,9 +550,10 @@ async def finalize_create_expert(prep: PrepCreateResult) -> OperationResult:
     Validates that the analyzer wrote all expected files into
     ``prep.commit_dir``, moves the staged repo and expert dir to their
     final cache locations, creates the HEAD symlink, registers the
-    catalog entry as *unlisted*, fires the post-mutation hook, and
-    cleans up the staging dir. Leaves staging in place if validation
-    fails so the caller can inspect / retry.
+    catalog entry as *enabled*, deploys the agent file, regenerates
+    the librarian, fires the post-mutation hook, and cleans up the
+    staging dir. Leaves staging in place if validation fails so the
+    caller can inspect / retry.
     """
     from hivemind.agents import registry
     from hivemind.agents.base import Agent
@@ -606,8 +609,11 @@ async def finalize_create_expert(prep: PrepCreateResult) -> OperationResult:
             ref_name=prep.ref_name,
         ),
     )
-    agent = Agent(name=prep.name, body=body, enabled=False)
+    agent = Agent(name=prep.name, body=body, enabled=True)
     registry.add(agent)
+    registry.set_enabled(prep.name, enabled=True)
+    agent.deploy(agents_dir=AGENTS_DIR)
+    regenerate_librarian()
 
     await afire_post_mutation()
 

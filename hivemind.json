@@ -756,6 +756,14 @@
         "commit": "8fba92957cf236faeb859097b32498d03ea1826c",
         "ref_name": "main"
       }
+    },
+    "lcov": {
+      "kind": "git_analyzed",
+      "body": {
+        "remote": "https://github.com/linux-test-project/lcov.git",
+        "commit": "0e76a3404c42640f98827527844146ad648ff284",
+        "ref_name": "master"
+      }
     }
   }
 }

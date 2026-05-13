@@ -367,7 +367,7 @@ def expert_add(
     url: str = typer.Argument(..., help="Git remote URL"),
     ref: str | None = typer.Option(None, "--ref", help="Tag, branch, or commit (optional)"),
 ) -> None:
-    """Register a new git-analyzed expert (clones + analyzes; agent stays unlisted)."""
+    """Register a new git-analyzed expert (clones + analyzes; agent is enabled by default)."""
     from hivemind.agents.git_analyzed import create_git_expert
 
     name = url.rstrip("/").split("/")[-1].removesuffix(".git")
@@ -389,8 +389,7 @@ def expert_add(
 
     console.print(
         Panel(
-            f"[success]Expert '{name}' added to catalog.[/success]\n"
-            "Run [heading]hivemind expert enable " + name + "[/heading] to deploy it.",
+            f"[success]Expert '{name}' added and enabled.[/success]",
             border_style="green",
         )
     )

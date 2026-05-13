@@ -150,7 +150,7 @@ async def add_expert_async(pane: ExpertsPane, url: str) -> None:
     try:
         result = await create_git_expert(name, url)
         if result.success:
-            pane.notify(f"Expert '{name}' added (unlisted)", severity="information")
+            pane.notify(f"Expert '{name}' added and enabled", severity="information")
         else:
             pane.notify(f"Failed to add expert: {result.error}", severity="error")
     except Exception as e:

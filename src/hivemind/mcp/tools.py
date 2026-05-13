@@ -195,8 +195,8 @@ TOOLS: list[Tool] = [
             "staging dir for `name` (created by prep_create_expert), "
             "validates that all 6 expected analysis files exist in it, "
             "moves the cloned repo + expert dir to their final cache "
-            "locations, and registers the catalog entry as *unlisted*. "
-            "Fast — no AI invoked. Call enable_agent afterwards to deploy."
+            "locations, registers the catalog entry, enables, deploys, "
+            "and regenerates the librarian. Fast — no AI invoked."
         ),
         inputSchema={
             "type": "object",
@@ -635,7 +635,7 @@ async def _handle_finalize_create_expert(name: str) -> list[TextContent]:
     if not result.success:
         return _text(f"Error: {result.error}")
 
-    return _text(f"Expert '{name}' registered at {prep.commit[:12]}. Run enable_agent to deploy.")
+    return _text(f"Expert '{name}' enabled and deployed at {prep.commit[:12]}.")
 
 
 async def _handle_prep_update_agent(name: str) -> list[TextContent]:
