@@ -1,7 +1,7 @@
 SHELL := /bin/bash
 
 .PHONY: help install update test unit lint typecheck engine-test format \
-        coverage coverage-serve engine clean dev dev-save dev-reset
+        coverage engine clean dev dev-save dev-reset
 
 BAZELISK ?= bazelisk
 LAUNCHER := $(HOME)/.local/bin/hivemind
@@ -73,21 +73,26 @@ coverage: ## Run all tests with coverage instrumentation, generate HTML.
 	$(BAZELISK) coverage --combined_report=lcov --instrumentation_filter='^//' \
 		//tests:test_core //tests:test_provider //tests:test_cross_session \
 		//tests:test_memory_daemon //tests:test_ephemeral_invariants \
-		'@opencode_src//...' --test_tag_filters=engine
+		'@opencode_src//...' --test_tag_filters=unit,engine
 	rm -rf tools/coverage/coverage_output/htmlcov
 	mkdir -p tools/coverage/coverage_output/htmlcov
+	ENGINE_BASE="$$($(BAZELISK) info output_base)/external/+external_engines+opencode_src"; \
+	COV_DAT="$$($(BAZELISK) info output_path)/_coverage/_coverage_report.dat"; \
+	sed -i '' \
+		-e "s|^SF:../../../+external_engines+opencode_node_modules/|SF:$${ENGINE_BASE}/|" \
+		-e "s|^SF:$${ENGINE_BASE}//packages/opencode/|SF:$${ENGINE_BASE}/packages/opencode/|" \
+		-e "s|^SF:src/|SF:$${ENGINE_BASE}/packages/opencode/src/|" \
+		-e "s|^SF:test/|SF:$${ENGINE_BASE}/packages/opencode/test/|" \
+		-e "s|^SF:\.\./util/|SF:$${ENGINE_BASE}/packages/util/|" \
+		-e "s|^SF:\([a-zA-Z][a-zA-Z0-9_-]*\.ts\)$$|SF:$${ENGINE_BASE}/packages/opencode/\1|" \
+		-e "s|^SF:$${ENGINE_BASE}/packages/opencode/src/hivemind/|SF:src/hivemind/|" \
+		"$${COV_DAT}"; \
 	genhtml -o tools/coverage/coverage_output/htmlcov \
 		--title "Hivemind Coverage" \
-		--ignore-errors inconsistent,corrupt,source \
-		--synthesize-missing \
-		"$$($(BAZELISK) info output_path)/_coverage/_coverage_report.dat"
+		--prefix "$${PWD}" \
+		--ignore-errors inconsistent,corrupt,source,range \
+		"$${COV_DAT}"
 	@echo "Report: tools/coverage/coverage_output/htmlcov/index.html"
-	@echo "  open tools/coverage/coverage_output/htmlcov/index.html"
-	@echo "  or: make coverage-serve  →  http://localhost:8080/"
-
-coverage-serve: ## Serve the coverage report at http://localhost:8080/.
-	@echo "Serving at http://localhost:8080/"
-	@cd tools/coverage/coverage_output/htmlcov && python3 -m http.server 8080
 
 engine: ## Rebuild only the bun-compiled engine.
 	$(BAZELISK) build //:engine
