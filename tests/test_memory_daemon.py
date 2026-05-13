@@ -35,11 +35,11 @@ class TestDaemonTemplate:
     """The Jinja template renders to a valid agent body."""
 
     def test_renders_without_error(self) -> None:
-        body = render(DAEMON_TEMPLATE)
+        body = render(DAEMON_TEMPLATE, model="test-model", small_model="test-small")
         assert body.startswith("---")
 
     def test_uses_lightweight_model(self) -> None:
-        body = render(DAEMON_TEMPLATE)
+        body = render(DAEMON_TEMPLATE, model="test-model", small_model="anthropic/claude-haiku")
         match = re.search(r"^model:\s*(.+)$", body, re.MULTILINE)
         assert match is not None
         # Lightweight default — Haiku family or smaller. Body should NOT
@@ -47,19 +47,19 @@ class TestDaemonTemplate:
         assert "haiku" in match.group(1).lower(), f"daemon model should be lightweight, got: {match.group(1)}"
 
     def test_memory_disabled_in_frontmatter(self) -> None:
-        body = render(DAEMON_TEMPLATE)
+        body = render(DAEMON_TEMPLATE, model="test-model", small_model="test-small")
         # The daemon is one-shot; it must not get hivemind's memory
         # injection (which would add a memory contract directing the
         # daemon to maintain its own memory tree).
         assert re.search(r"^memory:\s*false\s*$", body, re.MULTILINE) is not None
 
     def test_no_bash_no_task(self) -> None:
-        body = render(DAEMON_TEMPLATE)
+        body = render(DAEMON_TEMPLATE, model="test-model", small_model="test-small")
         assert re.search(r"^\s*bash:\s*false\s*$", body, re.MULTILINE) is not None
         assert re.search(r"^\s*task:\s*false\s*$", body, re.MULTILINE) is not None
 
     def test_permissions_scoped_to_memory_dir(self) -> None:
-        body = render(DAEMON_TEMPLATE)
+        body = render(DAEMON_TEMPLATE, model="test-model", small_model="test-small")
         # Must allow access to the memory tree.
         assert "~/.config/opencode/hivemind/memory/**" in body
 

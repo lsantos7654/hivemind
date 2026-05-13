@@ -42,7 +42,7 @@ SKILL_DIR = REPO_ROOT / "opencode" / "skills" if REPO_ROOT else None
 
 def test_memory_daemon_template_declares_ephemeral() -> None:
     """The auto-spawned memory daemon should always vanish on terminal state."""
-    body = render("agents/hivemind-memory-daemon.md.j2")
+    body = render("agents/hivemind-memory-daemon.md.j2", model="test-model", small_model="test-small")
     assert "ephemeral: true" in body, (
         "hivemind-memory-daemon must declare ephemeral: true in frontmatter — "
         "otherwise every short_memory.md write that crosses the threshold "
@@ -52,7 +52,7 @@ def test_memory_daemon_template_declares_ephemeral() -> None:
 
 def test_expert_curator_template_declares_ephemeral() -> None:
     """Curator runs are one-off — every catalog mutation spins up a fresh session."""
-    body = render("agents/hivemind-expert-curator.md.j2")
+    body = render("agents/hivemind-expert-curator.md.j2", model="test-model", small_model="test-small")
     assert "ephemeral: true" in body, (
         "hivemind-expert-curator must declare ephemeral: true in frontmatter "
         "so add/update/switch_version/create_team spawns clean themselves up."

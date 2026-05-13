@@ -12,6 +12,11 @@
 # `realpath` the marker to get an absolute path that survives the
 # symlink chain, then `cd` to its dirname so bun's resolver picks up
 # the in-tree node_modules.
+#
+# Coverage: when `bazel coverage` sets $COVERAGE_DIR, bun is invoked
+# with --coverage --coverage-reporter=lcov and its lcov output is
+# written into $COVERAGE_DIR so Bazel includes it in the combined
+# --combined_report=lcov output.
 set -euo pipefail
 
 bun_rel="$1"
@@ -64,4 +69,18 @@ export XDG_DATA_HOME="${TEST_TMPDIR:-/tmp}/xdg-data"
 export XDG_CACHE_HOME="${TEST_TMPDIR:-/tmp}/xdg-cache"
 
 cd "$engine_root"
-exec "$bun_path" test --timeout 30000 "$relative"
+
+# Coverage: bazel sets COVERAGE_DIR when running under `bazel coverage`.
+# bun can emit lcov and we write it into COVERAGE_DIR so Bazel picks
+# it up for the combined --combined_report=lcov.
+if [[ -n "${COVERAGE_DIR:-}" ]]; then
+    bun_cov_dir="$COVERAGE_DIR/bun_coverage"
+    mkdir -p "$bun_cov_dir"
+    "$bun_path" test --timeout 30000 --coverage --coverage-reporter=lcov \
+        --coverage-dir="$bun_cov_dir" "$relative"
+    if [[ -f "$bun_cov_dir/lcov.info" ]]; then
+        cp "$bun_cov_dir/lcov.info" "${COVERAGE_OUTPUT_FILE:-$COVERAGE_DIR/engine.lcov}"
+    fi
+else
+    exec "$bun_path" test --timeout 30000 "$relative"
+fi

@@ -73,9 +73,9 @@ class RepoEntry(BaseModel):
 class TeamData(BaseModel):
     """A view of a ``RosterTemplatedBody`` agent for display callers.
 
-    This is not the canonical storage format — the roster lives in the
-    agent's ``hivemind.json`` body. It exists for TUI screens that expect
-    a typed object instead of a dict.
+    This is not the canonical storage format — the roster lives in
+    ``config.json.teams`` (per-machine, gitignored). It exists for TUI
+    screens that expect a typed object instead of a dict.
     """
 
     description: str = ""
@@ -231,6 +231,7 @@ class AppConfig(BaseModel):
 
     enabled: list[str] = []
     disabled: list[str] = []
+    teams: dict[str, RosterTemplatedParams] = {}
 
 
 # --- Operation Result Models ---

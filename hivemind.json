@@ -749,32 +749,12 @@
         "ref_name": "master"
       }
     },
-    "hivemind": {
-      "kind": "roster_templated",
+    "coveragepy": {
+      "kind": "git_analyzed",
       "body": {
-        "description": "Hivemind agent catalog manager \u2014 Bazel-built Python CLI + Textual TUI + patched opencode engine",
-        "experts": [
-          "bazel",
-          "bazel-lib",
-          "bazel-skylib",
-          "bun",
-          "crawl4ai",
-          "httpx",
-          "jinja",
-          "mypy",
-          "opencode",
-          "pre-commit",
-          "pydantic",
-          "python-sdk",
-          "rich",
-          "rules_py",
-          "rules_python",
-          "rules_testing",
-          "ruff",
-          "textual",
-          "trafilatura",
-          "typer"
-        ]
+        "remote": "https://github.com/coveragepy/coveragepy.git",
+        "commit": "8fba92957cf236faeb859097b32498d03ea1826c",
+        "ref_name": "main"
       }
     }
   }

@@ -69,8 +69,19 @@ engine-test: ## Run every engine bun:test target (~155 targets).
 format: ## Apply ruff format + buildifier fix + ruff check --fix in place.
 	$(BAZELISK) run //tools/bazel:format
 
-coverage: ## Generate coverage reports (Stage 1 — not yet implemented).
-	@echo "ERROR: 'make coverage' is a Stage 1 deliverable in docs/TESTING_ROADMAP.md."; exit 1
+coverage: ## Run all tests with coverage instrumentation, generate HTML.
+	$(BAZELISK) coverage --combined_report=lcov --instrumentation_filter='^//' \
+		//tests:test_core //tests:test_provider //tests:test_cross_session \
+		//tests:test_memory_daemon //tests:test_ephemeral_invariants \
+		'@opencode_src//...' --test_tag_filters=engine
+	rm -rf tools/coverage/coverage_output/htmlcov
+	mkdir -p tools/coverage/coverage_output/htmlcov
+	genhtml -o tools/coverage/coverage_output/htmlcov \
+		--title "Hivemind Coverage" \
+		--ignore-errors inconsistent,corrupt,source \
+		--synthesize-missing \
+		"$$($(BAZELISK) info output_path)/_coverage/_coverage_report.dat"
+	@echo "Report: tools/coverage/coverage_output/htmlcov/index.html"
 
 engine: ## Rebuild only the bun-compiled engine.
 	$(BAZELISK) build //:engine

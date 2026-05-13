@@ -8,6 +8,7 @@ exports_files(["BUILD.bazel"])
 # Common attrs for every py_test target in this package.
 _PYTEST_DEPS = [
     "//src/hivemind:lib",
+    "@pypi//coverage",
     "@pypi//pytest",
 ]
 
@@ -20,9 +21,9 @@ py_test(
         "test_core.py",
     ],
     imports = [".."],
-    main = "test_core.py",
+    pytest_main = True,
     tags = _PYTEST_TAGS,
-    deps = _PYTEST_DEPS,
+    deps = list(_PYTEST_DEPS),
 )
 
 py_test(
@@ -32,9 +33,9 @@ py_test(
         "test_provider.py",
     ],
     imports = [".."],
-    main = "test_provider.py",
+    pytest_main = True,
     tags = _PYTEST_TAGS,
-    deps = _PYTEST_DEPS,
+    deps = list(_PYTEST_DEPS),
 )
 
 py_test(
@@ -44,9 +45,9 @@ py_test(
         "test_cross_session.py",
     ],
     imports = [".."],
-    main = "test_cross_session.py",
+    pytest_main = True,
     tags = _PYTEST_TAGS,
-    deps = _PYTEST_DEPS,
+    deps = list(_PYTEST_DEPS),
 )
 
 py_test(
@@ -56,9 +57,9 @@ py_test(
         "test_memory_daemon.py",
     ],
     imports = [".."],
-    main = "test_memory_daemon.py",
+    pytest_main = True,
     tags = _PYTEST_TAGS,
-    deps = _PYTEST_DEPS,
+    deps = list(_PYTEST_DEPS),
 )
 
 py_test(
@@ -68,9 +69,9 @@ py_test(
         "test_ephemeral_invariants.py",
     ],
     imports = [".."],
-    main = "test_ephemeral_invariants.py",
+    pytest_main = True,
     tags = _PYTEST_TAGS,
-    deps = _PYTEST_DEPS,
+    deps = list(_PYTEST_DEPS),
 )
 
 # ---------------------------------------------------------------------------

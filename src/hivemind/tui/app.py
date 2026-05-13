@@ -85,9 +85,11 @@ class HivemindApp(App):
             # call via call_from_thread if we're off-thread.
             try:
                 self.call_from_thread(self.refresh_experts)
+                self.call_from_thread(self.refresh_teams)
             except Exception:
                 # If we're already on the app thread (rare), fall back.
                 self.refresh_experts()
+                self.refresh_teams()
 
         register_post_mutation(reload_listener)
         register_post_mutation(refresh_listener)
@@ -204,6 +206,10 @@ class HivemindApp(App):
             table.update_experts(self.experts)
         except (NoMatches, AttributeError):
             pass
+
+    def refresh_teams(self) -> None:
+        with contextlib.suppress(NoMatches):
+            self.query_one(TeamsPane).load_teams()
 
     def load_teams(self) -> dict[str, TeamData]:
         """Return all teams as ``{name: TeamData}`` for display callers."""

@@ -5,6 +5,12 @@ The registry loads ``hivemind.json`` (catalog, committed) and ``config.json``
 and persists mutations back to the right file. CLI, TUI, and MCP all go
 through this module; none of them poke the JSON files directly.
 
+``roster_templated`` (team) entries live in ``config.json.teams``, not in
+``hivemind.json.agents``, because ``teams/`` is gitignored and teams are
+per-machine artifacts. All other agent kinds (``git_analyzed``,
+``user_supplied``, ``system_templated``) live in the committed
+``hivemind.json.agents`` catalog.
+
 There is no cache. Every call re-reads both files. The previous
 process-local cache caused stale reads in long-lived processes (notably
 the MCP subprocess opencode spawns) when another process mutated the
@@ -69,22 +75,62 @@ def _body_from_catalog(name: str, entry: CatalogEntry) -> AgentBody:
 
 
 def load() -> dict[str, Agent]:
-    """Return ``{name: Agent}`` for every catalog entry, joined with the overlay."""
+    """Return ``{name: Agent}`` for every catalog entry, joined with the overlay.
+
+    ``roster_templated`` entries are sourced from ``config.json.teams``
+    (per-machine, gitignored). All other kinds come from
+    ``hivemind.json.agents`` (committed). On first encounter after an
+    upgrade, any stale ``roster_templated`` entries in ``hivemind.json``
+    are auto-migrated into ``config.json`` and removed from the committed
+    catalog.
+    """
     hivemind_cfg = load_hivemind()
     app_cfg = load_config()
     enabled_set = set(app_cfg.enabled)
 
+    # Detect and auto-migrate stale roster_templated entries from
+    # hivemind.json (committed) into config.json (per-machine).
+    stale_roster: list[str] = []
+    for name, entry in list(hivemind_cfg.agents.items()):
+        if entry.kind == "roster_templated":
+            stale_roster.append(name)
+    if stale_roster:
+        for name in stale_roster:
+            entry = hivemind_cfg.agents.pop(name)
+            if isinstance(entry.body, RosterTemplatedParams) and name not in app_cfg.teams:
+                # Clone the params so we don't share a mutable ref.
+                app_cfg.teams[name] = RosterTemplatedParams(
+                    description=entry.body.description,
+                    experts=list(entry.body.experts),
+                )
+        save_hivemind(hivemind_cfg)
+        save_config(app_cfg)
+
     agents: dict[str, Agent] = {}
+    # Materialise from hivemind.json (committed catalog — all non-roster kinds).
     for name, entry in hivemind_cfg.agents.items():
         try:
             body = _body_from_catalog(name, entry)
         except Exception:
-            # A broken entry shouldn't kill the whole load; skip it.
             import logging
 
             logging.getLogger(__name__).exception("failed to materialise agent %r", name)
             continue
         agents[name] = Agent(name=name, body=body, enabled=name in enabled_set)
+
+    # Materialise teams from config.json.teams (per-machine).
+    for name, params in app_cfg.teams.items():
+        try:
+            from hivemind.agents.roster_templated import RosterTemplatedBody
+
+            body = RosterTemplatedBody(name=name, params=params)
+            agents[name] = Agent(name=name, body=body, enabled=name in enabled_set)
+        except Exception:
+            import logging
+
+            logging.getLogger(__name__).exception("failed to materialise team %r", name)
+            continue
+
     return agents
 
 
@@ -130,35 +176,58 @@ def is_enabled(name: str) -> bool:
 def add(agent: Agent) -> None:
     """Add a new agent to the catalog in the *unlisted* state.
 
-    Writes the catalog entry to ``hivemind.json``. Does NOT flip enabled
-    state — callers that want the agent live must also call
-    ``set_enabled(name, True)`` (and deploy it).
+    Writes the catalog entry to the appropriate file:
+    ``hivemind.json`` for most kinds, ``config.json.teams`` for
+    ``roster_templated``. Does NOT flip enabled state — callers that
+    want the agent live must also call ``set_enabled(name, True)``
+    (and deploy it).
     """
-    cfg = load_hivemind()
-    if agent.name in cfg.agents:
-        msg = f"agent {agent.name!r} already in catalog"
-        raise ValueError(msg)
-    cfg.agents[agent.name] = _serialize_entry(agent.body)
-    save_hivemind(cfg)
+    if agent.kind == "roster_templated":
+        from hivemind.agents.roster_templated import RosterTemplatedBody
 
-
-def remove(name: str) -> None:
-    """Remove an agent from the catalog and from any local overlay lists."""
-    cfg = load_hivemind()
-    if name in cfg.agents:
-        del cfg.agents[name]
-        save_hivemind(cfg)
-
-    app_cfg = load_config()
-    dirty = False
-    if name in app_cfg.enabled:
-        app_cfg.enabled.remove(name)
-        dirty = True
-    if name in app_cfg.disabled:
-        app_cfg.disabled.remove(name)
-        dirty = True
-    if dirty:
+        app_cfg = load_config()
+        if agent.name in app_cfg.teams:
+            msg = f"team {agent.name!r} already in catalog"
+            raise ValueError(msg)
+        assert isinstance(agent.body, RosterTemplatedBody)
+        app_cfg.teams[agent.name] = agent.body.params
         save_config(app_cfg)
+    else:
+        hivemind_cfg = load_hivemind()
+        if agent.name in hivemind_cfg.agents:
+            msg = f"agent {agent.name!r} already in catalog"
+            raise ValueError(msg)
+        hivemind_cfg.agents[agent.name] = _serialize_entry(agent.body)
+        save_hivemind(hivemind_cfg)
+
+
+def _serialize_entry(body: AgentBody) -> CatalogEntry:
+    """Build a validated :class:`CatalogEntry` from a live body."""
+    return CatalogEntry.model_validate({"kind": body.kind, "body": body.to_catalog()})
+
+
+def save_body(agent: Agent) -> None:
+    """Persist the agent's current body params back to its catalog file.
+
+    Call this after a body-level mutation (commit bump, roster change, …).
+    """
+    if agent.kind == "roster_templated":
+        from hivemind.agents.roster_templated import RosterTemplatedBody
+
+        app_cfg = load_config()
+        if agent.name not in app_cfg.teams:
+            msg = f"team {agent.name!r} not in catalog"
+            raise KeyError(msg)
+        assert isinstance(agent.body, RosterTemplatedBody)
+        app_cfg.teams[agent.name] = agent.body.params
+        save_config(app_cfg)
+    else:
+        hivemind_cfg = load_hivemind()
+        if agent.name not in hivemind_cfg.agents:
+            msg = f"agent {agent.name!r} not in catalog"
+            raise KeyError(msg)
+        hivemind_cfg.agents[agent.name] = _serialize_entry(agent.body)
+        save_hivemind(hivemind_cfg)
 
 
 def set_enabled(name: str, enabled: bool) -> None:
@@ -186,19 +255,28 @@ def set_enabled(name: str, enabled: bool) -> None:
         save_config(app_cfg)
 
 
-def save_body(agent: Agent) -> None:
-    """Persist the agent's current body params back to ``hivemind.json``.
+def remove(name: str) -> None:
+    """Remove an agent from the catalog and from any local overlay lists."""
+    # Determine where the agent lives — roster_templated entries are in
+    # config.json.teams; everything else is in hivemind.json.agents.
+    hivemind_cfg = load_hivemind()
+    if name in hivemind_cfg.agents:
+        del hivemind_cfg.agents[name]
+        save_hivemind(hivemind_cfg)
+    else:
+        # Fall back to config.json.teams (roster_templated or stale entry).
+        app_cfg = load_config()
+        if name in app_cfg.teams:
+            del app_cfg.teams[name]
+            save_config(app_cfg)
 
-    Call this after a body-level mutation (commit bump, roster change, …).
-    """
-    cfg = load_hivemind()
-    if agent.name not in cfg.agents:
-        msg = f"agent {agent.name!r} not in catalog"
-        raise KeyError(msg)
-    cfg.agents[agent.name] = _serialize_entry(agent.body)
-    save_hivemind(cfg)
-
-
-def _serialize_entry(body: AgentBody) -> CatalogEntry:
-    """Build a validated :class:`CatalogEntry` from a live body."""
-    return CatalogEntry.model_validate({"kind": body.kind, "body": body.to_catalog()})
+    app_cfg = load_config()
+    dirty = False
+    if name in app_cfg.enabled:
+        app_cfg.enabled.remove(name)
+        dirty = True
+    if name in app_cfg.disabled:
+        app_cfg.disabled.remove(name)
+        dirty = True
+    if dirty:
+        save_config(app_cfg)

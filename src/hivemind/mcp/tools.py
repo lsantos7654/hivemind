@@ -424,10 +424,11 @@ TOOLS: list[Tool] = [
     Tool(
         name="send_message",
         description=(
-            "Append a message to another session's inbox. Delivered immediately if that "
-            "session is idle, queued and delivered on next idle if it's busy. Never throws "
-            "BusyError — safe to ping a session that's mid-turn. Use list_sessions first "
-            "to find the target session ID."
+            "Append a message to another session's inbox. For cross-session TUI messaging "
+            "only — not for continuing expert conversations (use Task(task_id=...) to resume "
+            "a subagent). Delivered immediately if that session is idle, queued and delivered "
+            "on next idle if it's busy. Never throws BusyError — safe to ping a session "
+            "that's mid-turn. Use list_sessions first to find the target session ID."
         ),
         inputSchema={
             "type": "object",

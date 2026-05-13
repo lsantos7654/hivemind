@@ -44,13 +44,12 @@ def bun_test(name, src, engine_root = None, timeout = "long", tags = [], env = N
         @opencode_src.
       timeout: Bazel test timeout (default "long" — bun tests can be slow)
       tags: extra tags to add (`engine` is always added)
-      env: optional dict of env vars to pass through
+      env: optional dict of custom env vars to pass through alongside
+        Bazel-inherited vars (e.g. COVERAGE_DIR from `bazel coverage`).
     """
     if engine_root == None:
         engine_root = _DEFAULT_ENGINE_ROOT
-    if env == None:
-        env = {}
-    sh_test(
+    kwargs = dict(
         name = name,
         srcs = ["@@//tools/bazel:bun_test_runner.sh"],
         data = [
@@ -63,7 +62,9 @@ def bun_test(name, src, engine_root = None, timeout = "long", tags = [], env = N
             "$(rootpath %s)" % engine_root,
             "$(rootpath %s)" % src,
         ],
-        env = env,
         timeout = timeout,
         tags = ["engine"] + tags,
     )
+    if env:
+        kwargs["env"] = env
+    sh_test(**kwargs)

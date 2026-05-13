@@ -1,0 +1,11 @@
+[run]
+source = src/hivemind
+branch = true
+
+[report]
+fail_under = 60
+exclude_also =
+    def __repr__
+    if TYPE_CHECKING:
+    raise NotImplementedError
+    @(abstractmethod|property)

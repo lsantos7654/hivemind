@@ -262,11 +262,9 @@ def test_extract_args_for_cross_session_tools():
 
 
 def test_extract_args_for_renamed_update_agent():
-    assert mcp_tools._extract_args("update_agent", {"name": "expert-foo"}) == ("expert-foo", False)
-    assert mcp_tools._extract_args(
-        "update_agent",
-        {"name": "expert-foo", "skip_analysis": True},
-    ) == ("expert-foo", True)
+    """prep_update_agent / finalize_update_agent replaced the old update_agent."""
+    assert mcp_tools._extract_args("prep_update_agent", {"name": "expert-foo"}) == ("expert-foo",)
+    assert mcp_tools._extract_args("finalize_update_agent", {"name": "expert-foo"}) == ("expert-foo",)
 
 
 def test_dispatcher_does_not_expose_dropped_tools():
