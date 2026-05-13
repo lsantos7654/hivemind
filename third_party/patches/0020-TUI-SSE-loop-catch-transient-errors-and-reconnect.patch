@@ -1,7 +1,7 @@
 From d6d35843953d9e9a57febf886dc3a39e1ca580c5 Mon Sep 17 00:00:00 2001
 From: Lucas Santos <lsantos7654@gmail.com>
 Date: Sun, 3 May 2026 22:14:10 -0400
-Subject: [PATCH 20/31] TUI SSE loop: catch transient errors and reconnect
+Subject: [PATCH 20/32] TUI SSE loop: catch transient errors and reconnect
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit

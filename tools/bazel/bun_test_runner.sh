@@ -79,7 +79,13 @@ if [[ -n "${COVERAGE_DIR:-}" ]]; then
     "$bun_path" test --timeout 30000 --coverage --coverage-reporter=lcov \
         --coverage-dir="$bun_cov_dir" "$relative"
     if [[ -f "$bun_cov_dir/lcov.info" ]]; then
-        cp "$bun_cov_dir/lcov.info" "${COVERAGE_OUTPUT_FILE:-$COVERAGE_DIR/engine.lcov}"
+        # Filter out test-fixture temps so the combined report covers only
+        # real engine source (packages/opencode/src/, packages/sdk/, etc.).
+        awk '
+          /^SF:/ { skip = ($0 ~ "/folders/fz/" || $0 ~ "/opencode-test-"); }
+          { if (!skip) print; }
+          /^end_of_record/ { skip = 0; }
+        ' "$bun_cov_dir/lcov.info" >"${COVERAGE_OUTPUT_FILE:-$COVERAGE_DIR/engine.lcov}"
     fi
 else
     exec "$bun_path" test --timeout 30000 "$relative"

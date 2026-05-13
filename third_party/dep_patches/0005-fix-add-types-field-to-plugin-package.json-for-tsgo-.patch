@@ -1,7 +1,7 @@
 From d9fc02037d3be0a94ddcffc56d504a7c34ee8eff Mon Sep 17 00:00:00 2001
 From: Lucas Santos <lsantos7654@gmail.com>
 Date: Mon, 11 May 2026 00:21:00 -0400
-Subject: [PATCH 05/31] fix: add types field to plugin package.json for tsgo
+Subject: [PATCH 05/32] fix: add types field to plugin package.json for tsgo
  resolution
 
 ---

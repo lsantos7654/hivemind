@@ -1,0 +1,61 @@
+From 1e46ff3f5896528b1d3341682b1c9e785eafb755 Mon Sep 17 00:00:00 2001
+From: Lucas Santos <lsantos7654@gmail.com>
+Date: Tue, 12 May 2026 20:42:01 -0400
+Subject: [PATCH 32/32] fix: rerender subagent count pill on session focus
+ change
+
+Also includes: return to parent session when drilled-in ephemeral
+subagent deletes.
+---
+ packages/opencode/src/cli/cmd/tui/app.tsx             | 11 +++++++----
+ .../src/cli/cmd/tui/feature-plugins/home/footer.tsx   |  6 ++++--
+ 2 files changed, 11 insertions(+), 6 deletions(-)
+
+diff --git a/packages/opencode/src/cli/cmd/tui/app.tsx b/packages/opencode/src/cli/cmd/tui/app.tsx
+index 4161c02..510463c 100644
+--- a/packages/opencode/src/cli/cmd/tui/app.tsx
++++ b/packages/opencode/src/cli/cmd/tui/app.tsx
+@@ -828,11 +828,14 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
+ 
+   sdk.event.on("session.deleted", (evt) => {
+     if (route.data.type === "session" && route.data.sessionID === evt.properties.info.id) {
++      const parent = evt.properties.info.parentID
++      if (parent) {
++        route.navigate({ type: "session", sessionID: parent })
++        toast.show({ variant: "info", message: "Session deleted. Returned to parent." })
++        return
++      }
+       route.navigate({ type: "home" })
+-      toast.show({
+-        variant: "info",
+-        message: "The current session was deleted",
+-      })
++      toast.show({ variant: "info", message: "The current session was deleted" })
+     }
+   })
+ 
+diff --git a/packages/opencode/src/cli/cmd/tui/feature-plugins/home/footer.tsx b/packages/opencode/src/cli/cmd/tui/feature-plugins/home/footer.tsx
+index feea16e..c527f8b 100644
+--- a/packages/opencode/src/cli/cmd/tui/feature-plugins/home/footer.tsx
++++ b/packages/opencode/src/cli/cmd/tui/feature-plugins/home/footer.tsx
+@@ -1,5 +1,5 @@
+ import type { TuiPlugin, TuiPluginApi, TuiPluginModule } from "@opencode-ai/plugin/tui"
+-import { createSignal, onCleanup, onMount } from "solid-js"
++import { createEffect, createSignal, onCleanup, onMount } from "solid-js"
+ import { existsSync, readFileSync } from "node:fs"
+ import { homedir } from "node:os"
+ import { join } from "node:path"
+@@ -120,7 +120,9 @@ function Subagents(props: { api: TuiPluginApi; sessionID?: string }) {
+     }
+   }
+ 
+-  onMount(refresh)
++  createEffect(() => {
++    void refresh()
++  })
+ 
+   const unsubCreated = props.api.event.on("session.created", (event) => {
+     const created = event.properties as { info?: { parentID?: string | null } }
+-- 
+2.50.1
+

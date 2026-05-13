@@ -143,6 +143,7 @@ _OPENCODE_CODE_PATCHES = [
     "0029-fix-inline-git-info-read-into-createNext-drop-broken.patch",
     "0030-fix-forward-TUI-process.cwd-when-dir-not-passed.patch",
     "0031-fix-stop-remote-URL-regex-at-first-non-space-token.patch",
+    "0032-fix-rerender-subagent-count-pill-on-session-focus-ch.patch",
 ]
 external_engines = module_extension(
     implementation = _ext_impl,

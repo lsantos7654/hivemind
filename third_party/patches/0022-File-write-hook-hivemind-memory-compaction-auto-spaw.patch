@@ -1,7 +1,7 @@
 From a2809fb5767fbc9ac4c2018c6f7ec940ef2af74d Mon Sep 17 00:00:00 2001
 From: Lucas Santos <lsantos7654@gmail.com>
 Date: Thu, 7 May 2026 21:58:46 -0400
-Subject: [PATCH 22/31] File-write hook + hivemind memory-compaction auto-spawn
+Subject: [PATCH 22/32] File-write hook + hivemind memory-compaction auto-spawn
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit

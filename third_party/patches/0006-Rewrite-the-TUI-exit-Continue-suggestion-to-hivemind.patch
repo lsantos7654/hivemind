@@ -1,7 +1,7 @@
 From 7b32bd4dc93621fd8a4e5d07d0cba0e3734a0752 Mon Sep 17 00:00:00 2001
 From: Lucas Santos <lsantos7654@gmail.com>
 Date: Mon, 20 Apr 2026 21:22:13 -0400
-Subject: [PATCH 06/31] Rewrite the TUI exit "Continue" suggestion to
+Subject: [PATCH 06/32] Rewrite the TUI exit "Continue" suggestion to
  `hivemind`
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8

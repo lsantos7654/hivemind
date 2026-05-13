@@ -1,7 +1,7 @@
 SHELL := /bin/bash
 
 .PHONY: help install update test unit lint typecheck engine-test format \
-        coverage engine clean dev dev-save dev-reset
+        coverage coverage-serve engine clean dev dev-save dev-reset
 
 BAZELISK ?= bazelisk
 LAUNCHER := $(HOME)/.local/bin/hivemind
@@ -82,6 +82,12 @@ coverage: ## Run all tests with coverage instrumentation, generate HTML.
 		--synthesize-missing \
 		"$$($(BAZELISK) info output_path)/_coverage/_coverage_report.dat"
 	@echo "Report: tools/coverage/coverage_output/htmlcov/index.html"
+	@echo "  open tools/coverage/coverage_output/htmlcov/index.html"
+	@echo "  or: make coverage-serve  →  http://localhost:8080/"
+
+coverage-serve: ## Serve the coverage report at http://localhost:8080/.
+	@echo "Serving at http://localhost:8080/"
+	@cd tools/coverage/coverage_output/htmlcov && python3 -m http.server 8080
 
 engine: ## Rebuild only the bun-compiled engine.
 	$(BAZELISK) build //:engine

@@ -1,7 +1,7 @@
 From cec74baa1f926cf5a6e222dafdcc3042340ef1f2 Mon Sep 17 00:00:00 2001
 From: Lucas Santos <lsantos7654@gmail.com>
 Date: Mon, 11 May 2026 00:14:03 -0400
-Subject: [PATCH 25/31] fix: stabilize engine typecheck + autoshare migration
+Subject: [PATCH 25/32] fix: stabilize engine typecheck + autoshare migration
  for Stage 1
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
