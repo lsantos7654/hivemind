@@ -1,8 +1,10 @@
-<pre align="center">
-█  █ ▀█▀ █  █ █▀▀█   █▄ ▄█ ▀█▀ █▀▀▄ █▀▀▄
-█^^█  █  █__█ █^^^   █_█_█  █  █__█ █__█
-▀~~▀ ▀▀▀  ▀▀  ▀▀▀▀   ▀   ▀ ▀▀▀ ▀~~▀ ▀▀▀
+<div align="center">
+<pre>
+█  █ ▀█▀ █  █ █▀▀█ █▄ ▄█ ▀█▀ █▀▀▄ █▀▀▄
+█▀▀█  █  █  █ █▀▀▀ █ █ █  █  █  █ █  █
+▀  ▀ ▀▀▀  ▀▀  ▀▀▀▀ ▀   ▀ ▀▀▀ ▀  ▀ ▀▀▀▀
 </pre>
+</div>
 
 Agent catalog manager for [OpenCode](https://opencode.ai) — clone repos, run
 AI-powered analysis, deploy expert subagents with structured knowledge docs and
