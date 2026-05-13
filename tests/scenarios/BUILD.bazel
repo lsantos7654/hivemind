@@ -1,0 +1,50 @@
+load("@aspect_rules_py//py:defs.bzl", "py_test")
+
+package(default_visibility = ["//visibility:public"])
+
+_SCENARIO_DEPS = [
+    "//src/hivemind:lib",
+    "@pypi//coverage",
+    "@pypi//pytest",
+]
+
+_SCENARIO_TAGS = [
+    "scenario",
+    "skipped",
+]
+
+py_test(
+    name = "test_phase01_generate_team",
+    srcs = [
+        "test_phase01_generate_team.py",
+        "//tests:conftest.py",
+    ],
+    imports = ["../.."],
+    pytest_main = True,
+    tags = _SCENARIO_TAGS,
+    deps = list(_SCENARIO_DEPS),
+)
+
+py_test(
+    name = "test_phase09_orchestrator_memory",
+    srcs = [
+        "test_phase09_orchestrator_memory.py",
+        "//tests:conftest.py",
+    ],
+    imports = ["../.."],
+    pytest_main = True,
+    tags = _SCENARIO_TAGS,
+    deps = list(_SCENARIO_DEPS),
+)
+
+py_test(
+    name = "test_phase10_hivemind_sync",
+    srcs = [
+        "test_phase10_hivemind_sync.py",
+        "//tests:conftest.py",
+    ],
+    imports = ["../.."],
+    pytest_main = True,
+    tags = _SCENARIO_TAGS,
+    deps = list(_SCENARIO_DEPS),
+)

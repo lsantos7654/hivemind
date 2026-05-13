@@ -1,7 +1,7 @@
-From 6933caf4d2f79e0f11e57e11ca239072f04fb9ac Mon Sep 17 00:00:00 2001
+From f41aa1f5055d78e145fad861b2ba1960d6f889e6 Mon Sep 17 00:00:00 2001
 From: Lucas Santos <lsantos7654@gmail.com>
 Date: Mon, 27 Apr 2026 00:43:23 -0400
-Subject: [PATCH 12/32] Per-session inbox with deferred delivery
+Subject: [PATCH 12/33] Per-session inbox with deferred delivery
 
 Adds POST /session/:sessionID/inbox and an in-memory SessionInbox queue
 so a chat message can be delivered to a session that's currently

@@ -150,7 +150,7 @@ async def update_agent(
 
         result = await update_git_expert(name, on_progress=on_progress)
         if not result.success:
-            return OperationResult(success=False, error=result.error or "update failed")
+            return OperationResult(success=False, error=result.error)
         # Redeploy if enabled so the new body is picked up
         if agent.enabled:
             agent.deploy(agents_dir=AGENTS_DIR)
@@ -199,14 +199,13 @@ def redeploy_all_agents() -> RedeployResult:
     # (curator + crawler) and backfill ref_name on git_analyzed entries
     # that lack it. Running here too (in addition to
     # ``bootstrap_workspace``) means ``hivemind redeploy`` is sufficient
-    # to bring up new system agents and to migrate existing catalogs.
+    # to bring up new system agents.
     def _noop_emit(label: str, status: str) -> None:
         pass
 
     _seed_system_templated(_noop_emit, "hivemind-expert-curator", "agents/hivemind-expert-curator.md.j2")
     _seed_system_templated(_noop_emit, "hivemind-crawler", "agents/hivemind-crawler.md.j2")
     _seed_system_templated(_noop_emit, "hivemind-memory-daemon", "agents/hivemind-memory-daemon.md.j2")
-    _backfill_ref_names_for_git_agents(_noop_emit)
 
     failed: list[str] = []
     teams_failed: list[str] = []
@@ -309,17 +308,6 @@ def bootstrap_workspace(  # noqa: C901 — orchestrates distinct init phases; sp
     _seed_system_templated(emit, "hivemind-crawler", "agents/hivemind-crawler.md.j2")
     _seed_system_templated(emit, "hivemind-memory-daemon", "agents/hivemind-memory-daemon.md.j2")
 
-    # One-shot migration: backfill ``ref_name`` on git_analyzed entries
-    # that were added without ``--ref`` (so the catalog stored
-    # ``ref_name=""``). Without this, ``show_agent`` returns a bare
-    # commit SHA with no provenance and downstream consumers
-    # (e.g. ``/hivemind_sync``) have to improvise via ``git describe``.
-    # We resolve ``origin/HEAD`` for each repo and store the default
-    # branch name (e.g. ``"main"``). Skip silently if the repo isn't
-    # cloned locally — it'll get backfilled on the next add of that
-    # expert via the forward fix in ``prep_create_expert``.
-    _backfill_ref_names_for_git_agents(emit)
-
     # Deploy every enabled agent. ``Agent.deploy`` handles memory tree
     # scaffolding internally per the agent's ``memory_enabled`` flag —
     # no explicit ``ensure_agent_memory`` call needed here.
@@ -387,24 +375,11 @@ def _seed_system_templated(
 ) -> None:
     """Idempotently seed a hivemind-managed ``system_templated`` agent.
 
-    Three behaviors:
-
-    - Stale entry of a different kind (e.g. legacy ``user_supplied``
-      from an earlier shipping shape): drop it, then seed fresh.
     - Not in catalog: seed + auto-enable.
     - Already in catalog as ``system_templated``: no-op (respect the
       user's enable/disable state from prior bootstraps).
     """
     existing = registry.get(name)
-    if existing is not None and existing.kind != "system_templated":
-        try:
-            registry.remove(name)
-            emit(name, "migrated (dropped stale entry)")
-            existing = None
-        except Exception as exc:
-            log.exception("failed to drop stale %s entry", name)
-            emit(name, f"migration failed: {exc}")
-            return
     if existing is not None:
         return
     try:
@@ -422,72 +397,6 @@ def _seed_system_templated(
     except Exception as exc:
         log.exception("failed to seed %s", name)
         emit(name, f"seed failed: {exc}")
-
-
-def _backfill_ref_names_for_git_agents(emit: Callable[[str, str], None]) -> None:
-    """One-shot: populate / repair ``ref_name`` for git_analyzed entries.
-
-    Three cases:
-
-    - ``ref_name == ""`` (initial backfill): resolve via
-      :func:`resolve_commit_provenance` (tag-exact-match preferred,
-      default branch fallback) and store the result.
-    - ``ref_name`` matches the upstream default branch (auto-backfilled
-      by an earlier run that didn't check tags): re-resolve and
-      overwrite if the new value differs (catches the prior backfill's
-      ``"master"``/``"main"`` answers when the commit IS at a tag).
-    - ``ref_name`` is anything else (user-set tag, custom branch, etc.):
-      leave alone.
-
-    Idempotent — once each entry's ``ref_name`` is the right tag or
-    a non-default-branch value, subsequent runs are no-ops. Skips
-    silently when the cached repo isn't on disk (offline / never
-    cloned) or when no ref resolves.
-    """
-    from hivemind.agents.base import run_coro_sync
-    from hivemind.agents.git_analyzed import GitAnalyzedBody
-    from hivemind.config import REPOS_DIR
-    from hivemind.git import resolve_commit_provenance, resolve_default_branch
-
-    for agent in registry.all_agents():
-        if not isinstance(agent.body, GitAnalyzedBody):
-            continue
-        repo_dir = REPOS_DIR / agent.name
-        if not repo_dir.is_dir():
-            continue
-        commit = agent.body.params.commit
-        if not commit:
-            continue
-        current_ref = agent.body.params.ref_name
-
-        # Decide whether this entry is eligible for re-resolution.
-        if current_ref:
-            try:
-                default_branch = run_coro_sync(resolve_default_branch(repo_dir))
-            except Exception:
-                log.exception("failed to resolve origin/HEAD for %s", agent.name)
-                continue
-            if not default_branch or current_ref != default_branch:
-                # User-set tag or custom branch — leave alone.
-                continue
-            # ``current_ref == default_branch`` → previously
-            # auto-backfilled, safe to overwrite if there's a tag now.
-
-        try:
-            new_ref = run_coro_sync(resolve_commit_provenance(repo_dir, commit))
-        except Exception:
-            log.exception("failed to resolve commit provenance for %s", agent.name)
-            continue
-        if not new_ref or new_ref == current_ref:
-            continue
-
-        agent.body.params.ref_name = new_ref
-        try:
-            registry.save_body(agent)
-            emit(agent.name, f"ref_name resolved to {new_ref}")
-        except Exception as exc:
-            log.exception("failed to save body after ref_name resolution for %s", agent.name)
-            emit(agent.name, f"ref_name resolution failed: {exc}")
 
 
 # ---------------------------------------------------------------------------

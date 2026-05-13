@@ -559,7 +559,7 @@ async def finalize_create_expert(prep: PrepCreateResult) -> OperationResult:
     from hivemind.agents.base import Agent
 
     if not prep.success:
-        return OperationResult(success=False, error=prep.error or "prep failed")
+        return OperationResult(success=False, error=prep.error)
     if (
         prep.repo_dir is None
         or prep.commit_dir is None
@@ -663,7 +663,7 @@ async def create_git_expert(
             is_update=False,
         )
         if not analysis_result.success:
-            return OperationResult(success=False, error=analysis_result.error or "AI analysis failed")
+            return OperationResult(success=False, error=analysis_result.error)
         return await finalize_create_expert(prep)
     finally:
         # Match pre-refactor behavior: convenience wrapper always GCs the
@@ -823,7 +823,7 @@ async def finalize_update_agent(prep: PrepUpdateResult) -> UpdateResult:
     from hivemind.agents import registry
 
     if not prep.success:
-        return UpdateResult(success=False, error=prep.error or "prep failed")
+        return UpdateResult(success=False, error=prep.error)
     if prep.already_up_to_date:
         return UpdateResult(
             success=True,
@@ -1185,7 +1185,7 @@ async def finalize_switch_version(prep: PrepSwitchResult) -> UpdateResult:
     from hivemind.agents import registry
 
     if not prep.success:
-        return UpdateResult(success=False, error=prep.error or "prep failed")
+        return UpdateResult(success=False, error=prep.error)
     if prep.already_up_to_date:
         return UpdateResult(
             success=True,

@@ -1,0 +1,328 @@
+From 466da00e9c471c5248fac94be164ca965fd43df5 Mon Sep 17 00:00:00 2001
+From: Lucas Santos <lsantos7654@gmail.com>
+Date: Tue, 12 May 2026 23:30:45 -0400
+Subject: [PATCH 33/33] =?UTF-8?q?test:=20add=20scenario=20test=20stubs=20(?=
+ =?UTF-8?q?Stage=2010=20=E2=80=94=20Stage=2011=20TODO)?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ .../test/scenarios/phase02-presence.test.ts   | 25 +++++++++++++
+ .../phase03-cross-session-messaging.test.ts   | 28 +++++++++++++++
+ .../phase04-background-spawn.test.ts          | 20 +++++++++++
+ .../scenarios/phase05-resume-memory.test.ts   | 27 ++++++++++++++
+ .../phase06-per-expert-daemon.test.ts         | 36 +++++++++++++++++++
+ .../phase07-source-fork-ephemeral.test.ts     | 28 +++++++++++++++
+ .../phase08-bidirectional-messaging.test.ts   | 21 +++++++++++
+ .../phase11-daemon-orchestrator.test.ts       | 27 ++++++++++++++
+ .../phase12-long-arc-session.test.ts          | 29 +++++++++++++++
+ 9 files changed, 241 insertions(+)
+ create mode 100644 packages/opencode/test/scenarios/phase02-presence.test.ts
+ create mode 100644 packages/opencode/test/scenarios/phase03-cross-session-messaging.test.ts
+ create mode 100644 packages/opencode/test/scenarios/phase04-background-spawn.test.ts
+ create mode 100644 packages/opencode/test/scenarios/phase05-resume-memory.test.ts
+ create mode 100644 packages/opencode/test/scenarios/phase06-per-expert-daemon.test.ts
+ create mode 100644 packages/opencode/test/scenarios/phase07-source-fork-ephemeral.test.ts
+ create mode 100644 packages/opencode/test/scenarios/phase08-bidirectional-messaging.test.ts
+ create mode 100644 packages/opencode/test/scenarios/phase11-daemon-orchestrator.test.ts
+ create mode 100644 packages/opencode/test/scenarios/phase12-long-arc-session.test.ts
+
+diff --git a/packages/opencode/test/scenarios/phase02-presence.test.ts b/packages/opencode/test/scenarios/phase02-presence.test.ts
+new file mode 100644
+index 0000000..cb2e69f
+--- /dev/null
++++ b/packages/opencode/test/scenarios/phase02-presence.test.ts
+@@ -0,0 +1,25 @@
++/**
++ * Phase 2 — The stack lights up.
++ *
++ * ▶ Test: Boot N TUIs in N tmpdir directories; the presence count converges
++ * to N within 100 ms of the last TUI's mount. Kill any single TUI and the
++ * count drops by exactly 1 within a beat.
++ *
++ * ▶ Test: Patch 0015's `_clients` map is keyed by underlying
++ * `ServerWebSocket`, not Hono's per-callback `WSContext` wrapper. An open
++ * WebSocket is the presence beacon; CLOSE frame triggers `onClose`
++ * synchronously.
++ */
++import { test } from "bun:test"
++
++test.skip("presence count converges to N TUIs", () => {
++  // TODO: Stage 11
++})
++
++test.skip("presence drops by 1 when TUI is killed", () => {
++  // TODO: Stage 11
++})
++
++test.skip("_clients map keyed by ServerWebSocket not WSContext wrapper", () => {
++  // TODO: Stage 11
++})
+diff --git a/packages/opencode/test/scenarios/phase03-cross-session-messaging.test.ts b/packages/opencode/test/scenarios/phase03-cross-session-messaging.test.ts
+new file mode 100644
+index 0000000..6313f25
+--- /dev/null
++++ b/packages/opencode/test/scenarios/phase03-cross-session-messaging.test.ts
+@@ -0,0 +1,28 @@
++/**
++ * Phase 3 — Orchestrator dispatches work to every branch.
++ *
++ * ▶ Test: `send_message` from session A → session B causes session B's
++ * inbox to fire, regardless of whether B is currently idle or mid-turn.
++ * Multiple inbox entries deliver in arrival order.
++ *
++ * ▶ Test: `send_message`-driven turns persist across TUI reconnect. If
++ * window B is closed mid-turn and reopened, the in-flight reply continues;
++ * the user sees its tail.
++ *
++ * ▶ Test: Fan-out from the orchestrator to N siblings runs truly in
++ * parallel — each receiving session enters busy state within tens of ms
++ * of the others. There is no orchestrator-side serialization queue.
++ */
++import { test } from "bun:test"
++
++test.skip("send_message fires inbox regardless of recipient state", () => {
++  // TODO: Stage 11
++})
++
++test.skip("send_message-driven turns persist across TUI reconnect", () => {
++  // TODO: Stage 11
++})
++
++test.skip("fan-out to N siblings runs in parallel", () => {
++  // TODO: Stage 11
++})
+diff --git a/packages/opencode/test/scenarios/phase04-background-spawn.test.ts b/packages/opencode/test/scenarios/phase04-background-spawn.test.ts
+new file mode 100644
+index 0000000..6965ab3
+--- /dev/null
++++ b/packages/opencode/test/scenarios/phase04-background-spawn.test.ts
+@@ -0,0 +1,20 @@
++/**
++ * Phase 4 — Deep design conversation with expert-rust (PR2).
++ *
++ * ▶ Test: Spawning an expert with `background=true` registers it in
++ * `SessionBackground` and returns immediately. Buffered result is
++ * consumable via `read_task_result`. Multi-turn extension via
++ * `send_message` into the subagent ID works.
++ *
++ * ▶ Test: Closing the parent TUI mid-conversation does not dispose the
++ * expert subagent. The session row + message history survive process exit.
++ */
++import { test } from "bun:test"
++
++test.skip("background spawn returns immediately and result is consumable", () => {
++  // TODO: Stage 11
++})
++
++test.skip("expert subagent survives parent TUI close", () => {
++  // TODO: Stage 11
++})
+diff --git a/packages/opencode/test/scenarios/phase05-resume-memory.test.ts b/packages/opencode/test/scenarios/phase05-resume-memory.test.ts
+new file mode 100644
+index 0000000..671fc07
+--- /dev/null
++++ b/packages/opencode/test/scenarios/phase05-resume-memory.test.ts
+@@ -0,0 +1,27 @@
++/**
++ * Phase 5 — Resume the rust conversation, days later.
++ *
++ * ▶ Test: `Task(task_id=...)` does not create a new session. The resumed
++ * session's parentID is unchanged; its message history is intact; its
++ * `time.updated` advances.
++ *
++ * ▶ Test: `Task(task_id=..., ephemeral=true)` is rejected at the schema
++ * layer (resume + ephemeral are mutually exclusive).
++ *
++ * ▶ Test: Expert memory tree (`long_memory.md` + topic files) is injected
++ * into the system prompt on every spawn — including resume — provided
++ * `memory: true` (default for experts).
++ */
++import { test } from "bun:test"
++
++test.skip("task_id resumes existing session without creating new one", () => {
++  // TODO: Stage 11
++})
++
++test.skip("task_id with ephemeral is rejected at schema layer", () => {
++  // TODO: Stage 11
++})
++
++test.skip("expert memory tree injected into system prompt on every spawn", () => {
++  // TODO: Stage 11
++})
+diff --git a/packages/opencode/test/scenarios/phase06-per-expert-daemon.test.ts b/packages/opencode/test/scenarios/phase06-per-expert-daemon.test.ts
+new file mode 100644
+index 0000000..9928a54
+--- /dev/null
++++ b/packages/opencode/test/scenarios/phase06-per-expert-daemon.test.ts
+@@ -0,0 +1,36 @@
++/**
++ * Phase 6 — Memory daemon cameo: per-expert (expert-bun).
++ *
++ * ▶ Test: Write a 9 KB short_memory file as a non-daemon agent in a session
++ * under main. Within a beat, exactly one daemon session spawns under main
++ * with the right metadata. Once the daemon finishes, no daemon session
++ * remains in main's children list. Repeat 5x: the subagents pill never
++ * accumulates daemons.
++ *
++ * ▶ Test: A second concurrent over-threshold write does NOT spawn a second
++ * daemon for the same target agent (the first is still alive).
++ *
++ * ▶ Test: The daemon's session row has `metadata.triggered_by_session`,
++ * `target_agent`, `triggered_at_bytes`. The metadata is queryable via
++ * standard session inspection.
++ *
++ * ▶ Test: Daemon session is `ephemeral === true`. Killing the daemon
++ * mid-pass also auto-deletes the session (cancelled is a terminal state).
++ */
++import { test } from "bun:test"
++
++test.skip("over-threshold write spawns exactly one daemon", () => {
++  // TODO: Stage 11
++})
++
++test.skip("concurrent write does not spawn duplicate daemon", () => {
++  // TODO: Stage 11
++})
++
++test.skip("daemon session has correct metadata fields", () => {
++  // TODO: Stage 11
++})
++
++test.skip("daemon session is ephemeral and auto-deletes on kill", () => {
++  // TODO: Stage 11
++})
+diff --git a/packages/opencode/test/scenarios/phase07-source-fork-ephemeral.test.ts b/packages/opencode/test/scenarios/phase07-source-fork-ephemeral.test.ts
+new file mode 100644
+index 0000000..23adff9
+--- /dev/null
++++ b/packages/opencode/test/scenarios/phase07-source-fork-ephemeral.test.ts
+@@ -0,0 +1,28 @@
++/**
++ * Phase 7 — Cross-session fork for context handoff (PR3 → PR4).
++ *
++ * ▶ Test: `Task(source_session_id=B, ephemeral=true)` from session A: a
++ * forked session F is created at depth-1 under A with B's history copied
++ * in. After the runner reaches idle, F is deleted. B is unmodified
++ * throughout (same `time.updated`, same children list).
++ *
++ * ▶ Test: F can read files / call MCP tools as a fully-formed session in
++ * its own right. Its permission ruleset is B's permission OR'd with the
++ * Task-tool child overlay (deny todowrite, deny task by default).
++ *
++ * ▶ Test: The Task tool's return value (summary) appears in A's message
++ * history even after F is deleted. The summary survives ephemeral cleanup.
++ */
++import { test } from "bun:test"
++
++test.skip("source fork creates ephemeral child; deletes on idle; source untouched", () => {
++  // TODO: Stage 11
++})
++
++test.skip("forked session has full session capabilities", () => {
++  // TODO: Stage 11
++})
++
++test.skip("Task return value survives ephemeral cleanup", () => {
++  // TODO: Stage 11
++})
+diff --git a/packages/opencode/test/scenarios/phase08-bidirectional-messaging.test.ts b/packages/opencode/test/scenarios/phase08-bidirectional-messaging.test.ts
+new file mode 100644
+index 0000000..20630d3
+--- /dev/null
++++ b/packages/opencode/test/scenarios/phase08-bidirectional-messaging.test.ts
+@@ -0,0 +1,21 @@
++/**
++ * Phase 8 — Branches messaging branches (peer-to-peer).
++ *
++ * ▶ Test: Bidirectional `send_message` between two idle sessions: each
++ * delivery wakes the recipient and queues the message into its inbox.
++ * Both sessions independently advance turns; the message order is
++ * preserved per-session.
++ *
++ * ▶ Test: `send_message` to a session that's mid-turn: the message lands
++ * in its inbox but does not interrupt the in-flight turn. The recipient
++ * picks it up on its next loop step.
++ */
++import { test } from "bun:test"
++
++test.skip("bidirectional send_message between idle sessions preserves order", () => {
++  // TODO: Stage 11
++})
++
++test.skip("send_message to mid-turn session does not interrupt in-flight turn", () => {
++  // TODO: Stage 11
++})
+diff --git a/packages/opencode/test/scenarios/phase11-daemon-orchestrator.test.ts b/packages/opencode/test/scenarios/phase11-daemon-orchestrator.test.ts
+new file mode 100644
+index 0000000..eb6fccf
+--- /dev/null
++++ b/packages/opencode/test/scenarios/phase11-daemon-orchestrator.test.ts
+@@ -0,0 +1,27 @@
++/**
++ * Phase 11 — Memory daemon cameo: orchestrator scope.
++ *
++ * ▶ Test: When the writer is `ses_orch_aaa` (no parent), the daemon spawns
++ * under `ses_orch_aaa` itself, not under some phantom parent.
++ *
++ * ▶ Test: The orchestrator's `_orchestrator` memory tree survives the
++ * daemon's compaction (file is rewritten in place, never moved). New topic
++ * files appear with descriptive names.
++ *
++ * ▶ Test: Cross-project: after a daemon-driven compaction in project A,
++ * switch to project B's worktree and spawn a fresh orchestrator turn. The
++ * orchestrator can recall A's pinned conventions when relevant.
++ */
++import { test } from "bun:test"
++
++test.skip("daemon spawns under orchestrator when writer has no parent", () => {
++  // TODO: Stage 11
++})
++
++test.skip("orchestrator memory tree survives daemon compaction", () => {
++  // TODO: Stage 11
++})
++
++test.skip("cross-project memory recall after compaction", () => {
++  // TODO: Stage 11
++})
+diff --git a/packages/opencode/test/scenarios/phase12-long-arc-session.test.ts b/packages/opencode/test/scenarios/phase12-long-arc-session.test.ts
+new file mode 100644
+index 0000000..dd63d17
+--- /dev/null
++++ b/packages/opencode/test/scenarios/phase12-long-arc-session.test.ts
+@@ -0,0 +1,29 @@
++/**
++ * Phase 12 — Stack ships, life moves on.
++ *
++ * ▶ Test: A session that has been idle for >7 days and survived multiple
++ * engine restarts can be resumed by `hivemind -- -s ses_xxx`. Full message
++ * history loads. Subsequent turns are continuous with the pre-restart
++ * history.
++ *
++ * ▶ Test: `Task(task_id=...)` against an old session still works after
++ * engine restart. Token-by-token continuity is preserved (no truncation,
++ * no resync glitches).
++ *
++ * ▶ Test: Long-arc memory: spawn expert-X in week 1, do work, let memory
++ * daemon compact. In week 4, spawn expert-X again. Expert's system prompt
++ * includes content from the topic files created in week 1.
++ */
++import { test } from "bun:test"
++
++test.skip("session survives week-long idle and engine restarts", () => {
++  // TODO: Stage 11
++})
++
++test.skip("task_id works against old session after engine restart", () => {
++  // TODO: Stage 11
++})
++
++test.skip("long-arc expert memory carries across spawns", () => {
++  // TODO: Stage 11
++})
+-- 
+2.50.1
+

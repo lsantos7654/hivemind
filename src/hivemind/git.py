@@ -324,7 +324,7 @@ def read_analysis_error(returncode: int, stderr_path: Path, stdout_path: Path) -
 def cleanup_log_files(*paths: Path) -> None:
     """Remove temporary log files, ignoring errors."""
     for p in paths:
-        with contextlib.suppress(Exception):
+        with contextlib.suppress(OSError):
             if p.exists():
                 p.unlink()
 
@@ -347,7 +347,7 @@ def commit_analysis_results(tmp_commit_dir: Path, expert_dir: Path, commit: str)
 async def revert_checkout(repo_dir: Path, old_commit: str | None) -> None:
     """Revert git checkout to old commit on failure."""
     if old_commit:
-        with contextlib.suppress(Exception):
+        with contextlib.suppress(OSError):
             proc = await asyncio.create_subprocess_exec(
                 "git",
                 "checkout",

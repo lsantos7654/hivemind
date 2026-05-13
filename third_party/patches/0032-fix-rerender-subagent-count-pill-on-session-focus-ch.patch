@@ -1,7 +1,7 @@
-From 1e46ff3f5896528b1d3341682b1c9e785eafb755 Mon Sep 17 00:00:00 2001
+From 212534df1c4ed01eb535ca980b4ea59965083963 Mon Sep 17 00:00:00 2001
 From: Lucas Santos <lsantos7654@gmail.com>
 Date: Tue, 12 May 2026 20:42:01 -0400
-Subject: [PATCH 32/32] fix: rerender subagent count pill on session focus
+Subject: [PATCH 32/33] fix: rerender subagent count pill on session focus
  change
 
 Also includes: return to parent session when drilled-in ephemeral

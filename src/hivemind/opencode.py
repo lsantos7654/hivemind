@@ -752,42 +752,7 @@ def _post_init_dirs() -> list[InitResult]:
     results.append(InitResult(label="opencode.json", status="path-token permissions merged"))
     results.append(InitResult(label="opencode.json", status="mcp server registered"))
 
-    # TUI plugins are no longer installed: their functionality (HIVEMIND
-    # branding + connection indicator) is now baked into the bundled engine
-    # via patches under //third_party/patches/. We still clean up any stale
-    # plugin files from previous hivemind installs so leftover `file://`
-    # entries in tui.json don't fail to load.
-    _purge_legacy_tui_plugins(home, results)
-
     return results
-
-
-def _purge_legacy_tui_plugins(home: Path, results: list[InitResult]) -> None:
-    """Remove any tui-plugins/ entries hivemind shipped before the bun-vendor era."""
-    legacy_stems = ("branding", "connection-indicator", "hivemind")
-    plugins_dir = home / "tui-plugins"
-    if plugins_dir.exists():
-        removed: list[str] = []
-        for child in plugins_dir.iterdir():
-            if any(stem in child.name for stem in legacy_stems):
-                child.unlink(missing_ok=True)
-                removed.append(child.name)
-        if removed:
-            results.append(InitResult(label="tui-plugins/", status=f"removed legacy: {', '.join(removed)}"))
-
-    tui_config_path = home / "tui.json"
-    if tui_config_path.exists() and not tui_config_path.is_symlink():
-        with contextlib.suppress(FileNotFoundError, json.JSONDecodeError):
-            tui_existing: dict[str, Any] = json.loads(tui_config_path.read_text(encoding="utf-8"))
-            raw_plugins = tui_existing.get("plugin", [])
-            if isinstance(raw_plugins, list):
-                filtered = [
-                    p for p in raw_plugins if not (isinstance(p, str) and any(stem in p for stem in legacy_stems))
-                ]
-                if filtered != raw_plugins:
-                    tui_existing["plugin"] = filtered
-                    tui_config_path.write_text(json.dumps(tui_existing, indent=2) + "\n", encoding="utf-8")
-                    results.append(InitResult(label="tui.json", status="legacy plugin entries purged"))
 
 
 def _load_opencode_defaults() -> dict[str, Any]:

@@ -69,6 +69,33 @@ _TEST_FILES = [
 # Engine TypeScript type-check (Stage 0.4)
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# Engine scenario test stubs (Stage 10 — docs/TESTING_ROADMAP.md)
+#
+# One target per phase in docs/WORKFLOW_SCENARIO.md. All are
+# `test.skip("TODO: Stage 11")` — surface area for future
+# implementation. Files land in packages/opencode/test/scenarios/
+# via a code patch created by `make dev-save`.
+# ---------------------------------------------------------------------------
+
+_SCENARIO_FILES = glob(["packages/opencode/test/scenarios/*.test.ts"])
+
+[
+    bun_test(
+        name = "scenario_" + (
+            f.removeprefix("packages/opencode/test/scenarios/")
+                .removesuffix(".test.ts")
+        ),
+        src = f,
+        tags = ["scenario", "skipped"],
+    )
+    for f in _SCENARIO_FILES
+]
+
+# ---------------------------------------------------------------------------
+# Engine TypeScript type-check (Stage 0.4)
+# ---------------------------------------------------------------------------
+
 tsc_test(
     name = "engine_typecheck",
     package_marker = "packages/opencode/package.json",

@@ -1,7 +1,7 @@
-From b1a77b1cf0e62d612637f06c3bb4d69bf4880077 Mon Sep 17 00:00:00 2001
+From 07cb322150d259d9f3d8007fe3f2c50be9d9c0d9 Mon Sep 17 00:00:00 2001
 From: Lucas Santos <lsantos7654@gmail.com>
 Date: Mon, 11 May 2026 00:21:31 -0400
-Subject: [PATCH 26/32] =?UTF-8?q?fix:=20remaining=20tsgo=20errors=20?=
+Subject: [PATCH 26/33] =?UTF-8?q?fix:=20remaining=20tsgo=20errors=20?=
  =?UTF-8?q?=E2=80=94=20port!=20assertions,=20slot=20types,=20nextSession?=
  =?UTF-8?q?=20guard?=
 MIME-Version: 1.0

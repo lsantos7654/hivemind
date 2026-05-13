@@ -1,7 +1,7 @@
-From 0195955cafd8df30ec47cf4208d037cc5ec242b6 Mon Sep 17 00:00:00 2001
+From efb13df28678733bbed6742b4279ab0fa00bc807 Mon Sep 17 00:00:00 2001
 From: Lucas Santos <lsantos7654@gmail.com>
 Date: Mon, 11 May 2026 14:01:34 -0400
-Subject: [PATCH 28/32] Add TUI metadata to presence WebSocket protocol
+Subject: [PATCH 28/33] Add TUI metadata to presence WebSocket protocol
 
 Expands _clients entries with dir, branch, remote so observers
 can see which worktree each TUI connection belongs to. The TUI

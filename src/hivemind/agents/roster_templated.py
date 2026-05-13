@@ -176,7 +176,7 @@ class RosterTemplatedBody:
 
 
 # ---------------------------------------------------------------------------
-# AI section generation (unchanged from legacy teams.py)
+# AI section generation
 # ---------------------------------------------------------------------------
 
 
@@ -443,7 +443,7 @@ async def finalize_create_team(prep: PrepCreateTeamResult) -> OperationResult:
     from hivemind.agents.base import Agent
 
     if not prep.success:
-        return OperationResult(success=False, error=prep.error or "prep failed")
+        return OperationResult(success=False, error=prep.error)
     if prep.staging_root is None or not prep.name or not prep.experts:
         return OperationResult(success=False, error="prep result is missing required fields")
 

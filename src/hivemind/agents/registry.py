@@ -79,39 +79,18 @@ def load() -> dict[str, Agent]:
 
     ``roster_templated`` entries are sourced from ``config.json.teams``
     (per-machine, gitignored). All other kinds come from
-    ``hivemind.json.agents`` (committed). On first encounter after an
-    upgrade, any stale ``roster_templated`` entries in ``hivemind.json``
-    are auto-migrated into ``config.json`` and removed from the committed
-    catalog.
+    ``hivemind.json.agents`` (committed).
     """
     hivemind_cfg = load_hivemind()
     app_cfg = load_config()
     enabled_set = set(app_cfg.enabled)
 
-    # Detect and auto-migrate stale roster_templated entries from
-    # hivemind.json (committed) into config.json (per-machine).
-    stale_roster: list[str] = []
-    for name, entry in list(hivemind_cfg.agents.items()):
-        if entry.kind == "roster_templated":
-            stale_roster.append(name)
-    if stale_roster:
-        for name in stale_roster:
-            entry = hivemind_cfg.agents.pop(name)
-            if isinstance(entry.body, RosterTemplatedParams) and name not in app_cfg.teams:
-                # Clone the params so we don't share a mutable ref.
-                app_cfg.teams[name] = RosterTemplatedParams(
-                    description=entry.body.description,
-                    experts=list(entry.body.experts),
-                )
-        save_hivemind(hivemind_cfg)
-        save_config(app_cfg)
-
     agents: dict[str, Agent] = {}
-    # Materialise from hivemind.json (committed catalog — all non-roster kinds).
+    # Materialise from hivemind.json (committed catalog — non-roster kinds).
     for name, entry in hivemind_cfg.agents.items():
         try:
             body = _body_from_catalog(name, entry)
-        except Exception:
+        except (ValueError, TypeError, KeyError):
             import logging
 
             logging.getLogger(__name__).exception("failed to materialise agent %r", name)
@@ -120,12 +99,21 @@ def load() -> dict[str, Agent]:
 
     # Materialise teams from config.json.teams (per-machine).
     for name, params in app_cfg.teams.items():
+        if name in agents:
+            import logging
+
+            logging.getLogger(__name__).error(
+                "name collision: %r exists in both hivemind.json (as %s) and config.json.teams — skipping team",
+                name,
+                agents[name].kind,
+            )
+            continue
         try:
             from hivemind.agents.roster_templated import RosterTemplatedBody
 
             body = RosterTemplatedBody(name=name, params=params)
             agents[name] = Agent(name=name, body=body, enabled=name in enabled_set)
-        except Exception:
+        except (ValueError, TypeError, KeyError):
             import logging
 
             logging.getLogger(__name__).exception("failed to materialise team %r", name)
@@ -184,6 +172,10 @@ def add(agent: Agent) -> None:
     if agent.kind == "roster_templated":
         from hivemind.agents.roster_templated import RosterTemplatedBody
 
+        hivemind_cfg = load_hivemind()
+        if agent.name in hivemind_cfg.agents:
+            msg = f"agent {agent.name!r} already exists as {hivemind_cfg.agents[agent.name].kind}"
+            raise ValueError(msg)
         app_cfg = load_config()
         if agent.name in app_cfg.teams:
             msg = f"team {agent.name!r} already in catalog"
@@ -192,6 +184,10 @@ def add(agent: Agent) -> None:
         app_cfg.teams[agent.name] = agent.body.params
         save_config(app_cfg)
     else:
+        app_cfg = load_config()
+        if agent.name in app_cfg.teams:
+            msg = f"team {agent.name!r} already exists with that name"
+            raise ValueError(msg)
         hivemind_cfg = load_hivemind()
         if agent.name in hivemind_cfg.agents:
             msg = f"agent {agent.name!r} already in catalog"
@@ -213,6 +209,10 @@ def save_body(agent: Agent) -> None:
     if agent.kind == "roster_templated":
         from hivemind.agents.roster_templated import RosterTemplatedBody
 
+        hivemind_cfg = load_hivemind()
+        if agent.name in hivemind_cfg.agents:
+            msg = f"agent {agent.name!r} already exists as {hivemind_cfg.agents[agent.name].kind}"
+            raise ValueError(msg)
         app_cfg = load_config()
         if agent.name not in app_cfg.teams:
             msg = f"team {agent.name!r} not in catalog"
@@ -221,6 +221,10 @@ def save_body(agent: Agent) -> None:
         app_cfg.teams[agent.name] = agent.body.params
         save_config(app_cfg)
     else:
+        app_cfg = load_config()
+        if agent.name in app_cfg.teams:
+            msg = f"team {agent.name!r} already exists with that name"
+            raise ValueError(msg)
         hivemind_cfg = load_hivemind()
         if agent.name not in hivemind_cfg.agents:
             msg = f"agent {agent.name!r} not in catalog"

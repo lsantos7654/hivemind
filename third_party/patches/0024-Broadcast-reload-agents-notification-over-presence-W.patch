@@ -1,7 +1,7 @@
-From 927fd28758e42190616bff8555034ac08bdb2bea Mon Sep 17 00:00:00 2001
+From 4f294577ea7d9b040bb6d2d3207626d62c647613 Mon Sep 17 00:00:00 2001
 From: Lucas Santos <lsantos7654@gmail.com>
 Date: Sun, 10 May 2026 23:40:19 -0400
-Subject: [PATCH 24/32] Broadcast reload-agents notification over presence
+Subject: [PATCH 24/33] Broadcast reload-agents notification over presence
  WebSocket
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8

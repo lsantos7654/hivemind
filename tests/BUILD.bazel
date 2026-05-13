@@ -74,6 +74,17 @@ py_test(
     deps = list(_PYTEST_DEPS),
 )
 
+py_test(
+    name = "test_registry",
+    srcs = [
+        "test_registry.py",
+    ],
+    imports = [".."],
+    pytest_main = True,
+    tags = _PYTEST_TAGS,
+    deps = list(_PYTEST_DEPS),
+)
+
 # ---------------------------------------------------------------------------
 # Quality gates (Stage 0)
 #

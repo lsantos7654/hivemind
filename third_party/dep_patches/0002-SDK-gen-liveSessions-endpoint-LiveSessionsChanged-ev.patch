@@ -1,7 +1,7 @@
-From 1724c22ae7c53c2e34feeb3e4577728c452f3217 Mon Sep 17 00:00:00 2001
+From 78816326984f110c21d329382da52776cace5bd7 Mon Sep 17 00:00:00 2001
 From: Lucas Santos <lsantos7654@gmail.com>
 Date: Fri, 1 May 2026 01:52:42 -0400
-Subject: [PATCH 02/32] SDK gen: liveSessions endpoint + LiveSessionsChanged
+Subject: [PATCH 02/33] SDK gen: liveSessions endpoint + LiveSessionsChanged
  event type
 
 Adds the typed bindings the TUI footer plugin uses:
