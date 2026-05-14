@@ -1,7 +1,7 @@
 From b7e1d5e873861cfa540bbdd2ca337832ff17094e Mon Sep 17 00:00:00 2001
 From: Lucas Santos <lsantos7654@gmail.com>
 Date: Mon, 11 May 2026 18:02:09 -0400
-Subject: [PATCH 31/33] fix: stop remote URL regex at first non-space token
+Subject: [PATCH 31/36] fix: stop remote URL regex at first non-space token
 
 The (.+) with /s flag greedily captured everything after url= to
 end of file, producing URLs like 'https://x.git\n\tfetch = ...'.

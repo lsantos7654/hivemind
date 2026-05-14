@@ -145,6 +145,9 @@ _OPENCODE_CODE_PATCHES = [
     "0031-fix-stop-remote-URL-regex-at-first-non-space-token.patch",
     "0032-fix-rerender-subagent-count-pill-on-session-focus-ch.patch",
     "0033-test-add-scenario-test-stubs-Stage-10-Stage-11-TODO.patch",
+    "0034-test-implement-Stage-11-scenario-tests-phases-2-8-11.patch",
+    "0035-fix-Effect.gen-sleep-inbox-test-without-server.patch",
+    "0036-fix-dedup-test-reflects-current-state-Effect.exit-fo.patch",
 ]
 external_engines = module_extension(
     implementation = _ext_impl,

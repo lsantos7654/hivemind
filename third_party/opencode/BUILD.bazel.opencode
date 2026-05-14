@@ -45,12 +45,14 @@ _TEST_FILES = glob(["packages/opencode/test/**/*.test.ts"])
 #   effect/cross-spawn-spawner — requires `node` in PATH (sandbox has only bun)
 #   lsp/index               — runs `npm install` (network needed)
 #   memory/abort-leak        — fetches https://example.com + sandbox memory profile
+#   scenarios/*              — scenario test stubs (duplicated via _SCENARIO_FILES below)
 _TEST_FILES = [
     f
     for f in _TEST_FILES
     if not ("effect/cross-spawn-spawner.test.ts" in f or
             "lsp/index.test.ts" in f or
-            "memory/abort-leak.test.ts" in f)
+            "memory/abort-leak.test.ts" in f or
+            "scenarios/" in f)
 ]
 
 [
@@ -87,7 +89,7 @@ _SCENARIO_FILES = glob(["packages/opencode/test/scenarios/*.test.ts"])
                 .removesuffix(".test.ts")
         ),
         src = f,
-        tags = ["scenario", "skipped"],
+        tags = ["scenario"],
     )
     for f in _SCENARIO_FILES
 ]

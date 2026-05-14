@@ -1,7 +1,7 @@
 From 7c176c4def9cfc90aa1521f305e5dad5091333cf Mon Sep 17 00:00:00 2001
 From: Lucas Santos <lsantos7654@gmail.com>
 Date: Mon, 11 May 2026 17:53:17 -0400
-Subject: [PATCH 30/33] fix: forward TUI process.cwd() when --dir not passed
+Subject: [PATCH 30/36] fix: forward TUI process.cwd() when --dir not passed
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit

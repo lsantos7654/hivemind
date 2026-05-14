@@ -8,10 +8,7 @@ _SCENARIO_DEPS = [
     "@pypi//pytest",
 ]
 
-_SCENARIO_TAGS = [
-    "scenario",
-    "skipped",
-]
+_SCENARIO_TAGS = ["scenario"]
 
 py_test(
     name = "test_phase01_generate_team",

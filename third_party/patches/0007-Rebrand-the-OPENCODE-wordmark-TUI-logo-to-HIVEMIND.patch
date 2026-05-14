@@ -1,7 +1,7 @@
 From 11830e9bb15a78444775c8966c30db2a2c46c8d2 Mon Sep 17 00:00:00 2001
 From: Lucas Santos <lsantos7654@gmail.com>
 Date: Mon, 20 Apr 2026 21:22:13 -0400
-Subject: [PATCH 07/33] Rebrand the OPENCODE wordmark + TUI logo to HIVEMIND
+Subject: [PATCH 07/36] Rebrand the OPENCODE wordmark + TUI logo to HIVEMIND
 
 Replaces the two ASCII-art glyph sources in the opencode source tree
 that the user sees: the static `wordmark` array used by the exit screen
