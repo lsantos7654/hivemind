@@ -26,6 +26,11 @@ _env = Environment(
 )
 
 
+def list_templates() -> list[str]:
+    """Return the full list of template names available to :func:`render`."""
+    return _env.list_templates()
+
+
 def render(template_name: str, **kwargs: object) -> str:
     """Render a Jinja2 template by name."""
     return _env.get_template(template_name).render(**kwargs)

@@ -37,6 +37,7 @@ from hivemind.config import (
     TEAMS_DIR,
     ensure_external_docs_link,
     ensure_repos_link,
+    load_config,
 )
 from hivemind.deployment import regenerate_hivemind_md, regenerate_librarian
 from hivemind.hooks import fire_post_mutation
@@ -196,16 +197,13 @@ def redeploy_all_agents() -> RedeployResult:
     sync_user_supplied_agents()
 
     # Idempotent — seed the hivemind-managed system_templated agents
-    # (curator + crawler) and backfill ref_name on git_analyzed entries
-    # that lack it. Running here too (in addition to
-    # ``bootstrap_workspace``) means ``hivemind redeploy`` is sufficient
-    # to bring up new system agents.
+    # (auto-discovered from templates/agents/*.md.j2). Running here too
+    # (in addition to ``bootstrap_workspace``) means ``hivemind redeploy``
+    # is sufficient to bring up new system agents.
     def _noop_emit(label: str, status: str) -> None:
         pass
 
-    _seed_system_templated(_noop_emit, "hivemind-expert-curator", "agents/hivemind-expert-curator.md.j2")
-    _seed_system_templated(_noop_emit, "hivemind-crawler", "agents/hivemind-crawler.md.j2")
-    _seed_system_templated(_noop_emit, "hivemind-memory-daemon", "agents/hivemind-memory-daemon.md.j2")
+    _seed_all_system_templated(_noop_emit)
 
     failed: list[str] = []
     teams_failed: list[str] = []
@@ -295,18 +293,11 @@ def bootstrap_workspace(  # noqa: C901 — orchestrates distinct init phases; sp
     sync_user_supplied_agents()
     emit("opencode/agents/", "synced")
 
-    # Seed hivemind-managed system_templated agents (the curator + the
-    # crawler). They're rendered from
-    # ``src/hivemind/templates/agents/<name>.md.j2`` rather than dropped
-    # into ``opencode/agents/`` by the user. Auto-enabled on first seed;
-    # subsequent bootstraps respect any explicit disable.
-    #
-    # Migration: earlier revisions shipped the curator as a user_supplied
-    # agent under ``opencode/agents/``. If a stale catalog entry of that
-    # kind exists, ``_seed_system_templated`` drops it before re-seeding.
-    _seed_system_templated(emit, "hivemind-expert-curator", "agents/hivemind-expert-curator.md.j2")
-    _seed_system_templated(emit, "hivemind-crawler", "agents/hivemind-crawler.md.j2")
-    _seed_system_templated(emit, "hivemind-memory-daemon", "agents/hivemind-memory-daemon.md.j2")
+    # Seed hivemind-managed system_templated agents (auto-discovered from
+    # ``src/hivemind/templates/agents/*.md.j2`` — drop a Jinja template
+    # there and it auto-registers on the next init/redeploy). Auto-enabled
+    # on first seed; subsequent bootstraps respect any explicit disable.
+    _seed_all_system_templated(emit)
 
     # Deploy every enabled agent. ``Agent.deploy`` handles memory tree
     # scaffolding internally per the agent's ``memory_enabled`` flag —
@@ -376,11 +367,25 @@ def _seed_system_templated(
     """Idempotently seed a hivemind-managed ``system_templated`` agent.
 
     - Not in catalog: seed + auto-enable.
-    - Already in catalog as ``system_templated``: no-op (respect the
-      user's enable/disable state from prior bootstraps).
+    - Already in catalog as ``system_templated`` and enabled: no-op.
+    - Already in catalog but not enabled: auto-enable unless the user
+      has explicitly disabled it (i.e. the name appears in
+      ``config.json.disabled``).
     """
     existing = registry.get(name)
     if existing is not None:
+        if existing.enabled:
+            return
+        # Agent exists but isn't enabled. Check whether the user
+        # explicitly disabled it — if not (e.g. the entry landed in
+        # hivemind.json via a teammate's push and this machine has
+        # never seen it), auto-enable now.
+        app_cfg = load_config()
+        if name in app_cfg.disabled:
+            return  # user explicitly disabled — respect their choice
+        # Not explicitly disabled — treat as unlisted and auto-enable.
+        registry.set_enabled(name, enabled=True)
+        emit(name, "auto-enabled (was unlisted)")
         return
     try:
         from hivemind.agents.base import Agent
@@ -397,6 +402,24 @@ def _seed_system_templated(
     except Exception as exc:
         log.exception("failed to seed %s", name)
         emit(name, f"seed failed: {exc}")
+
+
+def _seed_all_system_templated(emit: Callable[[str, str], None]) -> None:
+    """Auto-discover and seed every ``templates/agents/*.md.j2`` template.
+
+    The name is derived from the filename: ``hivemind-crawler.md.j2`` →
+    ``hivemind-crawler``. Drop a new ``.md.j2`` file in the directory and
+    the next ``hivemind init`` or ``hivemind redeploy`` auto-registers it
+    — no source-code edits needed.
+    """
+    from hivemind.templates import list_templates
+
+    for path in list_templates():
+        if not path.startswith("agents/") or not path.endswith(".md.j2"):
+            continue
+        filename = path.removeprefix("agents/")
+        name = filename.removesuffix(".md.j2")
+        _seed_system_templated(emit, name, path)
 
 
 # ---------------------------------------------------------------------------
