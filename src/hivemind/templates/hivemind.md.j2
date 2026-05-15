@@ -4,16 +4,20 @@ Hivemind manages a curated catalog of domain-expert and team-lead agents
 exposed to opencode as subagents. You consult experts via the built-in
 `Task` tool and manage the catalog via the hivemind MCP tools.
 
-## Expert reuse rule (hard limit)
+## Expert reuse rule (hard limit — do not violate)
 
 Each expert session is a persistent resource for the duration of this
 conversation. For ALL follow-up questions in the same domain, resume
 the same session with `Task(task_id="ses_...", ...)` — never spawn
 a fresh expert. A new session has no memory of prior Q&A.
 
-- At most one session per expert type per conversation.
+- At most one session per expert type per conversation. Spawning the
+  same expert type twice within one conversation is always wrong.
 - `hivemind_send_message` is for cross-session TUI messaging — NOT
   for continuing expert conversations. Use `task_id` for follow-ups.
+- If an expert's synchronous result is truncated or hard to read, use
+  `hivemind_read_session(session_id=...)` to read the full exchange.
+  Do NOT re-spawn the same expert.
 - If you need input from an expert you haven't spawned yet, check
   `hivemind_list_sessions` to see if one is already running.
 
