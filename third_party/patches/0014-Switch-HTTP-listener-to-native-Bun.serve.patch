@@ -1,7 +1,7 @@
-From 6031ccbe1d774fd57f78dd9aeeadb0d77053bb29 Mon Sep 17 00:00:00 2001
+From 5024c1f197e983354f5042116da0bd92c4fb197a Mon Sep 17 00:00:00 2001
 From: Lucas Santos <lsantos7654@gmail.com>
 Date: Fri, 1 May 2026 01:51:53 -0400
-Subject: [PATCH 17/36] Switch HTTP listener to native Bun.serve
+Subject: [PATCH 14/24] Switch HTTP listener to native Bun.serve
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit

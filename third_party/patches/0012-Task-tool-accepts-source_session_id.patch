@@ -1,49 +1,48 @@
-From 130d0215fbc4150eaaab2879371fc3262320f013 Mon Sep 17 00:00:00 2001
+From 2b41de70d562337cab58592d9360ac04d714e23a Mon Sep 17 00:00:00 2001
 From: Lucas Santos <lsantos7654@gmail.com>
-Date: Wed, 29 Apr 2026 00:41:30 -0400
-Subject: [PATCH 15/36] Background Task mode and lifecycle (Task tool)
+Date: Tue, 28 Apr 2026 21:08:44 -0400
+Subject: [PATCH 12/24] Task tool accepts source_session_id
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
-Adds `background: true` to the built-in Task tool: spawns a subagent,
-returns immediately with a `task_id`, buffers the result on the
-session, and lets the parent pick it up via `read_task_result` on the
-next turn. Cancelling the parent cascades to running background
-children. New `GET /global/background-tasks` endpoint exposes the
-buffer for cross-session inspection.
+Adds an optional source_session_id parameter to Task. When set, the
+new subagent session is created via Session.fork (deep-copying the
+source's full message history) instead of Session.create (fresh
+context). The source session itself is untouched — fork is a separate
+DB row.
 
-Includes the wake-up mechanism that lets the parent become aware of
-a finished background task without user input. `SessionPrompt.continue_`
-issues a minimal turn (one synthetic text part) when
-`SessionBackground.complete` schedules a wake-up.
+Mechanism:
+  - Reject up front if both task_id and source_session_id are
+    supplied — they're conceptually different operations (resume vs
+    fork-and-spawn) and the model gets a clear error.
+  - Lift the existing child-permission overlay (deny todowrite, deny
+    task, primary_tools allow) into a single value reused by both the
+    create-fresh and fork-from-source paths.
+  - In the fork path, fetch the source's stored permission ruleset
+    via Session.get and stack the child overlay on top — so source-
+    side rules carry over while Task's child-hardening still applies.
+  - Everything past the session-resolution branch is unchanged: same
+    ctx.metadata({ ..., metadata: { sessionId: ... }}), same
+    SessionPrompt.prompt, same drill-down ToolPart shape.
 
-The synthetic wake-up message went through three iterations to reach
-its final form. Recording the history because the dead ends are
-non-obvious:
+This means the orchestrator's existing ctrl-x-down drill-down works
+automatically against fork-from-source spawns — they're regular
+"task" ToolParts from the TUI's perspective. Replaces hivemind's
+external query_session_fork pattern for orchestrator-originating
+context queries (the MCP tool stays around for subagent-originating
+queries that don't have Task permission).
 
-  1. Empty text — dropped by `MessageV2.toModelMessagesEffect`, which
-     leaves the assistant message trailing. Claude rejected this as a
-     prefill.
-  2. Single dot "." — accepted by the API, but the model treated it
-     as a no-op user message, ignored the system-reminder, and replied
-     with generic continuation text instead of calling
-     `read_task_result`.
-  3. Explicit directive — "[Background task complete] Call
-     read_task_result(task_id=...)" — the model reliably calls the
-     tool. The synthetic flag still suppresses chat-UI render of the
-     wake-up message.
-
-Future iterations of synthetic-message flows should start from
-the directive form.
+Pairs with patch 0015 (Session.fork accepts permission).
 ---
  packages/opencode/src/server/routes/global.ts |  33 +++
  packages/opencode/src/session/background.ts   | 221 ++++++++++++++++++
  packages/opencode/src/session/prompt.ts       |  86 +++++++
  .../opencode/src/tool/read-task-result.ts     |  64 +++++
  packages/opencode/src/tool/registry.ts        |   3 +
- packages/opencode/src/tool/task.ts            |  94 ++++++--
- 6 files changed, 484 insertions(+), 17 deletions(-)
+ packages/opencode/src/tool/task.ts            | 199 ++++++++++++----
+ packages/opencode/src/tool/task.txt           |   2 +-
+ 7 files changed, 560 insertions(+), 48 deletions(-)
  create mode 100644 packages/opencode/src/session/background.ts
  create mode 100644 packages/opencode/src/tool/read-task-result.ts
 
@@ -563,7 +562,7 @@ index 800c45c..9e3b052 100644
                tool.todo,
                tool.search,
 diff --git a/packages/opencode/src/tool/task.ts b/packages/opencode/src/tool/task.ts
-index cfdcaff..f94ccb4 100644
+index b97b53b..f94ccb4 100644
 --- a/packages/opencode/src/tool/task.ts
 +++ b/packages/opencode/src/tool/task.ts
 @@ -6,6 +6,7 @@ import { SessionID, MessageID } from "../session/schema"
@@ -574,10 +573,16 @@ index cfdcaff..f94ccb4 100644
  import { Config } from "../config/config"
  import { Permission } from "@/permission"
  import { Effect } from "effect"
-@@ -29,6 +30,12 @@ const parameters = z.object({
-       "Optional. Pass a session ID to fork that session into a fresh subagent instead of starting from scratch. The fork inherits the source's full message history and permission rules; the source itself is untouched. Useful for follow-up questions that need another session's accumulated context. Mutually exclusive with task_id.",
+@@ -23,6 +24,18 @@ const parameters = z.object({
+       "This should only be set if you mean to resume a previous task (you can pass a prior task_id and the task will continue the same subagent session as before instead of creating a fresh one)",
      )
      .optional(),
++  source_session_id: z
++    .string()
++    .describe(
++      "Optional. Pass a session ID to fork that session into a fresh subagent instead of starting from scratch. The fork inherits the source's full message history and permission rules; the source itself is untouched. Useful for follow-up questions that need another session's accumulated context. Mutually exclusive with task_id.",
++    )
++    .optional(),
 +  background: z
 +    .boolean()
 +    .describe(
@@ -587,7 +592,130 @@ index cfdcaff..f94ccb4 100644
    command: z.string().describe("The command that triggered this task").optional(),
  })
  
-@@ -161,6 +168,75 @@ export const TaskTool = Tool.defineEffect(
+@@ -35,6 +48,18 @@ export const TaskTool = Tool.defineEffect(
+     const run = Effect.fn("TaskTool.execute")(function* (params: z.infer<typeof parameters>, ctx: Tool.Context) {
+       const cfg = yield* config.get()
+ 
++      // Hivemind: source_session_id and task_id are conceptually
++      // different operations (fork-from-source vs resume-existing).
++      // Reject up front so the model gets a clear error instead of
++      // silently picking one.
++      if (params.task_id && params.source_session_id) {
++        return yield* Effect.fail(
++          new Error(
++            "task_id and source_session_id are mutually exclusive — resume an existing task or fork a source, not both",
++          ),
++        )
++      }
++
+       if (!ctx.extra?.bypassAgentCheck) {
+         yield* Effect.promise(() =>
+           ctx.ask({
+@@ -57,46 +82,73 @@ export const TaskTool = Tool.defineEffect(
+       const canTask = next.permission.some((rule) => rule.permission === id)
+       const canTodo = next.permission.some((rule) => rule.permission === "todowrite")
+ 
++      // Permission overlay applied to every Task-spawned child. Built
++      // once and reused by the create-fresh and fork-from-source paths
++      // so they share identical hardening (deny todowrite, deny task,
++      // allow experimental.primary_tools).
++      const childPermissionOverlay = [
++        ...(canTodo
++          ? []
++          : [
++              {
++                permission: "todowrite" as const,
++                pattern: "*" as const,
++                action: "deny" as const,
++              },
++            ]),
++        ...(canTask
++          ? []
++          : [
++              {
++                permission: id,
++                pattern: "*" as const,
++                action: "deny" as const,
++              },
++            ]),
++        ...(cfg.experimental?.primary_tools?.map((item) => ({
++          pattern: "*",
++          action: "allow" as const,
++          permission: item,
++        })) ?? []),
++      ]
++
+       const taskID = params.task_id
+-      const session = taskID
++      const existing = taskID
+         ? yield* Effect.promise(() => {
+             const id = SessionID.make(taskID)
+             return Session.get(id).catch(() => undefined)
+           })
+         : undefined
+-      const nextSession =
+-        session ??
+-        (yield* Effect.promise(() =>
++
++      // Resolve the subagent session: existing (resume) >
++      // fork-from-source (Hivemind) > create fresh (default).
++      let nextSession
++      if (existing) {
++        nextSession = existing
++      } else if (params.source_session_id) {
++        // Hivemind: fork-from-source path. The new subagent starts
++        // with the source session's full message history copied in;
++        // the source itself is untouched. Permission inherits the
++        // source's stored ruleset and stacks Task's child-hardening
++        // overlay on top.
++        const sourceID = SessionID.make(params.source_session_id)
++        const original = yield* Effect.promise(() => Session.get(sourceID))
++        nextSession = yield* Effect.promise(() =>
++          Session.fork({
++            sessionID: sourceID,
++            parentID: ctx.sessionID,
++            permission: [...(original.permission ?? []), ...childPermissionOverlay],
++          }),
++        )
++      } else {
++        nextSession = yield* Effect.promise(() =>
+           Session.create({
+             parentID: ctx.sessionID,
+             title: params.description + ` (@${next.name} subagent)`,
+-            permission: [
+-              ...(canTodo
+-                ? []
+-                : [
+-                    {
+-                      permission: "todowrite" as const,
+-                      pattern: "*" as const,
+-                      action: "deny" as const,
+-                    },
+-                  ]),
+-              ...(canTask
+-                ? []
+-                : [
+-                    {
+-                      permission: id,
+-                      pattern: "*" as const,
+-                      action: "deny" as const,
+-                    },
+-                  ]),
+-              ...(cfg.experimental?.primary_tools?.map((item) => ({
+-                pattern: "*",
+-                action: "allow" as const,
+-                permission: item,
+-              })) ?? []),
+-            ],
++            permission: childPermissionOverlay,
+           }),
+-        ))
++        )
++      }
+ 
+       const msg = yield* Effect.sync(() => MessageV2.get({ sessionID: ctx.sessionID, messageID: ctx.messageID }))
+       if (msg.info.role !== "assistant") return yield* Effect.fail(new Error("Not an assistant message"))
+@@ -116,6 +168,75 @@ export const TaskTool = Tool.defineEffect(
  
        const messageID = MessageID.ascending()
  
@@ -663,7 +791,7 @@ index cfdcaff..f94ccb4 100644
        function cancel() {
          SessionPrompt.cancel(nextSession.id)
        }
-@@ -172,23 +248,7 @@ export const TaskTool = Tool.defineEffect(
+@@ -127,23 +248,7 @@ export const TaskTool = Tool.defineEffect(
          () =>
            Effect.gen(function* () {
              const parts = yield* Effect.promise(() => SessionPrompt.resolvePromptParts(params.prompt))
@@ -688,6 +816,19 @@ index cfdcaff..f94ccb4 100644
  
              return {
                title: params.description,
+diff --git a/packages/opencode/src/tool/task.txt b/packages/opencode/src/tool/task.txt
+index fba8470..bd36693 100644
+--- a/packages/opencode/src/tool/task.txt
++++ b/packages/opencode/src/tool/task.txt
+@@ -15,7 +15,7 @@ When NOT to use the Task tool:
+ Usage notes:
+ 1. Launch multiple agents concurrently whenever possible, to maximize performance; to do that, use a single message with multiple tool uses
+ 2. When the agent is done, it will return a single message back to you. The result returned by the agent is not visible to the user. To show the user the result, you should send a text message back to the user with a concise summary of the result. The output includes a task_id you can reuse later to continue the same subagent session.
+-3. Each agent invocation starts with a fresh context unless you provide task_id to resume the same subagent session (which continues with its previous messages and tool outputs). When starting fresh, your prompt should contain a highly detailed task description for the agent to perform autonomously and you should specify exactly what information the agent should return back to you in its final and only message to you.
++3. Each agent invocation starts with a fresh context unless you provide task_id to resume the same subagent session (which continues with its previous messages and tool outputs), or source_session_id to fork an existing session and run with that session's full message history as starting context (the source session itself is untouched). task_id and source_session_id are mutually exclusive. When starting fresh, your prompt should contain a highly detailed task description for the agent to perform autonomously and you should specify exactly what information the agent should return back to you in its final and only message to you.
+ 4. The agent's outputs should generally be trusted
+ 5. Clearly tell the agent whether you expect it to write code or just to do research (search, file reads, web fetches, etc.), since it is not aware of the user's intent. Tell it how to verify its work if possible (e.g., relevant test commands).
+ 6. If the agent description mentions that it should be used proactively, then you should try your best to use it without the user having to ask for it first. Use your judgement.
 -- 
 2.50.1
 

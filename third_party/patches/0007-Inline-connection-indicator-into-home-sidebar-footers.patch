@@ -1,7 +1,63 @@
-From a0d04a2d3e76c8c80fa94d4e6112aad141aa2b62 Mon Sep 17 00:00:00 2001
+From bf8b7a61c1f1d7a823b303b4ede810f2c03bd6f7 Mon Sep 17 00:00:00 2001
 From: Lucas Santos <lsantos7654@gmail.com>
-Date: Mon, 20 Apr 2026 21:22:13 -0400
-Subject: [PATCH 08/36] Inline connection indicator into home + sidebar footers
+Date: Thu, 14 May 2026 21:15:15 -0400
+Subject: [PATCH 07/24] # This is a combination of 3 commits. # This is the 1st
+ commit message:
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Rewrite the TUI exit "Continue" suggestion to `hivemind`
+
+The opencode TUI prints a `Continue  opencode -s <session-id>` line on
+exit. Under hivemind, the user-facing CLI is `hivemind`, not `opencode`,
+so we rewrite the literal so the suggested command actually works.
+
+The literal is hardcoded — there is no plugin slot, event, env var, or
+config seam that lets a TUI plugin override the line (verified against
+upstream source). This patch is the only path that currently works and
+is the originating motivation for the bun-vendored build.
+
+# This is the commit message #2:
+
+Rebrand the OPENCODE wordmark + TUI logo to HIVEMIND
+
+Replaces the two ASCII-art glyph sources in the opencode source tree
+that the user sees: the static `wordmark` array used by the exit screen
+(`cli/ui.ts`), and the `logo.left`/`logo.right` paired arrays used by
+the home-screen `<Logo />` component (`cli/logo.ts`).
+
+Replaces the work of the deprecated `opencode/plugins/branding.js` TUI
+plugin with a native source-level patch.
+
+The HIVEMIND art is taken from the original branding plugin (5 slash-
+art lines). The wordmark is trimmed to 4 lines to match the existing
+exit-message template that references `logo[0]..logo[3]`. The TUI
+`<Logo />` component iterates `logo.left` so we put the full 5-line art
+on the left and emit empty padding strings on the right; the existing
+shadow-marker rendering still works on the empty strings (no-op).
+
+# The commit message #3 will be skipped:
+
+# Inline connection indicator into home + sidebar footers
+#
+# Replaces the deprecated `opencode/plugins/connection-indicator.js` TUI
+# plugin with a native source-level patch that renders the same indicator
+# (standalone / hivemind-managed / remote) inside opencode's two built-in
+# footer plugins:
+#
+#   packages/opencode/src/cli/cmd/tui/feature-plugins/home/footer.tsx
+#   packages/opencode/src/cli/cmd/tui/feature-plugins/sidebar/footer.tsx
+#
+# The detection logic is identical to the original plugin: scan
+# `process.argv` for an `attach`/`--attach <url>` pair, parse the URL,
+# compare against `~/.cache/hivemind/server.json` to distinguish a
+# hivemind-managed server from a remote one.
+#
+# Hunks use full-file context (-U999) because Bazel's Starlark patch
+# parser is stricter than `patch(1)` and can mis-track positions across
+# hunks with large gaps; one giant hunk per file sidesteps that.
+Inline connection indicator into home + sidebar footers
 
 Replaces the deprecated `opencode/plugins/connection-indicator.js` TUI
 plugin with a native source-level patch that renders the same indicator

@@ -1,7 +1,7 @@
-From bc6e62d8d3713c6389a039634e88cdbb04ca7b7d Mon Sep 17 00:00:00 2001
+From d3a314e7d9c6a7a285ae649bc9cbe4cd2138b9fa Mon Sep 17 00:00:00 2001
 From: Lucas Santos <lsantos7654@gmail.com>
 Date: Fri, 8 May 2026 01:54:49 -0400
-Subject: [PATCH 04/36] Strip placeholder package.json scripts
+Subject: [PATCH 04/24] Strip placeholder package.json scripts
 
 ---
  packages/opencode/package.json | 7 -------

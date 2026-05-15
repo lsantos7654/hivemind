@@ -1,7 +1,26 @@
-From 11830e9bb15a78444775c8966c30db2a2c46c8d2 Mon Sep 17 00:00:00 2001
+From 74f6da38cea41c9f3c63587e9221a36d9f1e2ebf Mon Sep 17 00:00:00 2001
 From: Lucas Santos <lsantos7654@gmail.com>
 Date: Mon, 20 Apr 2026 21:22:13 -0400
-Subject: [PATCH 07/36] Rebrand the OPENCODE wordmark + TUI logo to HIVEMIND
+Subject: [PATCH 06/24] # This is a combination of 2 commits. # This is the 1st
+ commit message:
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Rewrite the TUI exit "Continue" suggestion to `hivemind`
+
+The opencode TUI prints a `Continue  opencode -s <session-id>` line on
+exit. Under hivemind, the user-facing CLI is `hivemind`, not `opencode`,
+so we rewrite the literal so the suggested command actually works.
+
+The literal is hardcoded — there is no plugin slot, event, env var, or
+config seam that lets a TUI plugin override the line (verified against
+upstream source). This patch is the only path that currently works and
+is the originating motivation for the bun-vendored build.
+
+# This is the commit message #2:
+
+Rebrand the OPENCODE wordmark + TUI logo to HIVEMIND
 
 Replaces the two ASCII-art glyph sources in the opencode source tree
 that the user sees: the static `wordmark` array used by the exit screen
@@ -18,10 +37,24 @@ exit-message template that references `logo[0]..logo[3]`. The TUI
 on the left and emit empty padding strings on the right; the existing
 shadow-marker rendering still works on the empty strings (no-op).
 ---
- packages/opencode/src/cli/logo.ts | 14 ++++++++++++--
- packages/opencode/src/cli/ui.ts   |  8 ++++----
- 2 files changed, 16 insertions(+), 6 deletions(-)
+ .../src/cli/cmd/tui/routes/session/index.tsx       |  2 +-
+ packages/opencode/src/cli/logo.ts                  | 14 ++++++++++++--
+ packages/opencode/src/cli/ui.ts                    |  8 ++++----
+ 3 files changed, 17 insertions(+), 7 deletions(-)
 
+diff --git a/packages/opencode/src/cli/cmd/tui/routes/session/index.tsx b/packages/opencode/src/cli/cmd/tui/routes/session/index.tsx
+index 32a9d13..1f061cc 100644
+--- a/packages/opencode/src/cli/cmd/tui/routes/session/index.tsx
++++ b/packages/opencode/src/cli/cmd/tui/routes/session/index.tsx
+@@ -257,7 +257,7 @@ export function Session() {
+         `${logo[3] ?? ""}`,
+         ``,
+         `  ${weak("Session")}${UI.Style.TEXT_NORMAL_BOLD}${title}${UI.Style.TEXT_NORMAL}`,
+-        `  ${weak("Continue")}${UI.Style.TEXT_NORMAL_BOLD}opencode -s ${session()?.id}${UI.Style.TEXT_NORMAL}`,
++        `  ${weak("Continue")}${UI.Style.TEXT_NORMAL_BOLD}hivemind -- -s ${session()?.id}${UI.Style.TEXT_NORMAL}`,
+         ``,
+       ].join("\n"),
+     )
 diff --git a/packages/opencode/src/cli/logo.ts b/packages/opencode/src/cli/logo.ts
 index 44fb93c..f5c1b40 100644
 --- a/packages/opencode/src/cli/logo.ts

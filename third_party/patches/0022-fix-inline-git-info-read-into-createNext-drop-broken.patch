@@ -1,7 +1,7 @@
-From fb5b67f4e66d0c98f818681a16f04f68495ec51a Mon Sep 17 00:00:00 2001
+From d83ac106380c7ef3c0beb3a3faf02c0b827afe92 Mon Sep 17 00:00:00 2001
 From: Lucas Santos <lsantos7654@gmail.com>
 Date: Mon, 11 May 2026 17:30:46 -0400
-Subject: [PATCH 29/36] fix: inline git info read into createNext, drop broken
+Subject: [PATCH 22/24] fix: inline git info read into createNext, drop broken
  Effect.fnUntraced
 
 The readGitInfo Effect.fnUntraced wrapper compiled to an object
@@ -9,11 +9,39 @@ rather than a callable, causing 'readGitInfo is not a function'
 at session creation. Inlined the sync filesystem logic directly
 into createNext as a yield* Effect.sync block.
 ---
- packages/opencode/src/session/index.ts | 60 ++++++++++++--------------
- 1 file changed, 28 insertions(+), 32 deletions(-)
+ packages/opencode/src/cli/cmd/tui/attach.ts   |  2 +-
+ .../opencode/src/server/routes/presence.ts    |  2 +-
+ packages/opencode/src/session/index.ts        | 60 +++++++++----------
+ 3 files changed, 30 insertions(+), 34 deletions(-)
 
+diff --git a/packages/opencode/src/cli/cmd/tui/attach.ts b/packages/opencode/src/cli/cmd/tui/attach.ts
+index e892f99..289758c 100644
+--- a/packages/opencode/src/cli/cmd/tui/attach.ts
++++ b/packages/opencode/src/cli/cmd/tui/attach.ts
+@@ -51,7 +51,7 @@ export const AttachCommand = cmd({
+       }
+ 
+       const directory = (() => {
+-        if (!args.dir) return undefined
++        if (!args.dir) return process.cwd()
+         try {
+           process.chdir(args.dir)
+           return process.cwd()
+diff --git a/packages/opencode/src/server/routes/presence.ts b/packages/opencode/src/server/routes/presence.ts
+index 3f75d8c..3d3e9b1 100644
+--- a/packages/opencode/src/server/routes/presence.ts
++++ b/packages/opencode/src/server/routes/presence.ts
+@@ -30,7 +30,7 @@ function gitMeta(dir: string): Record<string, string> {
+     }
+     try {
+       const cfg = new TextDecoder().decode(readFileSync(path.join(root, "config")))
+-      const m = cfg.match(/\[remote\s+"origin"\][^\[]*url\s*=\s*(.+)/s)
++      const m = cfg.match(/\[remote\s+"origin"\][^\[]*url\s*=\s*(\S+)/m)
+       if (m) out.remote = m[1].trim()
+     } catch {}
+   } catch {}
 diff --git a/packages/opencode/src/session/index.ts b/packages/opencode/src/session/index.ts
-index c6b1e07..0f080be 100644
+index c6b1e07..4e295e7 100644
 --- a/packages/opencode/src/session/index.ts
 +++ b/packages/opencode/src/session/index.ts
 @@ -393,37 +393,6 @@ export namespace Session {
@@ -81,7 +109,7 @@ index c6b1e07..0f080be 100644
 +            }
 +            try {
 +              const cfg = new TextDecoder().decode(readFileSync(path.join(root, "config")))
-+              const m = cfg.match(/\[remote\s+"origin"\][^\[]*url\s*=\s*(.+)/s)
++              const m = cfg.match(/\[remote\s+"origin"\][^\[]*url\s*=\s*(\S+)/m)
 +              if (m) out.git_remote_url = m[1].trim()
 +            } catch {}
 +          } catch {}

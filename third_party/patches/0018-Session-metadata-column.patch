@@ -1,94 +1,69 @@
-From 99eb96e32842e1c13e05801ab946cf4444abd350 Mon Sep 17 00:00:00 2001
+From a558a402b2067781e2528d5cfa64cf8c724b42e4 Mon Sep 17 00:00:00 2001
 From: Lucas Santos <lsantos7654@gmail.com>
-Date: Thu, 7 May 2026 23:28:59 -0400
-Subject: [PATCH 23/36] Ephemeral subagent sessions
+Date: Thu, 7 May 2026 21:58:15 -0400
+Subject: [PATCH 18/24] Session metadata column
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
-Adds an `ephemeral` boolean to sessions. When set, the session is
-deleted automatically when its runner reaches idle on a terminal
-turn (completed | failed | cancelled). For background-mode
-subagents the delete is deferred until the parent consumes the
-buffered result via read_task_result, so the result isn't lost.
+Adds a JSON-typed `metadata` column to the `session` table so callers
+can attach structured attribution to each session. Round-trips
+through `Session.create({metadata: {...}})`, `Session.get(id).metadata`,
+and the SDK's create/get types.
 
-Subagents that aren't designed for resume — the memory daemon,
-the expert curator, explore-style one-offs — accumulate in main's
-session tree today. Manual cleanup via delete_session is the only
-escape hatch. With this change the subagent tree only shows
-long-lived agents (experts, team leads) plus any in-flight
-one-offs; one-offs vanish when done.
+Used by the hivemind memory-compaction daemon to record
+`triggered_by_session`, `target_agent`, and `triggered_at_bytes` on
+each spawn — so observers (TUI session tree, MCP `list_sessions`,
+future tooling) can see why a session exists without parsing its
+title.
 
-Schema:
-
-  - `session.ephemeral` boolean column with default false (Drizzle
-    migration `20260508023927_session_ephemeral`)
-  - `Session.Info` Zod schema field
-  - `Session.toRow` / `fromRow` map it
-  - `Session.create` / `Session.fork` accept `ephemeral?: boolean`
-
-Finalizers:
-
-  - `SessionRunState.onIdle` looks up the session and removes it
-    when ephemeral and not registered as a background task
-  - `SessionBackground.consume` removes the consumed session when
-    ephemeral. New `SessionBackground.isRegistered(taskID)` helper
-    discriminates background vs foreground at the run-state seam
-  - Both finalizers use dynamic imports for the cross-module call
-    to avoid a top-level cycle (background.ts already imports
-    SessionRunState.assertNotBusy)
-
-Task tool:
-
-  - `Task(ephemeral?: boolean)` parameter, mutually exclusive with
-    `task_id` (resume defeats ephemeral; rejected at the schema
-    layer)
-  - Effective ephemeral = per-spawn override OR agent frontmatter
-    default. Agents that should always be ephemeral declare
-    `ephemeral: true` in `agent.md` frontmatter
-  - Pass-through to Session.create / Session.fork
-
-Agent + config:
-
-  - `Agent.Info.ephemeral` runtime field
-  - Config Agent schema accepts `ephemeral` in frontmatter
-  - Agent state composer threads it from cfg into the runtime info
-
-Hivemind callsite:
-
-  - `HivemindMemoryPlugin` auto-spawn passes `ephemeral: true` so
-    the daemon's session vanishes after each compaction pass
-
-Tests:
-
-  - `test/session/ephemeral.test.ts` — round-trip, fork, consume()
-    deletion semantics, isRegistered helper
-  - `test/tool/task-ephemeral.test.ts` — per-spawn override,
-    default false, mutual-exclusion with task_id, frontmatter
-    default applied, per-spawn override beats frontmatter
-  - `test/plugin/hivemind-memory.test.ts` extended to assert the
-    auto-spawned daemon has ephemeral=true
-
-Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+  - session.sql.ts: `metadata: text({mode: "json"}).$type<...>()`
+  - migration/20260507120000_session_metadata/migration.sql:
+      ALTER TABLE `session` ADD `metadata` text;
+  - session/index.ts: `Info.metadata` zod schema; `createNext` and
+      `create` accept `metadata?: Record<string, unknown>`.
+  - projectors.ts: pass-through in `toPartialRow`; `fromRow`/`toRow`
+      already covered by the schema reflection.
+  - test/session/metadata.test.ts: round-trip, default-undefined,
+      nested-values.
 ---
+ .../migration.sql                             |   1 +
  .../migration.sql                             |   1 +
  packages/opencode/src/agent/agent.ts          |   6 +
  packages/opencode/src/config/config.ts        |   7 +
- .../opencode/src/plugin/hivemind-memory.ts    |  16 +-
+ .../opencode/src/plugin/hivemind-memory.ts    | 143 +++++++
+ packages/opencode/src/plugin/index.ts         |  52 ++-
  packages/opencode/src/session/background.ts   |  38 ++
- packages/opencode/src/session/index.ts        |  22 ++
- packages/opencode/src/session/projectors.ts   |   1 +
+ packages/opencode/src/session/index.ts        |  35 ++
+ packages/opencode/src/session/projectors.ts   |   2 +
  packages/opencode/src/session/run-state.ts    |  33 ++
- packages/opencode/src/session/session.sql.ts  |   5 +
+ packages/opencode/src/session/session.sql.ts  |   6 +
+ packages/opencode/src/tool/edit.ts            |  17 +
  packages/opencode/src/tool/task.ts            |  28 ++
- .../test/plugin/hivemind-memory.test.ts       |   5 +
+ packages/opencode/src/tool/write.ts           |  15 +
+ .../test/plugin/file-write-hook.test.ts       | 189 ++++++++++
+ .../test/plugin/hivemind-memory.test.ts       | 143 +++++++
  .../opencode/test/session/ephemeral.test.ts   | 108 ++++++
+ .../opencode/test/session/metadata.test.ts    |  57 +++
  .../opencode/test/tool/task-ephemeral.test.ts | 350 ++++++++++++++++++
- 13 files changed, 618 insertions(+), 2 deletions(-)
+ packages/plugin/src/index.ts                  |  17 +
+ 20 files changed, 1247 insertions(+), 1 deletion(-)
+ create mode 100644 packages/opencode/migration/20260507120000_session_metadata/migration.sql
  create mode 100644 packages/opencode/migration/20260508023927_session_ephemeral/migration.sql
+ create mode 100644 packages/opencode/src/plugin/hivemind-memory.ts
+ create mode 100644 packages/opencode/test/plugin/file-write-hook.test.ts
+ create mode 100644 packages/opencode/test/plugin/hivemind-memory.test.ts
  create mode 100644 packages/opencode/test/session/ephemeral.test.ts
+ create mode 100644 packages/opencode/test/session/metadata.test.ts
  create mode 100644 packages/opencode/test/tool/task-ephemeral.test.ts
 
+diff --git a/packages/opencode/migration/20260507120000_session_metadata/migration.sql b/packages/opencode/migration/20260507120000_session_metadata/migration.sql
+new file mode 100644
+index 0000000..1f8fcaf
+--- /dev/null
++++ b/packages/opencode/migration/20260507120000_session_metadata/migration.sql
+@@ -0,0 +1 @@
++ALTER TABLE `session` ADD `metadata` text;
 diff --git a/packages/opencode/migration/20260508023927_session_ephemeral/migration.sql b/packages/opencode/migration/20260508023927_session_ephemeral/migration.sql
 new file mode 100644
 index 0000000..935e452
@@ -146,28 +121,131 @@ index cee060b..e9c4ecc 100644
  
        // Extract unknown properties into options
 diff --git a/packages/opencode/src/plugin/hivemind-memory.ts b/packages/opencode/src/plugin/hivemind-memory.ts
-index f85e052..0cfa89d 100644
---- a/packages/opencode/src/plugin/hivemind-memory.ts
+new file mode 100644
+index 0000000..0cfa89d
+--- /dev/null
 +++ b/packages/opencode/src/plugin/hivemind-memory.ts
-@@ -103,8 +103,12 @@ export const HivemindMemoryPlugin = async (input: PluginInput): Promise<Hooks> =
-         const targetAgent = match[1]
- 
-         try {
+@@ -0,0 +1,143 @@
++/**
++ * Hivemind: memory-compaction auto-spawn plugin.
++ *
++ * Listens for writes to `~/.config/opencode/hivemind/memory/<agent>/short_memory.md`
++ * via the engine's `onFileWrite` hook (registered by pattern). When a write
++ * crosses the byte threshold configured in hivemind.json, spawns the
++ * `hivemind-memory-daemon` system_templated agent as a depth-1 sibling of
++ * the writer under main. The daemon runs one compaction pass and exits.
++ *
++ * Design properties:
++ *   - No chain walking: the writer's `parent_id` is read once. In the
++ *     hivemind depth=1 model the writer is either main itself
++ *     (`parent_id == null`) or a direct child of main, so the daemon's
++ *     `parent_id` is `writer.parent_id ?? writer.id`.
++ *   - Recursion guard: if the writer's own agent IS the daemon, skip.
++ *   - Structured attribution: the spawned daemon's `metadata` carries
++ *     `triggered_by_session`, `target_agent`, `triggered_at_bytes`.
++ *   - Threshold from hivemind.json:memory.compaction_threshold_bytes.
++ *     Cached per process; invalidated by mtime check.
++ */
++
++import type { Hooks, PluginInput } from "@opencode-ai/plugin"
++import path from "node:path"
++import { Log } from "../util/log"
++
++const log = Log.create({ service: "plugin.hivemind-memory" })
++
++const DAEMON_AGENT = "hivemind-memory-daemon"
++const MEMORY_PATH_PATTERN = "**/hivemind/memory/**/short_memory.md"
++const HIVEMIND_JSON_CANDIDATES = [
++  // Workspace path the user runs hivemind from. Resolved relative to the
++  // launcher cwd; the engine sees process.cwd() when invoked.
++  "hivemind.json",
++  // Cache mirror used by long-running daemons.
++  path.join(process.env.HOME ?? "~", ".cache/hivemind/hivemind.json"),
++]
++const DEFAULT_THRESHOLD_BYTES = 8192
++
++interface ThresholdConfig {
++  threshold_bytes: number
++}
++
++let _configCache: { config: ThresholdConfig; mtimeMs: number; path: string } | null = null
++
++async function readMemoryConfig(): Promise<ThresholdConfig> {
++  for (const candidate of HIVEMIND_JSON_CANDIDATES) {
++    try {
++      const file = Bun.file(candidate)
++      const stat = await file.stat()
++      if (_configCache && _configCache.path === candidate && _configCache.mtimeMs === stat.mtimeMs) {
++        return _configCache.config
++      }
++      const json = (await file.json()) as { memory?: { compaction_threshold_bytes?: number } }
++      const threshold_bytes = json.memory?.compaction_threshold_bytes ?? DEFAULT_THRESHOLD_BYTES
++      const config = { threshold_bytes }
++      _configCache = { config, mtimeMs: stat.mtimeMs, path: candidate }
++      return config
++    } catch {
++      // try next candidate
++    }
++  }
++  return { threshold_bytes: DEFAULT_THRESHOLD_BYTES }
++}
++
++const SHORT_MEMORY_RE = /\/hivemind\/memory\/([^/]+)\/short_memory\.md$/
++
++export const HivemindMemoryPlugin = async (input: PluginInput): Promise<Hooks> => {
++  const { client } = input
++
++  return {
++    onFileWrite: {
++      patterns: [MEMORY_PATH_PATTERN],
++      handler: async ({ sessionID, path: writePath, bytes, tool }) => {
++        const config = await readMemoryConfig()
++        if (bytes < config.threshold_bytes) return
++
++        // Single typed lookup. No chain walking.
++        let writer
++        try {
++          const result = await client.session.get({ path: { id: sessionID as `ses_${string}` } })
++          writer = result.data
++        } catch (err) {
++          log.warn("memory-hook: failed to fetch writer session", { sessionID, err })
++          return
++        }
++        if (!writer) return
++
++        // Recursion guard: don't spawn another daemon when the daemon
++        // itself writes back to a memory file.
++        const writerAgent = (writer as { agent?: string }).agent
++        if (writerAgent === DAEMON_AGENT) return
++
++        // Depth-1 invariant: writer is either main or a direct child of main.
++        // Reading parent_id once is sufficient — never null for a subagent,
++        // null only when the writer IS main (rare for memory writes but
++        // valid for the orchestrator's _orchestrator/short_memory.md).
++        const writerParent = (writer as { parentID?: string; parent_id?: string }).parentID
++          ?? (writer as { parent_id?: string }).parent_id
++        const mainID = writerParent ?? sessionID
++
++        const match = SHORT_MEMORY_RE.exec(writePath)
++        if (!match) return
++        const targetAgent = match[1]
++
++        try {
 +          // Hivemind: `agent`, `metadata`, and `ephemeral` are hivemind
 +          // engine extensions not in the V1 OpenAPI spec the SDK was
 +          // generated from. Cast through `unknown` so the call site
 +          // documents the intent without abusing `// @ts-expect-error`
 +          // (which would suppress unrelated future errors silently).
-           await client.session.create({
--            // @ts-expect-error — metadata field added by hivemind patch
-             body: {
-               parentID: mainID,
-               agent: DAEMON_AGENT,
-@@ -114,7 +118,15 @@ export const HivemindMemoryPlugin = async (input: PluginInput): Promise<Hooks> =
-                 target_agent: targetAgent,
-                 triggered_at_bytes: bytes,
-               },
--            },
++          await client.session.create({
++            body: {
++              parentID: mainID,
++              agent: DAEMON_AGENT,
++              title: `compact memory: ${targetAgent}`,
++              metadata: {
++                triggered_by_session: sessionID,
++                target_agent: targetAgent,
++                triggered_at_bytes: bytes,
++              },
 +              // Hivemind: the daemon is one-off. Auto-delete its session
 +              // when it reaches terminal state so the subagent tree only
 +              // shows long-lived agents instead of accumulating one
@@ -177,9 +255,109 @@ index f85e052..0cfa89d 100644
 +              // behavior is visible at the call site.
 +              ephemeral: true,
 +            } as unknown as { parentID?: string; title?: string },
-           })
-           log.info("memory-hook: spawned daemon", {
-             target_agent: targetAgent,
++          })
++          log.info("memory-hook: spawned daemon", {
++            target_agent: targetAgent,
++            triggered_by: sessionID,
++            parent: mainID,
++            bytes,
++          })
++        } catch (err) {
++          log.error("memory-hook: failed to spawn daemon", { err })
++        }
++      },
++    },
++  }
++}
+diff --git a/packages/opencode/src/plugin/index.ts b/packages/opencode/src/plugin/index.ts
+index 814e787..396ea95 100644
+--- a/packages/opencode/src/plugin/index.ts
++++ b/packages/opencode/src/plugin/index.ts
+@@ -11,6 +11,7 @@ import { CopilotAuthPlugin } from "./github-copilot/copilot"
+ import { gitlabAuthPlugin as GitlabAuthPlugin } from "opencode-gitlab-auth"
+ import { PoeAuthPlugin } from "opencode-poe-auth"
+ import { CloudflareAIGatewayAuthPlugin, CloudflareWorkersAuthPlugin } from "./cloudflare"
++import { HivemindMemoryPlugin } from "./hivemind-memory"
+ import { Effect, Layer, ServiceMap, Stream } from "effect"
+ import { InstanceState } from "@/effect/instance-state"
+ import { makeRuntime } from "@/effect/run-service"
+@@ -42,6 +43,12 @@ export namespace Plugin {
+     ) => Effect.Effect<Output>
+     readonly list: () => Effect.Effect<Hooks[]>
+     readonly init: () => Effect.Effect<void>
++    readonly notifyFileWrite: (input: {
++      path: string
++      sessionID: string
++      bytes: number
++      tool: "write" | "edit"
++    }) => Effect.Effect<void>
+   }
+ 
+   export class Service extends ServiceMap.Service<Service, Interface>()("@opencode/Plugin") {}
+@@ -54,6 +61,7 @@ export namespace Plugin {
+     PoeAuthPlugin,
+     CloudflareWorkersAuthPlugin,
+     CloudflareAIGatewayAuthPlugin,
++    HivemindMemoryPlugin,
+   ]
+ 
+   function isServerPlugin(value: unknown): value is PluginInstance {
+@@ -265,7 +273,36 @@ export namespace Plugin {
+         yield* InstanceState.get(state)
+       })
+ 
+-      return Service.of({ trigger, list, init })
++      // Hivemind: scoped post-write notifier. Walks loaded hooks once,
++      // matches the absolute write path against any registered glob
++      // patterns from `onFileWrite`, and dispatches matched handlers.
++      // Hooks without `onFileWrite` are skipped; hooks whose patterns
++      // don't match are skipped. Errors in handlers are logged and
++      // swallowed so a misbehaving plugin can't break a tool call.
++      const notifyFileWrite = Effect.fn("Plugin.notifyFileWrite")(function* (input: {
++        path: string
++        sessionID: string
++        bytes: number
++        tool: "write" | "edit"
++      }) {
++        const s = yield* InstanceState.get(state)
++        for (const hook of s.hooks) {
++          const reg = (hook as any).onFileWrite as
++            | { patterns: string[]; handler: (i: typeof input) => Promise<void> }
++            | undefined
++          if (!reg || !reg.handler || !Array.isArray(reg.patterns) || reg.patterns.length === 0) continue
++          const matched = reg.patterns.some((p) => new Bun.Glob(p).match(input.path))
++          if (!matched) continue
++          yield* Effect.tryPromise({
++            try: () => reg.handler(input),
++            catch: (err) => {
++              log.error("onFileWrite handler failed", { path: input.path, error: errorMessage(err) })
++            },
++          }).pipe(Effect.ignore)
++        }
++      })
++
++      return Service.of({ trigger, list, init, notifyFileWrite })
+     }),
+   )
+ 
+@@ -287,4 +324,17 @@ export namespace Plugin {
+   export async function init() {
+     return runPromise((svc) => svc.init())
+   }
++
++  // Hivemind: fire onFileWrite hooks (pattern-matched at registration).
++  // Tools call this after a successful write/edit; if no plugin
++  // registered a matching pattern this is effectively a no-op (a single
++  // map iteration with no matches).
++  export async function notifyFileWrite(input: {
++    path: string
++    sessionID: string
++    bytes: number
++    tool: "write" | "edit"
++  }): Promise<void> {
++    return runPromise((svc) => svc.notifyFileWrite(input))
++  }
+ }
 diff --git a/packages/opencode/src/session/background.ts b/packages/opencode/src/session/background.ts
 index 907fadb..57288be 100644
 --- a/packages/opencode/src/session/background.ts
@@ -240,29 +418,37 @@ index 907fadb..57288be 100644
    export function pendingFor(parentID: SessionID): Pending[] {
      const bucket = _registry.get(parentID)
 diff --git a/packages/opencode/src/session/index.ts b/packages/opencode/src/session/index.ts
-index 349bcc1..7801efc 100644
+index 10f4ef4..7801efc 100644
 --- a/packages/opencode/src/session/index.ts
 +++ b/packages/opencode/src/session/index.ts
-@@ -77,6 +77,7 @@ export namespace Session {
+@@ -76,6 +76,8 @@ export namespace Session {
+       share,
        revert,
        permission: row.permission ?? undefined,
-       metadata: row.metadata ?? undefined,
++      metadata: row.metadata ?? undefined,
 +      ephemeral: row.ephemeral ?? undefined,
        time: {
          created: row.time_created,
          updated: row.time_updated,
-@@ -104,6 +105,7 @@ export namespace Session {
+@@ -102,6 +104,8 @@ export namespace Session {
+       summary_diffs: info.summary?.diffs,
        revert: info.revert ?? null,
        permission: info.permission,
-       metadata: info.metadata,
++      metadata: info.metadata,
 +      ephemeral: info.ephemeral,
        time_created: info.time.created,
        time_updated: info.time.updated,
        time_compacting: info.time.compacting,
-@@ -165,6 +167,12 @@ export namespace Session {
-       // observers can see why a session exists without parsing the
-       // title. Plain JSON; opaque to opencode core.
-       metadata: z.record(z.string(), z.unknown()).optional(),
+@@ -157,6 +161,18 @@ export namespace Session {
+           diff: z.string().optional(),
+         })
+         .optional(),
++      // Hivemind: structured per-session attribution. Used by the
++      // memory-compaction daemon to record `triggered_by_session`,
++      // `target_agent`, and `triggered_at_bytes` on each spawn so
++      // observers can see why a session exists without parsing the
++      // title. Plain JSON; opaque to opencode core.
++      metadata: z.record(z.string(), z.unknown()).optional(),
 +      // Hivemind: when true, the session is deleted automatically when
 +      // its runner reaches idle after a terminal turn. For background-
 +      // mode subagents the delete is deferred until the parent consumes
@@ -272,10 +458,11 @@ index 349bcc1..7801efc 100644
      })
      .meta({
        ref: "Session",
-@@ -392,6 +400,10 @@ export namespace Session {
+@@ -383,6 +399,11 @@ export namespace Session {
+         workspaceID?: WorkspaceID
          directory: string
          permission?: Permission.Ruleset
-         metadata?: Record<string, unknown>
++        metadata?: Record<string, unknown>
 +        // Hivemind: see Info.ephemeral. Persisted on the row so the
 +        // run-state finalizer can read it back without consulting the
 +        // caller. Default false at the schema level.
@@ -283,31 +470,34 @@ index 349bcc1..7801efc 100644
        }) {
          const ctx = yield* InstanceState.context
          const result: Info = {
-@@ -405,6 +417,7 @@ export namespace Session {
+@@ -395,6 +416,8 @@ export namespace Session {
+           parentID: input.parentID,
            title: input.title ?? createDefaultTitle(!!input.parentID),
            permission: input.permission,
-           metadata: input.metadata,
++          metadata: input.metadata,
 +          ephemeral: input.ephemeral,
            time: {
              created: Date.now(),
              updated: Date.now(),
-@@ -532,6 +545,7 @@ export namespace Session {
+@@ -521,6 +544,8 @@ export namespace Session {
+         title?: string
          permission?: Permission.Ruleset
          workspaceID?: WorkspaceID
-         metadata?: Record<string, unknown>
++        metadata?: Record<string, unknown>
 +        ephemeral?: boolean
        }) {
          const directory = yield* InstanceState.directory
          return yield* createNext({
-@@ -541,6 +555,7 @@ export namespace Session {
+@@ -529,6 +554,8 @@ export namespace Session {
+           title: input?.title,
            permission: input?.permission,
            workspaceID: input?.workspaceID,
-           metadata: input?.metadata,
++          metadata: input?.metadata,
 +          ephemeral: input?.ephemeral,
          })
        })
  
-@@ -549,6 +564,10 @@ export namespace Session {
+@@ -537,6 +564,10 @@ export namespace Session {
          messageID?: MessageID
          parentID?: SessionID
          permission?: Permission.Ruleset
@@ -318,7 +508,7 @@ index 349bcc1..7801efc 100644
        }) {
          const directory = yield* InstanceState.directory
          const original = yield* get(input.sessionID)
-@@ -567,6 +586,7 @@ export namespace Session {
+@@ -555,6 +586,7 @@ export namespace Session {
            // forks always start with no permission overlay regardless of
            // what the source had.
            permission: input.permission,
@@ -326,15 +516,16 @@ index 349bcc1..7801efc 100644
          })
          const msgs = yield* messages({ sessionID: input.sessionID })
          const idMap = new Map<string, MessageID>()
-@@ -727,6 +747,7 @@ export namespace Session {
+@@ -714,6 +746,8 @@ export namespace Session {
+         title: z.string().optional(),
          permission: Info.shape.permission,
          workspaceID: WorkspaceID.zod.optional(),
-         metadata: Info.shape.metadata,
++        metadata: Info.shape.metadata,
 +        ephemeral: Info.shape.ephemeral,
        })
        .optional(),
      (input) => runPromise((svc) => svc.create(input)),
-@@ -738,6 +759,7 @@ export namespace Session {
+@@ -725,6 +759,7 @@ export namespace Session {
        messageID: MessageID.zod.optional(),
        parentID: SessionID.zod.optional(),
        permission: Permission.Ruleset.optional(),
@@ -343,13 +534,14 @@ index 349bcc1..7801efc 100644
      (input) => runPromise((svc) => svc.fork(input)),
    )
 diff --git a/packages/opencode/src/session/projectors.ts b/packages/opencode/src/session/projectors.ts
-index 71e0160..6e8421a 100644
+index 81929cd..6e8421a 100644
 --- a/packages/opencode/src/session/projectors.ts
 +++ b/packages/opencode/src/session/projectors.ts
-@@ -53,6 +53,7 @@ export function toPartialRow(info: DeepPartial<Session.Info>) {
+@@ -52,6 +52,8 @@ export function toPartialRow(info: DeepPartial<Session.Info>) {
+     summary_diffs: grab(info, "summary", (v) => grab(v, "diffs")),
      revert: grab(info, "revert"),
      permission: grab(info, "permission"),
-     metadata: grab(info, "metadata"),
++    metadata: grab(info, "metadata"),
 +    ephemeral: grab(info, "ephemeral"),
      time_created: grab(info, "time", (v) => grab(v, "created")),
      time_updated: grab(info, "time", (v) => grab(v, "updated")),
@@ -408,13 +600,14 @@ index 6b6e4f4..279341c 100644
            onBusy: status.set(sessionID, { type: "busy" }),
            onInterrupt,
 diff --git a/packages/opencode/src/session/session.sql.ts b/packages/opencode/src/session/session.sql.ts
-index 112825f..7814be9 100644
+index 189a596..7814be9 100644
 --- a/packages/opencode/src/session/session.sql.ts
 +++ b/packages/opencode/src/session/session.sql.ts
-@@ -33,6 +33,11 @@ export const SessionTable = sqliteTable(
+@@ -32,6 +32,12 @@ export const SessionTable = sqliteTable(
+     summary_diffs: text({ mode: "json" }).$type<Snapshot.FileDiff[]>(),
      revert: text({ mode: "json" }).$type<{ messageID: MessageID; partID?: PartID; snapshot?: string; diff?: string }>(),
      permission: text({ mode: "json" }).$type<Permission.Ruleset>(),
-     metadata: text({ mode: "json" }).$type<Record<string, unknown>>(),
++    metadata: text({ mode: "json" }).$type<Record<string, unknown>>(),
 +    // Hivemind: when set, the session is deleted automatically when it
 +    // reaches a terminal state (idle after work completed/failed/cancelled).
 +    // Default false. For background-mode subagents, deletion is deferred
@@ -423,6 +616,41 @@ index 112825f..7814be9 100644
      ...Timestamps,
      time_compacting: integer(),
      time_archived: integer(),
+diff --git a/packages/opencode/src/tool/edit.ts b/packages/opencode/src/tool/edit.ts
+index 9505dd9..9eb6e79 100644
+--- a/packages/opencode/src/tool/edit.ts
++++ b/packages/opencode/src/tool/edit.ts
+@@ -16,6 +16,7 @@ import { Format } from "../format"
+ import { FileTime } from "../file/time"
+ import { Filesystem } from "../util/filesystem"
+ import { Instance } from "../project/instance"
++import { Plugin } from "../plugin"
+ import { Snapshot } from "@/snapshot"
+ import { assertExternalDirectory } from "./external-directory"
+ 
+@@ -121,6 +122,22 @@ export const EditTool = Tool.define("edit", {
+       await FileTime.read(ctx.sessionID, filePath)
+     })
+ 
++    // Hivemind: dispatch onFileWrite hooks (pattern-matched at registration).
++    // Both Edit code paths funnel through Filesystem.write inside the
++    // withLock above; we notify once here after the lock releases. No-op
++    // if no plugin registered a matching pattern.
++    try {
++      const stat = await Bun.file(filePath).stat()
++      await Plugin.notifyFileWrite({
++        path: filePath,
++        sessionID: ctx.sessionID,
++        bytes: stat.size,
++        tool: "edit",
++      })
++    } catch {
++      // Don't propagate hook errors — the edit itself succeeded.
++    }
++
+     const filediff: Snapshot.FileDiff = {
+       file: filePath,
+       patch: diff,
 diff --git a/packages/opencode/src/tool/task.ts b/packages/opencode/src/tool/task.ts
 index f94ccb4..d8bf0b4 100644
 --- a/packages/opencode/src/tool/task.ts
@@ -490,22 +718,383 @@ index f94ccb4..d8bf0b4 100644
            }),
          )
        }
+diff --git a/packages/opencode/src/tool/write.ts b/packages/opencode/src/tool/write.ts
+index 6b134e5..aaf8d9d 100644
+--- a/packages/opencode/src/tool/write.ts
++++ b/packages/opencode/src/tool/write.ts
+@@ -11,6 +11,7 @@ import { Format } from "../format"
+ import { FileTime } from "../file/time"
+ import { Filesystem } from "../util/filesystem"
+ import { Instance } from "../project/instance"
++import { Plugin } from "../plugin"
+ import { trimDiff } from "./edit"
+ import { assertExternalDirectory } from "./external-directory"
+ 
+@@ -51,6 +52,20 @@ export const WriteTool = Tool.define("write", {
+     })
+     await FileTime.read(ctx.sessionID, filepath)
+ 
++    // Hivemind: dispatch onFileWrite hooks (pattern-matched at registration).
++    // No-op if no plugin registered a matching pattern.
++    try {
++      const stat = await Bun.file(filepath).stat()
++      await Plugin.notifyFileWrite({
++        path: filepath,
++        sessionID: ctx.sessionID,
++        bytes: stat.size,
++        tool: "write",
++      })
++    } catch {
++      // Don't propagate hook errors — the write itself succeeded.
++    }
++
+     let output = "Wrote file successfully."
+     await LSP.touchFile(filepath, true)
+     const diagnostics = await LSP.diagnostics()
+diff --git a/packages/opencode/test/plugin/file-write-hook.test.ts b/packages/opencode/test/plugin/file-write-hook.test.ts
+new file mode 100644
+index 0000000..fda81dd
+--- /dev/null
++++ b/packages/opencode/test/plugin/file-write-hook.test.ts
+@@ -0,0 +1,189 @@
++import { afterAll, afterEach, describe, expect, test } from "bun:test"
++import path from "path"
++import { pathToFileURL } from "url"
++import { tmpdir } from "../fixture/fixture"
++
++const disableDefault = process.env.OPENCODE_DISABLE_DEFAULT_PLUGINS
++process.env.OPENCODE_DISABLE_DEFAULT_PLUGINS = "1"
++
++const { Plugin } = await import("../../src/plugin/index")
++const { Instance } = await import("../../src/project/instance")
++
++afterEach(async () => {
++  await Instance.disposeAll()
++})
++
++afterAll(() => {
++  if (disableDefault === undefined) {
++    delete process.env.OPENCODE_DISABLE_DEFAULT_PLUGINS
++    return
++  }
++  process.env.OPENCODE_DISABLE_DEFAULT_PLUGINS = disableDefault
++})
++
++// Hivemind: tests for the onFileWrite plugin API. Plugins register
++// (patterns, handler) at load time; engine dispatches handlers only
++// for paths matching at least one pattern. Memory writes are routed
++// through this primitive — see hivemind-memory.ts in the same package.
++
++async function projectWithPlugin(pluginSource: string) {
++  return tmpdir({
++    init: async (dir) => {
++      const file = path.join(dir, "plugin.ts")
++      await Bun.write(file, pluginSource)
++      await Bun.write(
++        path.join(dir, "opencode.json"),
++        JSON.stringify(
++          {
++            $schema: "https://opencode.ai/config.json",
++            plugin: [pathToFileURL(file).href],
++          },
++          null,
++          2,
++        ),
++      )
++    },
++  })
++}
++
++const recorderPlugin = (patterns: string[], stateGlobal: string) =>
++  [
++    "export default async () => ({",
++    "  onFileWrite: {",
++    `    patterns: ${JSON.stringify(patterns)},`,
++    "    handler: async (input) => {",
++    `      (globalThis as any).${stateGlobal} = (globalThis as any).${stateGlobal} ?? []`,
++    `      ;(globalThis as any).${stateGlobal}.push(input)`,
++    "    },",
++    "  },",
++    "})",
++    "",
++  ].join("\n")
++
++describe("plugin.onFileWrite", () => {
++  test("dispatches handler for paths matching the registered pattern", async () => {
++    const stateKey = `__fwHook_${Date.now()}_match`
++    await using tmp = await projectWithPlugin(recorderPlugin(["**/short_memory.md"], stateKey))
++    ;(globalThis as any)[stateKey] = []
++
++    await Instance.provide({
++      directory: tmp.path,
++      fn: async () => {
++        await Plugin.notifyFileWrite({
++          path: "/tmp/x/hivemind/memory/bazel/short_memory.md",
++          sessionID: "ses_test_1",
++          bytes: 9000,
++          tool: "write",
++        })
++      },
++    })
++
++    const calls = (globalThis as any)[stateKey] as Array<{ path: string; bytes: number; tool: string }>
++    expect(calls.length).toBe(1)
++    expect(calls[0].path).toBe("/tmp/x/hivemind/memory/bazel/short_memory.md")
++    expect(calls[0].bytes).toBe(9000)
++    expect(calls[0].tool).toBe("write")
++    delete (globalThis as any)[stateKey]
++  })
++
++  test("skips handler when path does not match the pattern", async () => {
++    const stateKey = `__fwHook_${Date.now()}_skip`
++    await using tmp = await projectWithPlugin(recorderPlugin(["**/short_memory.md"], stateKey))
++    ;(globalThis as any)[stateKey] = []
++
++    await Instance.provide({
++      directory: tmp.path,
++      fn: async () => {
++        await Plugin.notifyFileWrite({
++          path: "/tmp/x/some-other-file.md",
++          sessionID: "ses_test_2",
++          bytes: 100,
++          tool: "write",
++        })
++      },
++    })
++
++    const calls = (globalThis as any)[stateKey] as unknown[]
++    expect(calls.length).toBe(0)
++    delete (globalThis as any)[stateKey]
++  })
++
++  test("zero plugins → notifyFileWrite is a no-op", async () => {
++    // No plugin registered. Just confirm the dispatch doesn't throw.
++    await using tmp = await tmpdir({
++      init: async (dir) => {
++        await Bun.write(
++          path.join(dir, "opencode.json"),
++          JSON.stringify({ $schema: "https://opencode.ai/config.json" }, null, 2),
++        )
++      },
++    })
++
++    await Instance.provide({
++      directory: tmp.path,
++      fn: async () => {
++        await Plugin.notifyFileWrite({
++          path: "/tmp/anything.md",
++          sessionID: "ses_test_3",
++          bytes: 1,
++          tool: "write",
++        })
++        // No assertion needed; not throwing is the contract.
++        expect(true).toBe(true)
++      },
++    })
++  })
++
++  test("handler errors do not propagate", async () => {
++    const throwerPlugin = [
++      "export default async () => ({",
++      "  onFileWrite: {",
++      '    patterns: ["**/short_memory.md"],',
++      "    handler: async () => {",
++      '      throw new Error("intentional handler failure")',
++      "    },",
++      "  },",
++      "})",
++      "",
++    ].join("\n")
++    await using tmp = await projectWithPlugin(throwerPlugin)
++
++    await Instance.provide({
++      directory: tmp.path,
++      fn: async () => {
++        await Plugin.notifyFileWrite({
++          path: "/tmp/x/hivemind/memory/bazel/short_memory.md",
++          sessionID: "ses_test_4",
++          bytes: 9000,
++          tool: "write",
++        })
++        // Reaching this line means the throw was caught by the
++        // hook runtime and didn't propagate.
++        expect(true).toBe(true)
++      },
++    })
++  })
++
++  test("edit tool fires the same hook", async () => {
++    const stateKey = `__fwHook_${Date.now()}_edit`
++    await using tmp = await projectWithPlugin(recorderPlugin(["**/short_memory.md"], stateKey))
++    ;(globalThis as any)[stateKey] = []
++
++    await Instance.provide({
++      directory: tmp.path,
++      fn: async () => {
++        await Plugin.notifyFileWrite({
++          path: "/tmp/x/hivemind/memory/bazel/short_memory.md",
++          sessionID: "ses_test_5",
++          bytes: 9000,
++          tool: "edit",
++        })
++      },
++    })
++
++    const calls = (globalThis as any)[stateKey] as Array<{ tool: string }>
++    expect(calls.length).toBe(1)
++    expect(calls[0].tool).toBe("edit")
++    delete (globalThis as any)[stateKey]
++  })
++})
 diff --git a/packages/opencode/test/plugin/hivemind-memory.test.ts b/packages/opencode/test/plugin/hivemind-memory.test.ts
-index d70ad76..1159974 100644
---- a/packages/opencode/test/plugin/hivemind-memory.test.ts
+new file mode 100644
+index 0000000..1159974
+--- /dev/null
 +++ b/packages/opencode/test/plugin/hivemind-memory.test.ts
-@@ -98,6 +98,11 @@ describe("hivemind-memory plugin", () => {
-             target_agent: "bazel",
-             triggered_at_bytes: 9000,
-           })
+@@ -0,0 +1,143 @@
++import { afterEach, describe, expect, test } from "bun:test"
++import path from "path"
++import os from "os"
++import { tmpdir } from "../fixture/fixture"
++import { Plugin } from "../../src/plugin"
++import { Instance } from "../../src/project/instance"
++import { Session } from "../../src/session"
++import { Log } from "../../src/util/log"
++
++Log.init({ print: false })
++
++afterEach(async () => {
++  await Instance.disposeAll()
++})
++
++// Hivemind: tests for the in-tree HivemindMemoryPlugin (auto-spawn
++// the memory-compaction daemon when an agent's short_memory.md crosses
++// the byte threshold). The plugin is registered as an INTERNAL_PLUGIN
++// so it loads automatically — no manual setup needed.
++
++const projectRoot = path.join(__dirname, "../..")
++
++async function configWithThreshold(threshold: number): Promise<{ path: string; cleanup: () => Promise<void> }> {
++  // The plugin reads hivemind.json from process.cwd() relative paths.
++  // For the test we point the plugin at a tmp file via cwd swap.
++  const tmpDir = path.join(os.tmpdir(), `hivemind-memtest-${Date.now()}-${Math.random()}`)
++  await Bun.write(
++    path.join(tmpDir, "hivemind.json"),
++    JSON.stringify({ memory: { compaction_threshold_bytes: threshold } }),
++  )
++  return {
++    path: tmpDir,
++    cleanup: async () => {
++      await import("node:fs/promises").then((fs) => fs.rm(tmpDir, { recursive: true, force: true }))
++    },
++  }
++}
++
++describe("hivemind-memory plugin", () => {
++  test("sub-threshold write does not spawn a daemon session", async () => {
++    const cfg = await configWithThreshold(100_000)  // very high — never triggers
++    const cwd = process.cwd()
++    process.chdir(cfg.path)
++    try {
++      await Instance.provide({
++        directory: projectRoot,
++        fn: async () => {
++          const main = await Session.create({})
++          const before = (await Session.children(main.id)).length
++
++          await Plugin.notifyFileWrite({
++            path: "/Users/santos/.config/opencode/hivemind/memory/bazel/short_memory.md",
++            sessionID: main.id,
++            bytes: 1024,  // way below threshold
++            tool: "write",
++          })
++
++          await new Promise((r) => setTimeout(r, 100))
++          const after = (await Session.children(main.id)).length
++          expect(after).toBe(before)
++        },
++      })
++    } finally {
++      process.chdir(cwd)
++      await cfg.cleanup()
++    }
++  })
++
++  test("over-threshold write spawns daemon as child of main, with metadata", async () => {
++    const cfg = await configWithThreshold(8192)
++    const cwd = process.cwd()
++    process.chdir(cfg.path)
++    try {
++      await Instance.provide({
++        directory: projectRoot,
++        fn: async () => {
++          // Two-level setup: main → expert (the writer)
++          const main = await Session.create({})
++          const expert = await Session.create({ parentID: main.id, title: "expert-bazel" })
++
++          await Plugin.notifyFileWrite({
++            path: "/Users/santos/.config/opencode/hivemind/memory/bazel/short_memory.md",
++            sessionID: expert.id,
++            bytes: 9000,
++            tool: "write",
++          })
++
++          // Plugin spawn is async; give it a tick.
++          await new Promise((r) => setTimeout(r, 200))
++
++          const children = await Session.children(main.id)
++          // main now has both: the expert (writer) and the daemon (sibling)
++          const daemon = children.find((c) => c.title.includes("compact memory"))
++          expect(daemon).toBeDefined()
++          expect(daemon!.parentID).toBe(main.id)
++          expect(daemon!.metadata).toEqual({
++            triggered_by_session: expert.id,
++            target_agent: "bazel",
++            triggered_at_bytes: 9000,
++          })
 +          // Hivemind: the auto-spawn passes ephemeral=true so the daemon's
 +          // session vanishes once it finishes its compaction pass. Without
 +          // this, every threshold-crossing write would leave a `compact
 +          // memory: <agent>` corpse in the subagent tree.
 +          expect(daemon!.ephemeral).toBe(true)
-         },
-       })
-     } finally {
++        },
++      })
++    } finally {
++      process.chdir(cwd)
++      await cfg.cleanup()
++    }
++  })
++
++  test("non-memory paths are ignored even when over the byte threshold", async () => {
++    const cfg = await configWithThreshold(8192)
++    const cwd = process.cwd()
++    process.chdir(cfg.path)
++    try {
++      await Instance.provide({
++        directory: projectRoot,
++        fn: async () => {
++          const main = await Session.create({})
++          const before = (await Session.children(main.id)).length
++
++          // Path doesn't match the **/hivemind/memory/**/short_memory.md pattern
++          await Plugin.notifyFileWrite({
++            path: "/tmp/some-unrelated-file.md",
++            sessionID: main.id,
++            bytes: 100_000,
++            tool: "write",
++          })
++
++          await new Promise((r) => setTimeout(r, 100))
++          const after = (await Session.children(main.id)).length
++          expect(after).toBe(before)
++        },
++      })
++    } finally {
++      process.chdir(cwd)
++      await cfg.cleanup()
++    }
++  })
++})
 diff --git a/packages/opencode/test/session/ephemeral.test.ts b/packages/opencode/test/session/ephemeral.test.ts
 new file mode 100644
 index 0000000..154f34a
@@ -616,6 +1205,69 @@ index 0000000..154f34a
 +
 +        SessionBackground.consume(parent.id, child.id)
 +        expect(SessionBackground.isRegistered(child.id)).toBe(false)
++      },
++    })
++  })
++})
+diff --git a/packages/opencode/test/session/metadata.test.ts b/packages/opencode/test/session/metadata.test.ts
+new file mode 100644
+index 0000000..72578d4
+--- /dev/null
++++ b/packages/opencode/test/session/metadata.test.ts
+@@ -0,0 +1,57 @@
++import { describe, expect, test } from "bun:test"
++import path from "path"
++import { Session } from "../../src/session"
++import { Log } from "../../src/util/log"
++import { Instance } from "../../src/project/instance"
++
++const projectRoot = path.join(__dirname, "../..")
++Log.init({ print: false })
++
++// Hivemind: tests for the session.metadata column added by patch.
++// Used by the memory-compaction daemon to record structured
++// attribution (triggered_by_session, target_agent, triggered_at_bytes)
++// without parsing the title.
++
++describe("Session metadata column", () => {
++  test("round-trips arbitrary JSON-serializable metadata", async () => {
++    await Instance.provide({
++      directory: projectRoot,
++      fn: async () => {
++        const meta = {
++          triggered_by_session: "ses_writer_xyz",
++          target_agent: "bazel",
++          triggered_at_bytes: 9000,
++        }
++        const session = await Session.create({ metadata: meta })
++        const fetched = await Session.get(session.id)
++        expect(fetched.metadata).toEqual(meta)
++      },
++    })
++  })
++
++  test("defaults to undefined when not provided", async () => {
++    await Instance.provide({
++      directory: projectRoot,
++      fn: async () => {
++        const session = await Session.create({})
++        const fetched = await Session.get(session.id)
++        expect(fetched.metadata).toBeUndefined()
++      },
++    })
++  })
++
++  test("supports nested values", async () => {
++    await Instance.provide({
++      directory: projectRoot,
++      fn: async () => {
++        const meta = {
++          nested: { count: 42, ids: ["a", "b"] },
++          flag: true,
++        }
++        const session = await Session.create({ metadata: meta })
++        const fetched = await Session.get(session.id)
++        expect(fetched.metadata).toEqual(meta)
 +      },
 +    })
 +  })
@@ -976,6 +1628,34 @@ index 0000000..4195a7f
 +    ),
 +  )
 +})
+diff --git a/packages/plugin/src/index.ts b/packages/plugin/src/index.ts
+index 1afb55d..8e3698a 100644
+--- a/packages/plugin/src/index.ts
++++ b/packages/plugin/src/index.ts
+@@ -245,6 +245,23 @@ export interface Hooks {
+       metadata: any
+     },
+   ) => Promise<void>
++  /**
++   * Hivemind: scoped post-write notification. Fires after a successful
++   * `Write` or `Edit` tool call, but ONLY when the absolute output
++   * path matches one of the registered glob patterns. Plugins declare
++   * their patterns at registration time so the engine can short-circuit
++   * dispatch when no pattern matches — non-memory writes never enter
++   * this code path.
++   *
++   * Returning a `Hooks` object that includes ``onFileWrite`` registers
++   * a single (patterns, handler) pair. Multiple plugins each get their
++   * own registry entry. To register multiple patterns from one plugin,
++   * pass them all in `patterns`.
++   */
++  onFileWrite?: {
++    patterns: string[]
++    handler: (input: { sessionID: string; path: string; bytes: number; tool: "write" | "edit" }) => Promise<void>
++  }
+   "experimental.chat.messages.transform"?: (
+     input: {},
+     output: {
 -- 
 2.50.1
 

@@ -1,7 +1,7 @@
-From 628455a658b6dfaf6001d7e5ad0fbbcfbfa1df69 Mon Sep 17 00:00:00 2001
+From 1497ed798758e7aa54f7b5535b868d3b88cf50de Mon Sep 17 00:00:00 2001
 From: Lucas Santos <lsantos7654@gmail.com>
 Date: Mon, 20 Apr 2026 21:22:13 -0400
-Subject: [PATCH 10/36] Hardened opencode config defaults
+Subject: [PATCH 09/24] Hardened opencode config defaults
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit

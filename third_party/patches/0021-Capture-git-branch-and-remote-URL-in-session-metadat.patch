@@ -1,22 +1,20 @@
-From efb13df28678733bbed6742b4279ab0fa00bc807 Mon Sep 17 00:00:00 2001
+From 4c7820248b7a0432fc8e50c47b2ae8fd87f69e53 Mon Sep 17 00:00:00 2001
 From: Lucas Santos <lsantos7654@gmail.com>
-Date: Mon, 11 May 2026 14:01:34 -0400
-Subject: [PATCH 28/36] Add TUI metadata to presence WebSocket protocol
+Date: Mon, 11 May 2026 13:55:35 -0400
+Subject: [PATCH 21/24] Capture git branch and remote URL in session metadata
+ at creation
 
-Expands _clients entries with dir, branch, remote so observers
-can see which worktree each TUI connection belongs to. The TUI
-presence client now sends its directory on connect/focus; the
-server derives git branch and origin remote via filesystem reads.
-
-GET /global/live-sessions now accepts ?with_meta=true to return
-per-client metadata alongside session IDs. Broadcast messages
-include the client list so the TUI footer can render richer info.
+Read .git/HEAD and .git/config (origin remote) via synchronous
+filesystem I/O in createNext so every session carries its git
+context. Handles worktrees (gitdir: pointer files) and falls
+back silently on non-git directories / unexpected formats.
 ---
  .../cli/cmd/tui/context/presence-client.ts    | 22 ++---
  .../opencode/src/cli/cmd/tui/context/sdk.tsx  |  1 +
  packages/opencode/src/server/routes/global.ts | 20 ++++-
  .../opencode/src/server/routes/presence.ts    | 86 +++++++++++++++++--
- 4 files changed, 105 insertions(+), 24 deletions(-)
+ packages/opencode/src/session/index.ts        | 36 ++++++++
+ 5 files changed, 141 insertions(+), 24 deletions(-)
 
 diff --git a/packages/opencode/src/cli/cmd/tui/context/presence-client.ts b/packages/opencode/src/cli/cmd/tui/context/presence-client.ts
 index 89a4e89..83299a0 100644
@@ -285,6 +283,66 @@ index 335d1b8..3f75d8c 100644
        },
        onClose(_ev, ws) {
          const key = (ws.raw ?? ws) as object
+diff --git a/packages/opencode/src/session/index.ts b/packages/opencode/src/session/index.ts
+index 7801efc..c6b1e07 100644
+--- a/packages/opencode/src/session/index.ts
++++ b/packages/opencode/src/session/index.ts
+@@ -1,5 +1,6 @@
+ import { Slug } from "@opencode-ai/util/slug"
+ import path from "path"
++import { readFileSync } from "fs"
+ import { BusEvent } from "@/bus/bus-event"
+ import { Bus } from "@/bus"
+ import { Decimal } from "decimal.js"
+@@ -392,6 +393,37 @@ export namespace Session {
+       const config = yield* Config.Service
+       const scope = yield* Scope.Scope
+ 
++      const readGitInfo = Effect.fnUntraced("Session.readGitInfo")(function* (dir: string) {
++        return yield* Effect.sync(() => {
++          const output: Record<string, unknown> = {}
++          try {
++            let root = path.join(dir, ".git")
++            let head: string
++            try {
++              head = new TextDecoder().decode(readFileSync(path.join(root, "HEAD")))
++            } catch {
++              const text = new TextDecoder().decode(readFileSync(root))
++              const match = text.match(/^gitdir:\s*(.+)$/m)
++              if (!match) return output
++              root = path.resolve(dir, match[1])
++              head = new TextDecoder().decode(readFileSync(path.join(root, "HEAD")))
++            }
++            head = head.trim()
++            if (head.startsWith("ref: refs/heads/")) {
++              output.git_branch = head.slice(16)
++            } else if (head.length >= 7) {
++              output.git_branch = head.slice(0, 7)
++            }
++            try {
++              const cfg = new TextDecoder().decode(readFileSync(path.join(root, "config")))
++              const m = cfg.match(/\[remote\s+"origin"\][^\[]*url\s*=\s*(.+)/s)
++              if (m) output.git_remote_url = m[1].trim()
++            } catch {}
++          } catch {}
++          return output
++        })
++      })
++
+       const createNext = Effect.fn("Session.createNext")(function* (input: {
+         id?: SessionID
+         title?: string
+@@ -423,6 +455,10 @@ export namespace Session {
+             updated: Date.now(),
+           },
+         }
++        const git = yield* readGitInfo(input.directory)
++        if (Object.keys(git).length > 0) {
++          result.metadata = { ...input.metadata, ...git }
++        }
+         log.info("created", result)
+ 
+         yield* Effect.sync(() => SyncEvent.run(Event.Created, { sessionID: result.id, info: result }))
 -- 
 2.50.1
 

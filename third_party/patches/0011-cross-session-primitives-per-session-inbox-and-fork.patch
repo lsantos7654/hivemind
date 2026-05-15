@@ -1,41 +1,43 @@
-From f41aa1f5055d78e145fad861b2ba1960d6f889e6 Mon Sep 17 00:00:00 2001
+From 419c6991e21c60b0480cc77eef466715f29308ab Mon Sep 17 00:00:00 2001
 From: Lucas Santos <lsantos7654@gmail.com>
 Date: Mon, 27 Apr 2026 00:43:23 -0400
-Subject: [PATCH 12/36] Per-session inbox with deferred delivery
+Subject: [PATCH 11/24] Rewrite the TUI exit "Continue" suggestion to
+ `hivemind`
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
 
-Adds POST /session/:sessionID/inbox and an in-memory SessionInbox queue
-so a chat message can be delivered to a session that's currently
-mid-turn. Existing /message and /prompt_async still throw BusyError on
-busy sessions; /inbox always accepts and queues if needed.
+The opencode TUI prints a `Continue  opencode -s <session-id>` line on
+exit. Under hivemind, the user-facing CLI is `hivemind`, not `opencode`,
+so we rewrite the literal so the suggested command actually works.
 
-Mechanism:
-  - SessionInbox (packages/opencode/src/session/inbox.ts) keeps a
-    Map<SessionID, PromptInput[]> with FIFO semantics. enqueueOrSend()
-    checks SessionRunState.assertNotBusy and either fires
-    SessionPrompt.prompt fire-and-forget (idle path) or pushes onto the
-    queue (busy path). A re-queue fallback handles the rare race where
-    a runner appears between assertNotBusy and the prompt call.
-  - SessionRunState's onIdle hook now calls SessionInbox.drainNext, so
-    the next queued message dispatches as soon as the current turn
-    completes. drainNext is fire-and-forget; it re-enters
-    SessionPrompt.prompt which re-arms a fresh runner for the session.
-  - New BusEvent session.message.queued (with { sessionID, depth })
-    propagates over SSE so subscribers (TUI, MCP clients) can show a
-    pending-inbox indicator.
-  - Route confirms the session exists via Session.get before queueing
-    so unknown IDs surface as 404 instead of silently disappearing.
+The literal is hardcoded — there is no plugin slot, event, env var, or
+config seam that lets a TUI plugin override the line (verified against
+upstream source). This patch is the only path that currently works and
+is the originating motivation for the bun-vendored build.
 
-Hivemind uses /inbox from its cross-session MCP tools (send_to_main,
-send_to_session) so a subagent can ping the orchestrator while the
-orchestrator is still blocked inside the Task call that spawned it.
-The orchestrator picks up the queued message on the very next idle.
+Rebrand the OPENCODE wordmark + TUI logo to HIVEMIND
 
-Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+Replaces the two ASCII-art glyph sources in the opencode source tree
+that the user sees: the static `wordmark` array used by the exit screen
+(`cli/ui.ts`), and the `logo.left`/`logo.right` paired arrays used by
+the home-screen `<Logo />` component (`cli/logo.ts`).
+
+Replaces the work of the deprecated `opencode/plugins/branding.js` TUI
+plugin with a native source-level patch.
+
+The HIVEMIND art is taken from the original branding plugin (5 slash-
+art lines). The wordmark is trimmed to 4 lines to match the existing
+exit-message template that references `logo[0]..logo[3]`. The TUI
+`<Logo />` component iterates `logo.left` so we put the full 5-line art
+on the left and emit empty padding strings on the right; the existing
+shadow-marker rendering still works on the empty strings (no-op).
 ---
  .../opencode/src/server/routes/session.ts     | 43 +++++++++
  packages/opencode/src/session/inbox.ts        | 92 +++++++++++++++++++
+ packages/opencode/src/session/index.ts        | 34 ++++++-
  packages/opencode/src/session/run-state.ts    |  5 +
- 3 files changed, 140 insertions(+)
+ 4 files changed, 170 insertions(+), 4 deletions(-)
  create mode 100644 packages/opencode/src/session/inbox.ts
 
 diff --git a/packages/opencode/src/server/routes/session.ts b/packages/opencode/src/server/routes/session.ts
@@ -197,6 +199,72 @@ index 0000000..3f662a3
 +    return queues.get(sessionID)?.length ?? 0
 +  }
 +}
+diff --git a/packages/opencode/src/session/index.ts b/packages/opencode/src/session/index.ts
+index 2e68f22..10f4ef4 100644
+--- a/packages/opencode/src/session/index.ts
++++ b/packages/opencode/src/session/index.ts
+@@ -316,7 +316,12 @@ export namespace Session {
+       permission?: Permission.Ruleset
+       workspaceID?: WorkspaceID
+     }) => Effect.Effect<Info>
+-    readonly fork: (input: { sessionID: SessionID; messageID?: MessageID }) => Effect.Effect<Info>
++    readonly fork: (input: {
++      sessionID: SessionID
++      messageID?: MessageID
++      parentID?: SessionID
++      permission?: Permission.Ruleset
++    }) => Effect.Effect<Info>
+     readonly touch: (sessionID: SessionID) => Effect.Effect<void>
+     readonly get: (id: SessionID) => Effect.Effect<Info>
+     readonly share: (id: SessionID) => Effect.Effect<{ url: string }>
+@@ -527,7 +532,12 @@ export namespace Session {
+         })
+       })
+ 
+-      const fork = Effect.fn("Session.fork")(function* (input: { sessionID: SessionID; messageID?: MessageID }) {
++      const fork = Effect.fn("Session.fork")(function* (input: {
++        sessionID: SessionID
++        messageID?: MessageID
++        parentID?: SessionID
++        permission?: Permission.Ruleset
++      }) {
+         const directory = yield* InstanceState.directory
+         const original = yield* get(input.sessionID)
+         const title = getForkedTitle(original.title)
+@@ -535,6 +545,16 @@ export namespace Session {
+           directory,
+           workspaceID: original.workspaceID,
+           title,
++          // Hivemind: when a caller provides parentID, the fork becomes a
++          // real subagent of that session instead of the upstream sibling
++          // default (parent_id = null). Used by the cross-session MCP tools
++          // so a fork shows up under main's subagent tree.
++          parentID: input.parentID,
++          // Hivemind: callers (e.g. the Task tool's source_session_id path)
++          // can pre-set the new session's permission ruleset. Without this,
++          // forks always start with no permission overlay regardless of
++          // what the source had.
++          permission: input.permission,
+         })
+         const msgs = yield* messages({ sessionID: input.sessionID })
+         const idMap = new Map<string, MessageID>()
+@@ -699,8 +719,14 @@ export namespace Session {
+     (input) => runPromise((svc) => svc.create(input)),
+   )
+ 
+-  export const fork = fn(z.object({ sessionID: SessionID.zod, messageID: MessageID.zod.optional() }), (input) =>
+-    runPromise((svc) => svc.fork(input)),
++  export const fork = fn(
++    z.object({
++      sessionID: SessionID.zod,
++      messageID: MessageID.zod.optional(),
++      parentID: SessionID.zod.optional(),
++      permission: Permission.Ruleset.optional(),
++    }),
++    (input) => runPromise((svc) => svc.fork(input)),
+   )
+ 
+   export const get = fn(SessionID.zod, (id) => runPromise((svc) => svc.get(id)))
 diff --git a/packages/opencode/src/session/run-state.ts b/packages/opencode/src/session/run-state.ts
 index 3c2022b..6b6e4f4 100644
 --- a/packages/opencode/src/session/run-state.ts

@@ -1,7 +1,7 @@
-From 5eb7b7ddaa4f4292d76e7fb1d5606da454c2a711 Mon Sep 17 00:00:00 2001
+From 2bcf1a3dbed1e1aee6400f5d06a88bf2a9c9f293 Mon Sep 17 00:00:00 2001
 From: Lucas Santos <lsantos7654@gmail.com>
 Date: Mon, 20 Apr 2026 21:22:13 -0400
-Subject: [PATCH 11/36] Bake `bash.sudo *: deny` into Permission.fromConfig
+Subject: [PATCH 10/24] Bake `bash.sudo *: deny` into Permission.fromConfig
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
