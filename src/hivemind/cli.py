@@ -54,6 +54,34 @@ console = Console(theme=THEME)
 install_traceback(show_locals=True, console=console)
 
 
+def _clear_hermetic_python_env() -> None:
+    """Strip env vars set by the rules_py venv_shim at interpreter boot.
+
+    The shim sets PYTHONHOME so the hermetic Python can find its stdlib,
+    and PYTHONEXECUTABLE so CPython can compute ``sys.prefix`` from the
+    venv root.  Both are needed only during interpreter startup — once
+    running, the stdlib path and prefix are cached in memory.
+
+    Clearing them from ``os.environ`` before the first subprocess ensures
+    child processes (opencode, MCP server, pre-commit hooks, user scripts)
+    inherit a clean environment and can run their own Python installations
+    without tripping over stale Bazel-venv redirects.
+
+    PATH is also cleaned of any entry containing ``.runfiles`` so that
+    ``python3`` lookups resolve to the system Python rather than the
+    venv_shim binary.
+    """
+    os.environ.pop("PYTHONHOME", None)
+    os.environ.pop("PYTHONEXECUTABLE", None)
+    os.environ.pop("PYTHONNOUSERSITE", None)
+    os.environ.pop("VIRTUAL_ENV", None)
+
+    path = os.environ.get("PATH", "")
+    if path:
+        kept = [entry for entry in path.split(os.pathsep) if ".runfiles" not in entry]
+        os.environ["PATH"] = os.pathsep.join(kept)
+
+
 # ---------------------------------------------------------------------------
 # Post-mutation listener (registered once at import; CLI is a short-lived
 # process so this happens fresh every invocation)
@@ -1004,6 +1032,8 @@ def status() -> None:
 def main_entry() -> None:
     """Entry point. With ``--``, forwards trailing args to opencode; otherwise dispatches via typer."""
     import sys
+
+    _clear_hermetic_python_env()
 
     args = sys.argv[1:]
     if "--" in args:
