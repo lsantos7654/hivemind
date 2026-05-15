@@ -271,6 +271,35 @@ def server_status_cmd() -> None:
     console.print(Panel("\n".join(lines), border_style="blue"))
 
 
+@server_app.command("restart")
+def server_restart(
+    port: int | None = typer.Option(None, "--port", "-p"),
+    hostname: str | None = typer.Option(None, "--hostname"),
+) -> None:
+    """Stop and restart the opencode backend server."""
+    from hivemind.server import is_server_running, load_server_state, start_server, stop_server
+
+    cfg = opencode.server_config()
+    effective_port = port or cfg.port
+    effective_hostname = hostname or cfg.hostname
+
+    if is_server_running():
+        state = load_server_state()
+        if state:
+            old_addr = f"{state.hostname}:{state.port}"
+            old_pid = state.pid
+            stop_server()
+            console.print(f"[dim]Server stopped (was {old_addr}, PID {old_pid})[/dim]")
+
+    console.print(f"[heading]Starting opencode server on {effective_hostname}:{effective_port}...[/heading]")
+    try:
+        state = start_server(port=effective_port, hostname=effective_hostname)
+    except RuntimeError as e:
+        console.print(f"[error]{e}[/error]")
+        raise typer.Exit(1) from None
+    console.print(f"[success]Server restarted on {state.hostname}:{state.port} (PID {state.pid})[/success]")
+
+
 # ---------------------------------------------------------------------------
 # init
 # ---------------------------------------------------------------------------

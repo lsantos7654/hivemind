@@ -42,6 +42,7 @@ this module just registers two MCP-specific listeners at server startup
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 from typing import TYPE_CHECKING, Any
@@ -60,6 +61,9 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 _background_tasks: set[asyncio.Task[None]] = set()
+_pending_reload: asyncio.Task[None] | None = None
+_PENDING_RELOAD_TIMEOUT = 2.0
+_DEBOUNCE_INTERVAL = 0.1
 
 
 def _text(msg: str) -> list[TextContent]:
@@ -557,6 +561,7 @@ async def _handle_enable_agent(name: str) -> list[TextContent]:
     result = enable_agent(name)
     if not result.success:
         return _text(f"Error: {result.error}")
+    await _await_reload()
     return _text(f"Agent '{name}' enabled and deployed.")
 
 
@@ -566,6 +571,7 @@ async def _handle_disable_agent(name: str) -> list[TextContent]:
     result = disable_agent(name)
     if not result.success:
         return _text(f"Error: {result.error}")
+    await _await_reload()
     return _text(f"Agent '{name}' disabled.")
 
 
@@ -575,6 +581,7 @@ async def _handle_delete_agent(name: str, purge_memory: bool) -> list[TextConten
     result = delete_agent(name, purge_memory=purge_memory)
     if not result.success:
         return _text(f"Error: {result.error}")
+    await _await_reload()
     suffix = " (memory purged)" if purge_memory else ""
     return _text(f"Agent '{name}' deleted{suffix}.")
 
@@ -635,6 +642,7 @@ async def _handle_finalize_create_expert(name: str) -> list[TextContent]:
     if not result.success:
         return _text(f"Error: {result.error}")
 
+    await _await_reload()
     return _text(f"Expert '{name}' enabled and deployed at {prep.commit[:12]}.")
 
 
@@ -703,6 +711,7 @@ async def _handle_finalize_update_agent(name: str) -> list[TextContent]:
         agent.deploy(agents_dir=AGENTS_DIR)
         regenerate_librarian()
 
+    await _await_reload()
     old_display = result.old_commit[:12] if result.old_commit else "none"
     return _text(f"Agent '{name}' updated from {old_display} to {result.new_commit[:12]}.")
 
@@ -783,6 +792,7 @@ async def _handle_finalize_switch_version(name: str) -> list[TextContent]:
         agent.deploy(agents_dir=AGENTS_DIR)
         regenerate_librarian()
 
+    await _await_reload()
     old_display = result.old_commit[:12] if result.old_commit else "none"
     return _text(f"Agent '{name}' switched from {old_display} to {result.new_commit[:12]}.")
 
@@ -837,6 +847,7 @@ async def _handle_finalize_create_team(name: str) -> list[TextContent]:
         agent.deploy(agents_dir=AGENTS_DIR)
         regenerate_librarian()
 
+    await _await_reload()
     experts_summary = ", ".join(prep.experts)
     return _text(f"Team '{name}' added to catalog with experts: {experts_summary}. Call enable_agent to deploy it.")
 
@@ -847,6 +858,7 @@ async def _handle_add_expert_to_team(team: str, expert: str) -> list[TextContent
     result = await add_expert_to_team(team, expert)
     if not result.success:
         return _text(f"Error: {result.error}")
+    await _await_reload()
     return _text(f"Added '{expert}' to team '{team}'.")
 
 
@@ -856,6 +868,7 @@ async def _handle_remove_expert_from_team(team: str, expert: str) -> list[TextCo
     result = remove_expert_from_team(team, expert)
     if not result.success:
         return _text(f"Error: {result.error}")
+    await _await_reload()
     return _text(f"Removed '{expert}' from team '{team}'.")
 
 
@@ -999,6 +1012,7 @@ async def _handle_redeploy() -> list[TextContent]:
         if result.teams_failed:
             parts.append(f"teams: {', '.join(result.teams_failed)}")
         msg += f" Failed — {'; '.join(parts)}."
+    await _await_reload()
     return _text(msg)
 
 
@@ -1098,23 +1112,45 @@ def register_tools(server: Server) -> None:
 
 
 def _schedule_deferred_reload() -> None:
-    """POST ``/global/dispose`` synchronously.
+    """Schedule a debounced ``/global/reload-agents`` POST.
 
-    This almost always aborts the in-flight MCP tool call. Opencode's
-    dispose finalizer (``mcp/index.ts:527-548``) SIGTERMs the hivemind
-    MCP subprocess and closes its stdio as part of invalidating every
-    cached ``InstanceState``. There is no finer-grained invalidation
-    primitive — that's the only way to get opencode to re-scan
-    ``agents/*.md``.
-
-    The mutation has already landed on disk by the time this runs, so
-    after the user resumes with ``continue`` the new state is visible.
-    ``HIVEMIND.md`` documents the expected behaviour so main warns the
-    user in advance and verifies with a read-only call after resumption.
+    Multiple mutations in quick succession collapse into a single reload:
+    each call cancels the pending timer and starts a fresh one, so only
+    the last mutation's reload fires (100 ms after the final mutation).
+    Handlers call :func:`_await_reload` before returning to make sure the
+    reload completes before the tool response — preserving the correctness
+    gate — but with a 2 s cap so a failing engine never blocks long
+    enough to trigger the MCP client timeout killer.
     """
+    global _pending_reload
+    if _pending_reload is not None and not _pending_reload.done():
+        _pending_reload.cancel()
+    loop = asyncio.get_running_loop()
+    _pending_reload = loop.create_task(_debounced_reload())
+    _background_tasks.add(_pending_reload)
+    _pending_reload.add_done_callback(_background_tasks.discard)
+
+
+async def _debounced_reload() -> None:
+    await asyncio.sleep(_DEBOUNCE_INTERVAL)
     from hivemind import opencode
 
     opencode.notify_instance_reload()
+
+
+async def _await_reload() -> None:
+    """Wait for any pending debounced reload to complete (with timeout).
+
+    Called by mutation handlers at their success tail. The reload is a
+    correctness gate — the handler shouldn't return until opencode has
+    picked up the new agent file — but if the engine is unreachable we
+    bail after ``_PENDING_RELOAD_TIMEOUT`` seconds. The files are already
+    on disk; the next mutation's reload will pick them up.
+    """
+    if _pending_reload is None or _pending_reload.done():
+        return
+    with contextlib.suppress(TimeoutError, asyncio.CancelledError):
+        await asyncio.wait_for(asyncio.shield(_pending_reload), timeout=_PENDING_RELOAD_TIMEOUT)
 
 
 async def _safe_notify_tools_changed(server: Server) -> None:
