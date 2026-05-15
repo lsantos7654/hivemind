@@ -117,12 +117,12 @@ _OPENCODE_DEP_PATCHES = [
 # invalidates only the build repo (~3s rebuild). Resolved relative to
 # //third_party/patches/.
 _OPENCODE_CODE_PATCHES = [
-    "0006-TUI-wordmark-and-exit-message.patch",
-    "0007-Inline-connection-indicator-into-home-sidebar-footers.patch",
+    "0006-This-is-a-combination-of-2-commits.-This-is-the-1st-.patch",
+    "0007-This-is-a-combination-of-3-commits.-This-is-the-1st-.patch",
     "0008-Non-destructive-agent-reload-endpoint.patch",
     "0009-Hardened-opencode-config-defaults.patch",
     "0010-Bake-bash.sudo-deny-into-Permission.fromConfig.patch",
-    "0011-cross-session-primitives-per-session-inbox-and-fork.patch",
+    "0011-Rewrite-the-TUI-exit-Continue-suggestion-to-hivemind.patch",
     "0012-Task-tool-accepts-source_session_id.patch",
     "0013-TUI-session_footer-slot-dual-slot-home-footer-plugin.patch",
     "0014-Switch-HTTP-listener-to-native-Bun.serve.patch",
@@ -136,6 +136,7 @@ _OPENCODE_CODE_PATCHES = [
     "0022-fix-inline-git-info-read-into-createNext-drop-broken.patch",
     "0023-fix-rerender-subagent-count-pill-on-session-focus-ch.patch",
     "0024-test-add-scenario-test-stubs-Stage-10-Stage-11-TODO.patch",
+    "0025-fix-resolve-agent-from-session-history-on-inbox-prom.patch",
 ]
 external_engines = module_extension(
     implementation = _ext_impl,

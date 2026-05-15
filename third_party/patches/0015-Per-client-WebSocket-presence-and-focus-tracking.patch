@@ -1,7 +1,7 @@
-From 17639ad6465165e02a0907b3e3d5897d8f7be019 Mon Sep 17 00:00:00 2001
+From fe258311e27f7431abad0e2c97276f54167df427 Mon Sep 17 00:00:00 2001
 From: Lucas Santos <lsantos7654@gmail.com>
 Date: Fri, 1 May 2026 02:00:37 -0400
-Subject: [PATCH 15/24] Per-client WebSocket presence and focus tracking
+Subject: [PATCH 15/25] Per-client WebSocket presence and focus tracking
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
