@@ -226,6 +226,7 @@ def redeploy_all_agents() -> RedeployResult:
             experts_deployed.append(agent.name)
 
     regenerate_librarian()
+    regenerate_hivemind_md()
     fire_post_mutation()
 
     return RedeployResult(

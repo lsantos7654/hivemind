@@ -258,7 +258,14 @@ def test_extract_args_for_cross_session_tools():
         "list_sessions",
         {"live_only": False, "tree": True, "limit": 100},
     ) == (False, True, False, 100)
-    assert mcp_tools._extract_args("send_message", {"session_id": "s", "message": "m"}) == ("s", "m")
+    assert mcp_tools._extract_args("send_message", {"session_id": "s", "message": "m"}) == ("s", "m", None)
+    assert mcp_tools._extract_args("send_message", {"session_id": "s", "message": "m", "reply_to": "ses_caller"}) == (
+        "s",
+        "m",
+        "ses_caller",
+    )
+    assert mcp_tools._extract_args("read_session", {"session_id": "s"}) == ("s", -1)
+    assert mcp_tools._extract_args("read_session", {"session_id": "s", "index": 0}) == ("s", 0)
 
 
 def test_extract_args_for_renamed_update_agent():

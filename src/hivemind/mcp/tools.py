@@ -439,8 +439,35 @@ TOOLS: list[Tool] = [
             "properties": {
                 "session_id": {"type": "string", "description": "Target session ID (ses_...)"},
                 "message": {"type": "string", "description": "Message text to append"},
+                "reply_to": {
+                    "type": "string",
+                    "description": "Your own session ID so the recipient knows where to reply.",
+                },
             },
             "required": ["session_id", "message"],
+        },
+    ),
+    Tool(
+        name="read_session",
+        description=(
+            "Read an exchange (user + assistant pair) from a session's message history. "
+            "Returns the exchange as plain text — grep/awk/rg friendly. "
+            "Index 0 is the first exchange, -1 is the last. "
+            "Use to peek at what another session is doing without waking it."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "session_id": {"type": "string", "description": "Session ID (ses_...)"},
+                "index": {
+                    "type": "integer",
+                    "description": (
+                        "Exchange index. 0 = first exchange, -1 = last, -2 = second to last, etc. Default: -1."
+                    ),
+                    "default": -1,
+                },
+            },
+            "required": ["session_id"],
         },
     ),
     Tool(
@@ -968,8 +995,15 @@ async def _handle_list_sessions(
     return _json_text(slim)
 
 
-async def _handle_send_message(session_id: str, message: str) -> list[TextContent]:
+async def _handle_send_message(
+    session_id: str,
+    message: str,
+    reply_to: str | None = None,
+) -> list[TextContent]:
     from hivemind import opencode
+
+    if reply_to:
+        message = f"[From: {reply_to}]\n\n{message}"
 
     try:
         result = opencode.session_inbox(session_id, message)
@@ -977,6 +1011,30 @@ async def _handle_send_message(session_id: str, message: str) -> list[TextConten
         return _text(f"Error: {exc}")
     state = "queued" if result.get("queued") else "delivered"
     return _text(f"Message {state} to {session_id} (queue depth: {result.get('depth', 0)}).")
+
+
+async def _handle_read_session(session_id: str, index: int) -> list[TextContent]:
+    from hivemind import opencode
+
+    try:
+        if index < 0:
+            limit = abs(index) * 40
+            msgs = opencode.session_messages(session_id, limit=limit)
+        else:
+            msgs = opencode.session_messages(session_id)
+    except RuntimeError as exc:
+        return _text(f"Error: {exc}")
+
+    exchanges = _build_exchanges(msgs)
+    if not exchanges:
+        return _text(f"Error: session {session_id} has no messages.")
+
+    try:
+        exchange = exchanges[index]
+    except IndexError:
+        return _text(f"Error: session {session_id} has {len(exchanges)} exchange(s), index {index} is out of range.")
+
+    return _text(exchange)
 
 
 async def _handle_delete_session(session_id: str) -> list[TextContent]:
@@ -1017,8 +1075,73 @@ async def _handle_redeploy() -> list[TextContent]:
 
 
 # ---------------------------------------------------------------------------
-# Dispatcher
+# Exchange builder helpers (read_session)
 # ---------------------------------------------------------------------------
+
+
+def _extract_text(msg: dict[str, Any]) -> str:
+    return "\n".join(p.get("text", "") for p in msg.get("parts", []) if p.get("type") == "text")
+
+
+def _extract_tools(msg: dict[str, Any]) -> list[str]:
+    tools: list[str] = []
+    for p in msg.get("parts", []):
+        if p.get("type") == "tool":
+            state = p.get("state", {})
+            tool_name = p.get("tool", "unknown")
+            if state.get("status") == "completed":
+                args = state.get("input", {})
+                tools.append(f"  {tool_name}({_format_tool_args(args)})")
+    return tools
+
+
+def _format_tool_args(args: dict[str, object]) -> str:
+    pieces: list[str] = []
+    for k, v in args.items():
+        val = str(v)
+        if len(val) > 60:
+            val = val[:57] + "..."
+        pieces.append(f"{k}={val!r}")
+    return ", ".join(pieces)
+
+
+def _build_exchanges(messages: list[dict[str, Any]]) -> list[str]:
+    """Group flat message array into user+assistant exchange strings."""
+    raw: list[dict[str, object]] = []
+    cur: dict[str, object] = {}
+    for msg in messages:
+        info = msg.get("info", {})
+        role = info.get("role")
+        if role == "user":
+            if cur and "user" in cur:
+                raw.append(cur)
+            cur = {"user": _extract_text(msg), "assistant": "", "tools": []}
+        elif role == "assistant":
+            if "user" not in cur:
+                continue
+            cur["assistant"] = str(cur.get("assistant", "")) + _extract_text(msg)
+            tools: list[str] = cur.get("tools", [])  # type: ignore[assignment]
+            tools.extend(_extract_tools(msg))
+            cur["tools"] = tools
+    if cur and "user" in cur:
+        raw.append(cur)
+
+    result: list[str] = []
+    for i, ex in enumerate(raw):
+        lines = [f"=== Exchange {i + 1}/{len(raw)} ==="]
+        lines.append("")
+        lines.append("## User")
+        lines.append(str(ex.get("user", "")).strip())
+        lines.append("")
+        lines.append("## Assistant")
+        lines.append(str(ex.get("assistant", "")).strip())
+        ex_tools: list[str] = ex.get("tools", [])  # type: ignore[assignment]
+        if ex_tools:
+            lines.append("")
+            lines.append("Tools used:")
+            lines.extend(ex_tools)
+        result.append("\n".join(lines))
+    return result
 
 
 TOOL_HANDLERS: dict[str, ToolHandler] = {
@@ -1040,6 +1163,7 @@ TOOL_HANDLERS: dict[str, ToolHandler] = {
     "remove_expert_from_team": _handle_remove_expert_from_team,
     "list_sessions": _handle_list_sessions,
     "send_message": _handle_send_message,
+    "read_session": _handle_read_session,
     "delete_session": _handle_delete_session,
     "redeploy": _handle_redeploy,
 }
@@ -1069,7 +1193,8 @@ _ARG_EXTRACTORS: dict[str, Callable[[dict[str, Any]], tuple[Any, ...]]] = {
         bool(a.get("roots", False)),
         int(a.get("limit", 50)),
     ),
-    "send_message": lambda a: (a["session_id"], a["message"]),
+    "send_message": lambda a: (a["session_id"], a["message"], a.get("reply_to")),
+    "read_session": lambda a: (a["session_id"], a.get("index", -1)),
     "delete_session": lambda a: (a["session_id"],),
 }
 

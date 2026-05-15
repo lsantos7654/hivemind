@@ -162,6 +162,46 @@ Some agents are always ephemeral (`hivemind-memory-daemon`,
 `hivemind-expert-curator`); their `agent.md` frontmatter declares
 `ephemeral: true` and you don't need to pass the flag.
 
+### The ``explore`` subagent
+
+The ``explore`` agent is a built-in opencode subagent specialized for
+codebase research — finding files by glob patterns, searching code for
+keywords, and answering structural questions about a codebase. It is
+read-only (no file edits), lightweight, and faster to start than a
+full domain expert.
+
+Use ``explore`` instead of a domain expert when the task is purely
+searching or navigating — finding where something is defined, mapping
+import chains, listing files matching a pattern, or answering "how
+does this work" from existing code. For deep domain questions that
+require reasoning, consult the appropriate domain expert
+(``expert-bazel``, ``expert-pydantic``, etc.).
+
+**Thoroughness**: pass a thoroughness level in the prompt:
+``"quick"`` for basic searches, ``"medium"`` for moderate exploration,
+or ``"very thorough"`` for comprehensive multi-location analysis.
+
+**Important — ``explore`` sessions persist by default.** Unlike
+``hivemind-memory-daemon`` or ``hivemind-expert-curator``, the
+``explore`` agent does NOT declare ``ephemeral: true`` in its
+frontmatter. Spawns accumulate as depth-1 children and survive
+indefinitely. **Always pass ``ephemeral=true``** for one-shot
+exploration:
+
+```
+Task(
+  subagent_type="explore",
+  ephemeral=true,
+  description="find auth middleware",
+  prompt="quick: find where authentication middleware is defined",
+)
+```
+
+For exploration that feeds into a longer analysis, use
+``background=true`` + ``ephemeral=true`` — the result survives in
+``SessionBackground`` until you consume it, and the session
+auto-deletes afterwards.
+
 ## Reading expert knowledge directly
 
 Every git-analyzed expert ships pre-generated analysis docs and a
@@ -322,8 +362,27 @@ so the catalog matches the cwd's pinned versions — e.g. `.bazelversion`
 `/hivemind_generate_team` (same scoping plus a project-scoped team
 bundle at the end, end-to-end).
 
-For cross-session messaging (`list_sessions`, `send_message`), see
-the `hivemind-cross-session` skill.
+## Cross-session communication
+
+When coordinating work across multiple live sessions, four MCP verbs
+cover every interaction:
+
+- ``hivemind_list_sessions(live_only=true, tree=true)`` — discover live
+  sessions and their children.
+- ``hivemind_read_session(session_id, index=-1)`` — peek at a session's
+  exchange history without waking it. Returns one user+assistant pair as
+  plain text — grep/awk/rg friendly. Index 0 = first exchange, -1 = last.
+  Use to check progress or retrieve a session's last answer without a
+  send_message round-trip.
+- ``hivemind_send_message(session_id, message, reply_to=your_session_id)`` —
+  deliver a message to a session's inbox. If idle, runs immediately; if
+  busy, queues for next idle. **Always pass ``reply_to``** so the recipient
+  knows where to respond — its LLM sees ``[From: ses_xxx]`` prepended.
+- ``hivemind_delete_session(session_id)`` — hard-delete a session and its
+  descendants.
+
+For the full patterns (``Task(source_session_id=...)`` vs ``send_message``,
+ephemeral forks, team notes), see the ``hivemind-cross-session`` skill.
 
 ## Key principles
 

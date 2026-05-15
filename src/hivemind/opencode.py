@@ -611,6 +611,35 @@ def session_inbox(session_id: str, text: str) -> dict[str, Any]:
     return data
 
 
+def session_info(session_id: str) -> dict[str, Any]:
+    """GET /session/:sessionID — session metadata (Session.Info)."""
+    resp = httpx.get(
+        f"{_server_url()}/session/{session_id}",
+        timeout=SESSION_HTTP_TIMEOUT,
+    )
+    resp.raise_for_status()
+    data: dict[str, Any] = resp.json()
+    return data
+
+
+def session_messages(
+    session_id: str,
+    limit: int | None = None,
+) -> list[dict[str, Any]]:
+    """GET /session/:sessionID/message — messages as MessageV2.WithParts[]."""
+    params: dict[str, str] = {}
+    if limit is not None:
+        params["limit"] = str(limit)
+    resp = httpx.get(
+        f"{_server_url()}/session/{session_id}/message",
+        params=params,
+        timeout=SESSION_HTTP_TIMEOUT,
+    )
+    resp.raise_for_status()
+    data: list[dict[str, Any]] = resp.json()
+    return data
+
+
 def live_session_ids() -> set[str]:
     """GET /global/live-sessions — sessions a TUI is currently attached to.
 
