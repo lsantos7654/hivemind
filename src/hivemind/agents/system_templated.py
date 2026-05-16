@@ -50,16 +50,16 @@ class SystemTemplatedBody:
     # --- body protocol -----------------------------------------------------
 
     def render(self) -> str:
-        """Render the template with model config injected from hivemind.json.
+        """Render the template with model config injected from config.json.
 
         System-templated agents pass through their frontmatter verbatim,
         so model / small_model are injected as Jinja variables. If either
         is unset the render raises (StrictUndefined).
         """
-        from hivemind.opencode import _cfg
+        from hivemind.opencode import _app_cfg
 
-        cfg = _cfg()
-        return render(self.params.template, model=cfg.model, small_model=cfg.small_model)
+        app = _app_cfg()
+        return render(self.params.template, model=app.model, small_model=app.small_model)
 
     def description(self) -> str:
         """Pull ``description`` out of the rendered template's frontmatter."""

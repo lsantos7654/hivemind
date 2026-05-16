@@ -210,8 +210,6 @@ class HivemindConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     home_dir: str = ""
-    model: str = ""
-    small_model: str = ""
     tools: dict[str, bool] = {}
     temperature: float | None = None
     server: ServerConfig = ServerConfig()
@@ -226,6 +224,8 @@ class AppConfig(BaseModel):
     enabled: list[str] = []
     disabled: list[str] = []
     teams: dict[str, RosterTemplatedParams] = {}
+    model: str = ""
+    small_model: str = ""
 
 
 # --- Operation Result Models ---

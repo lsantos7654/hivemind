@@ -336,6 +336,79 @@ def server_restart(
 @app.command()
 def sync() -> None:
     """Sync workspace: symlinks, deploy agents, sweep stale files, regenerate librarian."""
+    import sys
+
+    from hivemind.config import load_config, save_config
+    from hivemind.opencode import list_engine_models
+
+    app_cfg = load_config()
+
+    # ── first-time model selection ──
+    if not app_cfg.model or not app_cfg.small_model:
+        console.print("[heading]First-time setup: model configuration[/heading]\n")
+
+        if not sys.stdin.isatty():
+            console.print(
+                "[error]No model configured and stdin is not interactive.\n"
+                "Edit config.json to set 'model' and 'small_model', then re-run 'hivemind sync'.[/error]"
+            )
+            raise typer.Exit(1)
+
+        try:
+            models = list_engine_models()
+        except RuntimeError as e:
+            console.print(f"[error]{e}[/error]")
+            raise typer.Exit(1) from None
+
+        if not models:
+            console.print(
+                "[error]No models available. Run [bold]hivemind -- auth login[/bold] to authenticate.[/error]"
+            )
+            raise typer.Exit(1)
+
+        all_free = all(m.startswith("opencode/") for m in models)
+        if all_free:
+            console.print(
+                "[warning]Only OpenCode free models found. "
+                "Run [bold]hivemind -- auth login[/bold] to authenticate, "
+                "then re-run [bold]hivemind sync[/bold].[/warning]"
+            )
+            raise typer.Exit(1)
+
+        table = Table(show_header=True, header_style="bold")
+        table.add_column("#", justify="right", style="dim")
+        table.add_column("Model", style="bold")
+        for i, model_name in enumerate(models, 1):
+            table.add_row(str(i), model_name)
+        console.print(table)
+        console.print()
+
+        def _pick_model(label: str) -> str:
+            def _validate(val: str) -> str:
+                try:
+                    idx = int(val.strip())
+                except ValueError:
+                    msg = f"Enter a number between 1 and {len(models)}"
+                    raise typer.BadParameter(msg) from None
+                if not 1 <= idx <= len(models):
+                    msg = f"Enter a number between 1 and {len(models)}"
+                    raise typer.BadParameter(msg)
+                return models[idx - 1]
+
+            return str(typer.prompt(f"Enter the number for your {label} model", value_proc=_validate))
+
+        app_cfg.model = _pick_model("default")
+        app_cfg.small_model = _pick_model("small")
+        save_config(app_cfg)
+
+        console.print(
+            f"\n[success]Model set to [bold]{app_cfg.model}[/bold] "
+            f"and small model to [bold]{app_cfg.small_model}[/bold].[/success]\n"
+            "[info]Re-run [bold]hivemind sync[/bold] to complete setup.[/info]"
+        )
+        raise typer.Exit(0)
+
+    # ── normal sync ──
     from hivemind.lifecycle import sync_workspace
 
     console.print("[heading]Syncing hivemind...[/heading]\n")
@@ -942,7 +1015,7 @@ def status() -> None:
     """Show a dashboard of hivemind status."""
     from hivemind.server import is_server_running, load_server_state
 
-    cfg = opencode._cfg()
+    app = opencode._app_cfg()
 
     try:
         engine_path = opencode._engine_path()
@@ -951,7 +1024,7 @@ def status() -> None:
 
     overview_lines: list[str] = []
     overview_lines.append(f"Engine: [heading]{escape(engine_path)}[/heading]")
-    overview_lines.append(f"Model: [heading]{escape(cfg.model)}[/heading]")
+    overview_lines.append(f"Model: [heading]{escape(app.model)}[/heading]")
 
     if is_server_running():
         state = load_server_state()

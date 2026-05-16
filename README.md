@@ -33,7 +33,27 @@ hermetically.
 git clone https://github.com/lsantos7654/hivemind.git
 cd hivemind
 make install     # builds CLI + engine, symlinks ~/.local/bin/hivemind
-hivemind sync    # bootstraps workspace
+hivemind sync    # bootstraps workspace — first run prompts for model config
+```
+
+The first time you run `hivemind sync`, it will prompt you to pick a default
+model and a small model from the available providers. If only OpenCode free
+models appear, authenticate first:
+
+```bash
+hivemind -- auth login
+hivemind sync
+```
+
+Model selections are saved to `config.json`. After the prompt, re-run
+`hivemind sync` to complete workspace setup.
+
+To bypass hivemind and access opencode directly, pass flags after `--`:
+
+```bash
+hivemind -- --help
+hivemind -- -s ses_xxx          # resume a session
+hivemind -- models              # list available models
 ```
 
 Make sure `~/.local/bin` is on your `PATH`. Python edits in
@@ -200,7 +220,7 @@ Two config files in the repo root:
 | File | Tracked? | Purpose |
 |------|----------|---------|
 | `hivemind.json` | Yes | Engine settings + agent catalog (shared) |
-| `config.json` | No | Per-machine enabled/disabled agent names |
+| `config.json` | No | Per-machine model selection + enabled/disabled agent names |
 
 After editing `hivemind.json`, run `hivemind sync`.
 

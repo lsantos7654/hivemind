@@ -29,7 +29,7 @@ from hivemind.constants import (
     OPENCODE_CONFIG_DIR,
     TEAMS_DIR_PLACEHOLDER,
 )
-from hivemind.models import HivemindConfig, InitResult, OperationResult, ServerConfig
+from hivemind.models import AppConfig, HivemindConfig, InitResult, OperationResult, ServerConfig
 from hivemind.templates import LIBRARIAN_DESCRIPTION
 
 log = logging.getLogger(__name__)
@@ -45,6 +45,7 @@ RULES_FILE_NAME = "AGENTS.md"
 # ---------------------------------------------------------------------------
 
 _config_cache: HivemindConfig | None = None
+_app_config_cache: AppConfig | None = None
 _engine_validated: bool = False
 
 
@@ -57,17 +58,24 @@ def _cfg() -> HivemindConfig:
     from hivemind.config import load_hivemind
 
     cfg = load_hivemind()
-    errors: list[str] = []
     if not cfg.home_dir:
-        errors.append("home_dir must be set")
-    if not cfg.model:
-        errors.append("model must be set")
-    if errors:
-        msg = f"Incomplete config: {'; '.join(errors)}. Check hivemind.json."
+        msg = "Incomplete config: home_dir must be set in hivemind.json."
         raise RuntimeError(msg)
 
     _config_cache = cfg
     return _config_cache
+
+
+def _app_cfg() -> AppConfig:
+    """Return the cached ``AppConfig`` (loading config.json on first access)."""
+    global _app_config_cache
+    if _app_config_cache is not None:
+        return _app_config_cache
+
+    from hivemind.config import load_config
+
+    _app_config_cache = load_config()
+    return _app_config_cache
 
 
 def _engine_path() -> str:
@@ -106,9 +114,10 @@ def _engine_path() -> str:
 
 
 def invalidate_config_cache() -> None:
-    """Clear the cached ``HivemindConfig`` — call after writes to hivemind.json."""
-    global _config_cache, _engine_validated
+    """Clear both cached configs — call after writes to hivemind.json or config.json."""
+    global _config_cache, _app_config_cache, _engine_validated
     _config_cache = None
+    _app_config_cache = None
     _engine_validated = False
 
 
@@ -209,13 +218,14 @@ def _build_frontmatter(
 ) -> str:
     """Build a complete OpenCode agent file with YAML frontmatter."""
     cfg = _cfg()
+    app = _app_cfg()
     temperature = cfg.temperature if cfg.temperature is not None else DEFAULT_TEMPERATURE
 
     lines = [
         "---",
         f'description: "{yaml_escape_double_quoted(description)}"',
         "mode: subagent",
-        f"model: {cfg.model}",
+        f"model: {app.model}",
         f"temperature: {temperature}",
     ]
 
@@ -359,6 +369,31 @@ def undeploy_backing_dir(name: str) -> None:
 # ---------------------------------------------------------------------------
 
 
+def list_engine_models() -> list[str]:
+    """Return the list of available model names from the engine binary.
+
+    Raises ``RuntimeError`` if the engine binary is missing, the subprocess
+    fails, or ``models`` exits non-zero.
+    """
+    try:
+        binary = _engine_path()
+    except RuntimeError as e:
+        msg = f"Engine binary not found: {e}"
+        raise RuntimeError(msg) from e
+
+    result = subprocess.run(
+        [binary, "models"],
+        capture_output=True,
+        text=True,
+        timeout=ENGINE_VALIDATION_TIMEOUT,
+        check=False,
+    )
+    if result.returncode != 0:
+        msg = f"Failed to query available models: {result.stderr.strip()[:200]}"
+        raise RuntimeError(msg)
+    return [line.strip() for line in result.stdout.splitlines() if line.strip()]
+
+
 def validate_engine() -> OperationResult:
     """Validate that the bundled engine binary and configured model are available.
 
@@ -370,47 +405,24 @@ def validate_engine() -> OperationResult:
     if _engine_validated:
         return OperationResult(success=True)
 
-    cfg = _cfg()
+    model = _app_cfg().model
+
+    if not model:
+        return OperationResult(
+            success=False,
+            error="No model configured. Set 'model' in config.json.",
+        )
 
     try:
-        binary = _engine_path()
+        available = list_engine_models()
     except RuntimeError as e:
         return OperationResult(success=False, error=str(e))
 
-    if not cfg.model:
-        return OperationResult(
-            success=False,
-            error="No model configured. Set 'model' in hivemind.json.",
-        )
-
-    try:
-        result = subprocess.run(
-            [binary, "models"],
-            capture_output=True,
-            text=True,
-            timeout=ENGINE_VALIDATION_TIMEOUT,
-            check=False,
-        )
-    except FileNotFoundError:
-        return OperationResult(success=False, error=f"Engine binary '{binary}' not found.")
-    except subprocess.TimeoutExpired:
-        return OperationResult(
-            success=False,
-            error=f"Model validation timed out ({binary} models).",
-        )
-
-    if result.returncode != 0:
-        return OperationResult(
-            success=False,
-            error=f"Failed to query available models: {result.stderr.strip()[:200]}",
-        )
-
-    available = {line.strip() for line in result.stdout.splitlines() if line.strip()}
-    if cfg.model not in available:
+    if model not in set(available):
         return OperationResult(
             success=False,
             error=(
-                f"Model '{cfg.model}' not available. "
+                f"Model '{model}' not available. "
                 "Run 'hivemind-engine providers' to configure it.\n"
                 "Available models can be listed with 'hivemind-engine models'."
             ),
@@ -426,10 +438,8 @@ def build_analysis_command(
     write: bool = False,
 ) -> list[str]:
     """Build a hivemind-engine subprocess command for AI analysis runs."""
-    cfg = _cfg()
-    # `run` is opencode's non-interactive prompt subcommand; analysis runs
-    # always feed a single prompt and exit, so this is the right driver.
-    cmd = [_engine_path(), "run", "--model", cfg.model]
+    model = _app_cfg().model
+    cmd = [_engine_path(), "run", "--model", model]
 
     if extra_dirs:
         resolved = [str(d.resolve()) for d in extra_dirs if d.exists()]
@@ -442,8 +452,8 @@ def build_analysis_command(
 
 def build_query_command() -> list[str]:
     """Build a hivemind-engine subprocess command for librarian queries."""
-    cfg = _cfg()
-    return [_engine_path(), "run", "--model", cfg.model]
+    model = _app_cfg().model
+    return [_engine_path(), "run", "--model", model]
 
 
 # ---------------------------------------------------------------------------
@@ -777,14 +787,12 @@ def _post_init_dirs() -> list[InitResult]:
     }
     existing["mcp"] = mcp_section
 
-    # Sync small_model from hivemind.json to opencode.json so title
+    # Sync small_model from config.json to opencode.json so title
     # generation has a reliable cross-provider small model regardless
     # of which provider the current session uses.
-    from hivemind.config import load_hivemind
-
-    hivemind_cfg = load_hivemind()
-    if hivemind_cfg.small_model:
-        existing["small_model"] = hivemind_cfg.small_model
+    small = _app_cfg().small_model
+    if small:
+        existing["small_model"] = small
         results.append(InitResult(label="opencode.json", status="small_model synced"))
 
     config_path.write_text(json.dumps(existing, indent=2) + "\n")

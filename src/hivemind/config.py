@@ -169,6 +169,9 @@ def load_config() -> AppConfig:
 
 def save_config(config: AppConfig) -> None:
     save_json(CONFIG_JSON, config.model_dump(exclude_defaults=True))
+    from hivemind.opencode import invalidate_config_cache
+
+    invalidate_config_cache()
 
 
 def load_hivemind() -> HivemindConfig:
