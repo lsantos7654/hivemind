@@ -777,6 +777,16 @@ def _post_init_dirs() -> list[InitResult]:
     }
     existing["mcp"] = mcp_section
 
+    # Sync small_model from hivemind.json to opencode.json so title
+    # generation has a reliable cross-provider small model regardless
+    # of which provider the current session uses.
+    from hivemind.config import load_hivemind
+
+    hivemind_cfg = load_hivemind()
+    if hivemind_cfg.small_model:
+        existing["small_model"] = hivemind_cfg.small_model
+        results.append(InitResult(label="opencode.json", status="small_model synced"))
+
     config_path.write_text(json.dumps(existing, indent=2) + "\n")
     results.append(InitResult(label="opencode.json", status="path-token permissions merged"))
     results.append(InitResult(label="opencode.json", status="mcp server registered"))
