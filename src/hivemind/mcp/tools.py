@@ -119,8 +119,8 @@ TOOLS: list[Tool] = [
         },
     ),
     Tool(
-        name="status",
-        description="Catalog summary: total / enabled / disabled / unlisted counts plus per-kind breakdown.",
+        name="sync",
+        description="Full workspace sync: symlinks, deploy agents, sweep stale files, regenerate librarian.",
         inputSchema={"type": "object", "properties": {}, "required": []},
     ),
     # --- Lifecycle mutations (kind-agnostic) ---
@@ -494,8 +494,8 @@ TOOLS: list[Tool] = [
     ),
     # --- System ---
     Tool(
-        name="redeploy",
-        description="Regenerate all agent files for every enabled agent from the current catalog.",
+        name="sync",
+        description="Full workspace sync: symlinks, deploy agents, sweep stale files, regenerate librarian.",
         inputSchema={"type": "object", "properties": {}, "required": []},
     ),
 ]
@@ -1056,20 +1056,20 @@ async def _handle_delete_session(session_id: str) -> list[TextContent]:
 # ---------------------------------------------------------------------------
 
 
-async def _handle_redeploy() -> list[TextContent]:
-    from hivemind.lifecycle import redeploy_all_agents
+async def _handle_sync() -> list[TextContent]:
+    from hivemind.lifecycle import sync_workspace
 
-    result = redeploy_all_agents()
+    result = sync_workspace()
     if not result.success:
         return _text(f"Error: {result.error}")
-    msg = f"Redeployed {len(result.experts_deployed)} expert(s) and {len(result.teams_deployed)} team(s)."
+    msg = f"Synced {len(result.experts_deployed)} expert(s) and {len(result.teams_deployed)} team(s)."
     if result.failed or result.teams_failed:
         parts = []
         if result.failed:
             parts.append(f"experts: {', '.join(result.failed)}")
         if result.teams_failed:
             parts.append(f"teams: {', '.join(result.teams_failed)}")
-        msg += f" Failed — {'; '.join(parts)}."
+        msg += f" Failed: {'; '.join(parts)}."
     await _await_reload()
     return _text(msg)
 
@@ -1165,7 +1165,7 @@ TOOL_HANDLERS: dict[str, ToolHandler] = {
     "send_message": _handle_send_message,
     "read_session": _handle_read_session,
     "delete_session": _handle_delete_session,
-    "redeploy": _handle_redeploy,
+    "sync": _handle_sync,
 }
 
 
@@ -1173,7 +1173,7 @@ _ARG_EXTRACTORS: dict[str, Callable[[dict[str, Any]], tuple[Any, ...]]] = {
     "list_agents": lambda a: (str(a.get("state", "all")), str(a.get("kind", ""))),
     "show_agent": lambda a: (a["name"],),
     "status": lambda a: (),
-    "redeploy": lambda a: (),
+    "sync": lambda a: (),
     "enable_agent": lambda a: (a["name"],),
     "disable_agent": lambda a: (a["name"],),
     "delete_agent": lambda a: (a["name"], bool(a.get("purge_memory", False))),

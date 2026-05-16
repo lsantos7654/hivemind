@@ -1,8 +1,8 @@
 # opencode user content
 
 Three slots for user-authored opencode content. Drop a file in the
-right subdirectory and run `hivemind redeploy` — the wiring is
-idempotent, so additions and removals go live without `hivemind init`.
+right subdirectory and run `hivemind sync` — the wiring is
+idempotent, so additions and removals go live with a single command.
 
 | Subdirectory | Invocation | Body shape | Loaded by opencode from |
 |---|---|---|---|
@@ -63,11 +63,11 @@ analysis, no Jinja templating.
 
 Lifecycle:
 
-- Drop a file → `hivemind redeploy` → catalog entry as **unlisted**.
+- Drop a file → `hivemind sync` → catalog entry as **unlisted**.
 - `hivemind expert enable <name>` → file deployed verbatim to
   `~/.config/opencode/agents/<name>.md`.
-- Edit source → `hivemind redeploy` → re-deployed.
-- Remove source → `hivemind redeploy` → catalog entry swept.
+- Edit source → `hivemind sync` → re-deployed.
+- Remove source → `hivemind sync` → catalog entry swept.
 
 ### Memory opt-in
 

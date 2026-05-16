@@ -192,7 +192,7 @@ enabled/disabled overlay), joins them into `{name: Agent}`, and
 provides the CRUD surface. Mutations always flow through
 `lifecycle.py`'s kind-agnostic verbs (`enable_agent`,
 `disable_agent`, `delete_agent`, `refresh_agent`,
-`redeploy_all_agents`, `bootstrap_workspace`). Each verb:
+`sync_workspace`). Each verb:
 
 1. Mutates the registry (flip enabled state, or remove).
 2. Calls `Agent.deploy()` / `Agent.undeploy()`, which writes the
@@ -310,9 +310,9 @@ provides vim-style navigation.
 ## User-supplied content slots (`opencode/`)
 
 Three drop-in directories for user-authored opencode content. Drop
-a file in the right subdirectory and run `hivemind redeploy` —
-wiring is idempotent, so additions and removals go live without
-`hivemind init`.
+a file in the right subdirectory and run `hivemind sync` —
+wiring is idempotent, so additions and removals go live with a
+single command.
 
 | Slot | Invocation | Body shape | Loaded from |
 |---|---|---|---|
@@ -387,7 +387,7 @@ enable_agent(name)                   (separate user step, or auto in TUI)
   (`enabled` / `disabled` agent names on this machine).
 - **`HIVEMIND.md`** (tracked) — generated orchestrator instruction
   file. Rendered from `templates/hivemind.md.j2` at
-  `bootstrap_workspace()` time. Symlinked into
+  `sync_workspace()` time. Symlinked into
   `~/.config/opencode/AGENTS.md`.
 
 ## Code conventions
@@ -415,8 +415,8 @@ enable_agent(name)                   (separate user step, or auto in TUI)
 | A new MCP tool exposed to opencode agents | `src/hivemind/mcp/tools.py`; restart the opencode subprocess to reload |
 | A new opencode behavior we can build on the existing public API | Stays out — use `src/hivemind/opencode.py` to integrate |
 | A new opencode behavior that needs engine internals | New patch via `make dev` / `make dev-save` workflow |
-| A user-authored slash command / skill / agent | `opencode/{commands,skills,agents}/`, then `hivemind redeploy` |
-| A new AI-driven workflow run by an existing agent | Edit `experts/<name>/HEAD/agent.md` then `hivemind redeploy`, or rev the git_analyzed source |
+| A user-authored slash command / skill / agent | `opencode/{commands,skills,agents}/`, then `hivemind sync` |
+| A new AI-driven workflow run by an existing agent | Edit `experts/<name>/HEAD/agent.md` then `hivemind sync`, or rev the git_analyzed source |
 
 ## Out of scope
 

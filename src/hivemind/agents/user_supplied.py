@@ -1,7 +1,7 @@
 """``UserSuppliedBody`` — body strategy for user-authored agent files.
 
 A user drops a markdown file at ``opencode/agents/<name>.md``, and on
-``hivemind redeploy`` the file is auto-registered in the catalog as a
+``hivemind sync`` the file is auto-registered in the catalog as a
 ``user_supplied`` agent. The deployed body is the file content
 verbatim — no AI analysis, no Jinja templating, no memory section
 appended. The user owns both the body and the YAML frontmatter.
@@ -111,7 +111,7 @@ class UserSuppliedBody:
             f"### {self.name}\n"
             f"User-supplied agent. {desc}\n"
             f"Source: ``opencode/agents/{self.params.filename}`` (edit and "
-            f"``hivemind redeploy`` to update)."
+            f"``hivemind sync`` to update)."
         )
 
     def on_deploy(self) -> None:
@@ -138,7 +138,7 @@ class UserSuppliedBody:
 
 
 # ---------------------------------------------------------------------------
-# Auto-sync (called from lifecycle.bootstrap_workspace + redeploy_all_agents)
+# Auto-sync (called from lifecycle.sync_workspace)
 # ---------------------------------------------------------------------------
 
 

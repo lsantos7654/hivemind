@@ -33,7 +33,7 @@ hermetically.
 git clone https://github.com/lsantos7654/hivemind.git
 cd hivemind
 make install     # builds CLI + engine, symlinks ~/.local/bin/hivemind
-hivemind init    # bootstraps workspace
+hivemind sync    # bootstraps workspace
 ```
 
 Make sure `~/.local/bin` is on your `PATH`. Python edits in
@@ -101,10 +101,9 @@ agents without tearing down your conversation.
 
 ```
 hivemind status               # engine, model, server, expert/team counts
-hivemind redeploy              # regenerate every enabled agent + librarian from catalog
+hivemind sync                   # sync workspace: deploy agents, sweep stale files, regenerate librarian
 hivemind tui                   # Textual-based TUI dashboard (Experts / Teams tabs)
 hivemind mcp                   # MCP server (stdio transport)
-hivemind init                  # setup symlinks, deploy agents, register MCP
 hivemind                       # launch opencode (attaches to server if running)
 hivemind -- -s ses_xxx         # forward args to opencode (-- separator required)
 ```
@@ -203,7 +202,7 @@ Two config files in the repo root:
 | `hivemind.json` | Yes | Engine settings + agent catalog (shared) |
 | `config.json` | No | Per-machine enabled/disabled agent names |
 
-After editing `hivemind.json`, run `hivemind redeploy`.
+After editing `hivemind.json`, run `hivemind sync`.
 
 ### External Documentation
 

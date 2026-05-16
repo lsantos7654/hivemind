@@ -70,3 +70,15 @@ Load the relevant skill when a task matches:
 - `hivemind-cross-session` — multi-session coordination:
   discover live sessions, peek at exchange history, deliver
   messages across sessions, hard-delete stale sessions.
+
+## Ephemeral spawns
+
+Pass `ephemeral=true` to Task for one-shot sessions that auto-delete on
+completion — the summary stays in the parent's history but the spawned
+session's intermediate work is discarded.  Use for exploration,
+fire-and-forget analysis, and scratch work.
+
+Two agents are always-ephemeral regardless of the flag:
+`hivemind-expert-curator` (one-shot catalog mutations) and
+`hivemind-memory-daemon` (auto-spawned compaction workers).  Passing
+`ephemeral=true` to these is redundant.

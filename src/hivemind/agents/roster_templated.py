@@ -119,7 +119,7 @@ class RosterTemplatedBody:
         ``teams/<name>/expert-<expert>.md`` per current roster member, then
         passes them through the Jinja team-lead template. Roster mutations
         write to those files directly; template tweaks take effect on
-        ``hivemind redeploy`` with no AI spend.
+        ``hivemind sync`` with no AI spend.
         """
         team_dir = TEAMS_DIR / self.name
         desc_md = team_dir / DESCRIPTION_FILENAME

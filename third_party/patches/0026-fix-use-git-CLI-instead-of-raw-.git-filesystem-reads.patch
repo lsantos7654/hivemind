@@ -1,0 +1,144 @@
+From 231096384c31ec56afed67503c13b78abdc27f2b Mon Sep 17 00:00:00 2001
+From: Lucas Santos <lsantos7654@gmail.com>
+Date: Fri, 15 May 2026 23:27:05 -0400
+Subject: [PATCH 26/26] fix: use git CLI instead of raw .git filesystem reads
+ for branch/remote metadata
+
+---
+ .../opencode/src/server/routes/presence.ts    | 46 +++++++++---------
+ packages/opencode/src/session/index.ts        | 47 ++++++++++---------
+ 2 files changed, 48 insertions(+), 45 deletions(-)
+
+diff --git a/packages/opencode/src/server/routes/presence.ts b/packages/opencode/src/server/routes/presence.ts
+index 3d3e9b1..e610578 100644
+--- a/packages/opencode/src/server/routes/presence.ts
++++ b/packages/opencode/src/server/routes/presence.ts
+@@ -1,8 +1,7 @@
+ import { Hono } from "hono"
+ import type { UpgradeWebSocket } from "hono/ws"
+ import z from "zod"
+-import path from "path"
+-import { readFileSync } from "fs"
++import { execFileSync } from "child_process"
+ import { Log } from "@/util/log"
+ import { BusEvent } from "@/bus/bus-event"
+ 
+@@ -11,28 +10,29 @@ const log = Log.create({ service: "server" })
+ function gitMeta(dir: string): Record<string, string> {
+   const out: Record<string, string> = {}
+   try {
+-    let root = path.join(dir, ".git")
+-    let head: string
+-    try {
+-      head = new TextDecoder().decode(readFileSync(path.join(root, "HEAD")))
+-    } catch {
+-      const text = new TextDecoder().decode(readFileSync(root))
+-      const m = text.match(/^gitdir:\s*(.+)$/m)
+-      if (!m) return out
+-      root = path.resolve(dir, m[1])
+-      head = new TextDecoder().decode(readFileSync(path.join(root, "HEAD")))
+-    }
+-    head = head.trim()
+-    if (head.startsWith("ref: refs/heads/")) {
+-      out.branch = head.slice(16)
+-    } else if (head.length >= 7) {
+-      out.branch = head.slice(0, 7)
++    const branch = execFileSync("git", ["rev-parse", "--abbrev-ref", "HEAD"], {
++      cwd: dir,
++      encoding: "utf8",
++      stdio: ["ignore", "pipe", "ignore"],
++      timeout: 5000,
++    }).trim()
++    if (branch && branch !== "HEAD") out.branch = branch
++    else {
++      const sha = execFileSync("git", ["rev-parse", "--short=7", "HEAD"], {
++        cwd: dir,
++        encoding: "utf8",
++        stdio: ["ignore", "pipe", "ignore"],
++        timeout: 5000,
++      }).trim()
++      if (sha) out.branch = sha
+     }
+-    try {
+-      const cfg = new TextDecoder().decode(readFileSync(path.join(root, "config")))
+-      const m = cfg.match(/\[remote\s+"origin"\][^\[]*url\s*=\s*(\S+)/m)
+-      if (m) out.remote = m[1].trim()
+-    } catch {}
++    const remote = execFileSync("git", ["config", "--get", "remote.origin.url"], {
++      cwd: dir,
++      encoding: "utf8",
++      stdio: ["ignore", "pipe", "ignore"],
++      timeout: 5000,
++    }).trim()
++    if (remote) out.remote = remote
+   } catch {}
+   return out
+ }
+diff --git a/packages/opencode/src/session/index.ts b/packages/opencode/src/session/index.ts
+index 4e295e7..fa6537e 100644
+--- a/packages/opencode/src/session/index.ts
++++ b/packages/opencode/src/session/index.ts
+@@ -1,6 +1,6 @@
+ import { Slug } from "@opencode-ai/util/slug"
+ import path from "path"
+-import { readFileSync } from "fs"
++import { execFileSync } from "child_process"
+ import { BusEvent } from "@/bus/bus-event"
+ import { Bus } from "@/bus"
+ import { Decimal } from "decimal.js"
+@@ -427,28 +427,31 @@ export namespace Session {
+         const git = yield* Effect.sync(() => {
+           const out: Record<string, unknown> = {}
+           try {
+-            let root = path.join(input.directory, ".git")
+-            let head: string
+-            try {
+-              head = new TextDecoder().decode(readFileSync(path.join(root, "HEAD")))
+-            } catch {
+-              const text = new TextDecoder().decode(readFileSync(root))
+-              const match = text.match(/^gitdir:\s*(.+)$/m)
+-              if (!match) return out
+-              root = path.resolve(input.directory, match[1])
+-              head = new TextDecoder().decode(readFileSync(path.join(root, "HEAD")))
++            const branch = execFileSync("git", ["rev-parse", "--abbrev-ref", "HEAD"], {
++              cwd: input.directory,
++              encoding: "utf8",
++              stdio: ["ignore", "pipe", "ignore"],
++              timeout: 5000,
++            }).trim()
++            if (branch && branch !== "HEAD") out.git_branch = branch
++            else {
++              const sha = execFileSync("git", ["rev-parse", "--short=7", "HEAD"], {
++                cwd: input.directory,
++                encoding: "utf8",
++                stdio: ["ignore", "pipe", "ignore"],
++                timeout: 5000,
++              }).trim()
++              if (sha) out.git_branch = sha
+             }
+-            head = head.trim()
+-            if (head.startsWith("ref: refs/heads/")) {
+-              out.git_branch = head.slice(16)
+-            } else if (head.length >= 7) {
+-              out.git_branch = head.slice(0, 7)
+-            }
+-            try {
+-              const cfg = new TextDecoder().decode(readFileSync(path.join(root, "config")))
+-              const m = cfg.match(/\[remote\s+"origin"\][^\[]*url\s*=\s*(\S+)/m)
+-              if (m) out.git_remote_url = m[1].trim()
+-            } catch {}
++          } catch {}
++          try {
++            const remote = execFileSync("git", ["config", "--get", "remote.origin.url"], {
++              cwd: input.directory,
++              encoding: "utf8",
++              stdio: ["ignore", "pipe", "ignore"],
++              timeout: 5000,
++            }).trim()
++            if (remote) out.git_remote_url = remote
+           } catch {}
+           return out
+         })
+-- 
+2.50.1
+

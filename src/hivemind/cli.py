@@ -329,24 +329,28 @@ def server_restart(
 
 
 # ---------------------------------------------------------------------------
-# init
+# sync
 # ---------------------------------------------------------------------------
 
 
 @app.command()
-def init() -> None:
-    """Set up directory symlinks and deploy every enabled agent."""
-    from hivemind.lifecycle import bootstrap_workspace
+def sync() -> None:
+    """Sync workspace: symlinks, deploy agents, sweep stale files, regenerate librarian."""
+    from hivemind.lifecycle import sync_workspace
 
-    console.print("[heading]Initializing hivemind...[/heading]\n")
+    console.print("[heading]Syncing hivemind...[/heading]\n")
 
     def on_event(label: str, status: str) -> None:
         style = "error" if status.startswith("failed") else "success"
         glyph = "✗" if style == "error" else "✓"
         console.print(f"  [{style}]{glyph}[/{style}] {label}: {status}")
 
-    bootstrap_workspace(on_event=on_event)
-    console.print("\n[bold success]Hivemind initialized![/bold success]")
+    result = sync_workspace(on_event=on_event)
+    if result.failed or result.teams_failed:
+        console.print("\n[warning]Sync completed with some failures.[/warning]")
+    else:
+        count = result.experts_deployed + result.teams_deployed
+        console.print(f"\n[bold success]Synced {count} agent(s).[/bold success]")
 
 
 # ---------------------------------------------------------------------------
@@ -929,28 +933,8 @@ def team_remove_expert(
 
 
 # ---------------------------------------------------------------------------
-# redeploy + status
+# status
 # ---------------------------------------------------------------------------
-
-
-@app.command()
-def redeploy() -> None:
-    """Regenerate every enabled agent file from the current catalog."""
-    from hivemind.lifecycle import redeploy_all_agents
-
-    console.print("[heading]Redeploying all agents...[/heading]")
-    result = redeploy_all_agents()
-    if not result.success:
-        console.print(f"[error]Error: {escape(str(result.error))}[/error]")
-        raise typer.Exit(1)
-    for n in result.experts_deployed:
-        console.print(f"[success]✓[/success] expert {n}")
-    for n in result.teams_deployed:
-        console.print(f"[success]✓[/success] team-lead {n}")
-    for n in result.failed:
-        console.print(f"[error]✗[/error] expert {n}")
-    for n in result.teams_failed:
-        console.print(f"[error]✗[/error] team-lead {n}")
 
 
 @app.command()

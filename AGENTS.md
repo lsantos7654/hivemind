@@ -92,7 +92,7 @@ make dev-reset      # Wipe dev/opencode and re-clone from scratch
   loop (the MCP handler path). Do not use bare `asyncio.run()` in such callers.
 - **Templates in `src/hivemind/templates/` affect NEW agents only.** Existing
   agents deploy from their `lead.md` or `agent.md` files. To update an existing
-  agent, edit `experts/<name>/HEAD/agent.md` then run `hivemind redeploy`.
+  agent, edit `experts/<name>/HEAD/agent.md` then run `hivemind sync`.
 - **Bun version and opencode version are pinned in lockstep** at
   `MODULE.bazel:58-61`. opencode's `package.json:packageManager` declares
   the Bun version it expects — bump both together.
@@ -100,7 +100,7 @@ make dev-reset      # Wipe dev/opencode and re-clone from scratch
 - **mypy is strict** except `hivemind.crawl.*` and `hivemind.tui.*` (see
   `pyproject.toml` overrides).
 - **When editing experts,** edit `experts/<name>/HEAD/agent.md` then
-  `hivemind redeploy`. (MCP mutations are non-destructive now, but the
+  `hivemind sync`. (MCP mutations are non-destructive now, but the
   CLI is still convenient for manual edits.)
 
 ## Config files
@@ -110,11 +110,11 @@ make dev-reset      # Wipe dev/opencode and re-clone from scratch
 | `hivemind.json` | Yes | Engine settings + agent catalog (shared) |
 | `config.json` | No | Per-machine enabled/disabled agent names |
 
-After editing `hivemind.json` (agent catalog entries), run `hivemind redeploy`.
+After editing `hivemind.json` (agent catalog entries), run `hivemind sync`.
 
 ## User-supplied opencode content
 
-Three slots under `opencode/`. Drop a file, run `hivemind redeploy`.
+Three slots under `opencode/`. Drop a file, run `hivemind sync`.
 See `opencode/README.md` for the full authoring reference.
 
 - `opencode/commands/<name>.md` — slash commands invoked as `/<name>`.
@@ -123,13 +123,12 @@ See `opencode/README.md` for the full authoring reference.
   into `~/.config/opencode/skills/`.
 - `opencode/agents/<name>.md` — hand-authored agent prompts. Auto-
   registered in the catalog as `user_supplied` agents on every
-  redeploy; `enable_agent` deploys the file verbatim into
+  sync; `enable_agent` deploys the file verbatim into
   `~/.config/opencode/agents/<name>.md`.
 
-`hivemind redeploy` re-establishes the symlinks and reconciles the
+`hivemind sync` re-establishes the symlinks and reconciles the
 catalog with `opencode/agents/`. All three flows are idempotent —
-drop / edit / remove a file then redeploy, no separate `hivemind init`
-required.
+drop / edit / remove a file then sync.
 
 ## Architecture
 
@@ -172,7 +171,7 @@ files in sync with that catalog.
   opencode from the server module to kill the old circular import.
 - **`lifecycle.py`** — kind-agnostic verbs: `enable_agent`,
   `disable_agent`, `delete_agent`, `refresh_agent`,
-  `redeploy_all_agents`, `bootstrap_workspace`. Mutations flip
+  `sync_workspace`. Mutations flip
   `config.json:enabled/disabled`, call `Agent.deploy()`/`undeploy()`,
   regenerate librarian, fire the post-mutation hook.
   **`enable_agent` does NOT call `validate_engine`** — enable just
@@ -287,7 +286,7 @@ opencode functions are module-level and importable directly.
 3. Librarian aggregates every `registry.enabled()` agent into
    `agents/librarian.md` via each body's `.librarian_entry()`.
 
-4. `HIVEMIND.md` is generated once at `bootstrap_workspace()` from
+4. `HIVEMIND.md` is generated once at `sync_workspace()` from
    `templates/hivemind.md.j2`.
 
 ## The patched engine

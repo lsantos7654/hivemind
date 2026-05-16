@@ -137,6 +137,7 @@ _OPENCODE_CODE_PATCHES = [
     "0023-fix-rerender-subagent-count-pill-on-session-focus-ch.patch",
     "0024-test-add-scenario-test-stubs-Stage-10-Stage-11-TODO.patch",
     "0025-fix-resolve-agent-from-session-history-on-inbox-prom.patch",
+    "0026-fix-use-git-CLI-instead-of-raw-.git-filesystem-reads.patch",
 ]
 external_engines = module_extension(
     implementation = _ext_impl,

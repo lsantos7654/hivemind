@@ -156,7 +156,7 @@ class GitAnalyzedBody:
         These two files are AI-generated; the rest of the agent body
         (workflow scaffolding, anti-hallucination rules, constraints) is
         provided by the Jinja template at deploy time, so prompt-engineering
-        improvements take effect via ``hivemind redeploy`` — no AI spend.
+        improvements take effect via ``hivemind sync`` — no AI spend.
         """
         head = get_expert_dir(self.name) / "HEAD"
         desc_path = head / DESCRIPTION_FILENAME

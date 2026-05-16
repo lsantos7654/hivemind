@@ -3,7 +3,7 @@
 Catalog entries of this kind are deployed by rendering a Jinja template
 under ``src/hivemind/templates/``. There is no backing repo, no roster,
 no AI analysis, and no user-authored markdown file — the template is
-the source of truth and ``hivemind redeploy`` regenerates the deployed
+the source of truth and ``hivemind sync`` regenerates the deployed
 agent body.
 
 Used today for ``hivemind-expert-curator`` (the orchestrator-spawned
@@ -11,7 +11,7 @@ subagent that performs in-session analysis as the no-MCP-timeout path
 for adding new git-analyzed experts). Future system agents (e.g. a
 memory-compaction daemon) can drop in the same way: author a template
 under ``templates/agents/`` and seed the catalog entry from
-``lifecycle.bootstrap_workspace``.
+    ``lifecycle.sync_workspace``.
 
 System-templated agents are stateless workers — ``memory_enabled``
 returns ``False``, so ``Agent.deploy`` skips both the memory-tree
@@ -71,7 +71,7 @@ class SystemTemplatedBody:
             f"### {self.name}\n"
             f"Hivemind-internal worker agent. {desc}\n"
             f"Source: ``src/hivemind/templates/{self.params.template}`` "
-            f"(re-rendered on ``hivemind redeploy``)."
+            f"(re-rendered on ``hivemind sync``)."
         )
 
     def memory_enabled(self) -> bool:

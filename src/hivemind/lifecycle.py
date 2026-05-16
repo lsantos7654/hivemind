@@ -2,7 +2,7 @@
 
 These sit on top of :mod:`hivemind.agents.registry` and
 :mod:`hivemind.opencode` and provide the uniform enable / disable / delete /
-update / bootstrap surface that CLI, TUI, and MCP call into. Each mutation
+update / sync surface that CLI, TUI, and MCP call into. Each mutation
 tail is:
 
 1. Mutate the registry (flip enabled state, or remove)
@@ -42,7 +42,6 @@ from hivemind.config import (
 from hivemind.deployment import regenerate_hivemind_md, regenerate_librarian
 from hivemind.hooks import fire_post_mutation
 from hivemind.models import (
-    InitResult,
     OperationResult,
     ProgressCallback,
     RedeployResult,
@@ -52,11 +51,10 @@ log = logging.getLogger(__name__)
 
 
 __all__ = [
-    "bootstrap_workspace",
     "delete_agent",
     "disable_agent",
     "enable_agent",
-    "redeploy_all_agents",
+    "sync_workspace",
     "update_agent",
 ]
 
@@ -166,98 +164,33 @@ async def update_agent(
 
 
 # ---------------------------------------------------------------------------
-# redeploy (rewrite every agent file from its current catalog state)
+# sync (full workspace refresh: symlinks + deploy + stale sweep + librarian)
 # ---------------------------------------------------------------------------
 
 
-def redeploy_all_agents() -> RedeployResult:
-    """Redeploy every enabled agent from its current catalog state.
-
-    Also re-runs ``opencode.init_dirs`` so the user-supplied
-    ``opencode/commands/`` and ``opencode/skills/`` directories are
-    re-symlinked into the opencode home on every redeploy. ``init_dirs``
-    is idempotent — adding/removing files in those directories then
-    running ``hivemind redeploy`` is enough to make them live without a
-    separate ``hivemind init`` step.
-
-    Also syncs ``opencode/agents/<name>.md`` files into the catalog as
-    ``user_supplied`` entries. Drop a markdown file in that directory
-    and it lands as an unlisted agent the user can ``enable_agent`` to
-    deploy.
-    """
-    from hivemind.agents.user_supplied import sync_user_supplied_agents
-
-    opencode.init_dirs(
-        agents_dir=AGENTS_DIR,
-        commands_dir=COMMANDS_DIR,
-        skills_dir=SKILLS_DIR,
-        rules_source=HIVEMIND_ROOT / "HIVEMIND.md",
-        teams_dir=TEAMS_DIR,
-    )
-    sync_user_supplied_agents()
-
-    # Idempotent — seed the hivemind-managed system_templated agents
-    # (auto-discovered from templates/agents/*.md.j2). Running here too
-    # (in addition to ``bootstrap_workspace``) means ``hivemind redeploy``
-    # is sufficient to bring up new system agents.
-    def _noop_emit(label: str, status: str) -> None:
-        pass
-
-    _seed_all_system_templated(_noop_emit)
-
-    failed: list[str] = []
-    teams_failed: list[str] = []
-    experts_deployed: list[str] = []
-    teams_deployed: list[str] = []
-
-    for agent in registry.enabled():
-        try:
-            agent.deploy(agents_dir=AGENTS_DIR)
-        except Exception:
-            log.exception("failed to redeploy %s", agent.name)
-            if agent.kind == "roster_templated":
-                teams_failed.append(agent.name)
-            else:
-                failed.append(agent.name)
-            continue
-        if agent.kind == "roster_templated":
-            teams_deployed.append(agent.name)
-        else:
-            experts_deployed.append(agent.name)
-
-    regenerate_librarian()
-    regenerate_hivemind_md()
-    fire_post_mutation()
-
-    return RedeployResult(
-        failed=failed,
-        teams_failed=teams_failed,
-        experts_deployed=experts_deployed,
-        teams_deployed=teams_deployed,
-    )
-
-
-# ---------------------------------------------------------------------------
-# bootstrap (opencode symlinks + all enabled agents + librarian + stale sweep)
-# ---------------------------------------------------------------------------
-
-
-def bootstrap_workspace(  # noqa: C901 — orchestrates distinct init phases; splitting hurts readability
+def sync_workspace(  # noqa: C901 — orchestrates distinct sync phases; splitting hurts readability
     *,
     on_event: Callable[[str, str], None] | None = None,
-) -> list[InitResult]:
-    """Initialise the opencode workspace and deploy every enabled agent.
+) -> RedeployResult:
+    """Sync the opencode workspace: symlinks, runtime config, agents, sweep.
 
-    Emits events via ``on_event(label, status)`` for UI rendering. Returns
-    the list of :class:`InitResult` events also emitted to the callback, in
-    order, for callers that prefer a final summary over streaming.
+    The superset of what ``init`` and ``redeploy`` used to do separately.
+    Every call is idempotent — stale files are swept, new user_supplied and
+    system_templated agents are discovered, all enabled agents are deployed,
+    and the librarian is regenerated.  Adding/removing files in
+    ``opencode/{commands,skills,agents}/`` and running ``hivemind sync`` is
+    all that's needed to make them live.
+
+    Emits per-phase progress via ``on_event(label, status)`` for CLI/TUI
+    rendering. Returns a :class:`RedeployResult` for programmatic callers
+    (MCP, etc.).
     """
-    events: list[InitResult] = []
 
     def emit(label: str, status: str) -> None:
-        events.append(InitResult(label=label, status=status))
         if on_event:
             on_event(label, status)
+
+    from hivemind.agents.user_supplied import sync_user_supplied_agents
 
     # HIVEMIND.md is the target of one of the symlinks opencode creates
     regenerate_hivemind_md()
@@ -271,52 +204,46 @@ def bootstrap_workspace(  # noqa: C901 — orchestrates distinct init phases; sp
         teams_dir=TEAMS_DIR,
     )
     for ev in init_events:
-        events.append(ev)
-        if on_event:
-            on_event(ev.label, ev.status)
+        emit(ev.label, ev.status)
 
     ensure_repos_link()
     emit("repos/", "ready")
     ensure_external_docs_link()
     emit("external_docs/", "ready")
 
-    # Orchestrator memory
     ensure_orchestrator_memory()
     emit("orchestrator memory", "ready")
-
-    # Reconcile user-supplied agents in opencode/agents/ before deploying.
-    # Newly-discovered files land in the catalog as unlisted; removed
-    # files drop their catalog entry. Existing user_supplied entries are
-    # preserved (so a previously-enabled agent stays enabled across
-    # bootstraps).
-    from hivemind.agents.user_supplied import sync_user_supplied_agents
 
     sync_user_supplied_agents()
     emit("opencode/agents/", "synced")
 
-    # Seed hivemind-managed system_templated agents (auto-discovered from
-    # ``src/hivemind/templates/agents/*.md.j2`` — drop a Jinja template
-    # there and it auto-registers on the next init/redeploy). Auto-enabled
-    # on first seed; subsequent bootstraps respect any explicit disable.
     _seed_all_system_templated(emit)
 
-    # Deploy every enabled agent. ``Agent.deploy`` handles memory tree
-    # scaffolding internally per the agent's ``memory_enabled`` flag —
-    # no explicit ``ensure_agent_memory`` call needed here.
+    failed: list[str] = []
+    teams_failed: list[str] = []
+    experts_deployed: list[str] = []
+    teams_deployed: list[str] = []
+
     for agent in registry.enabled():
         try:
             agent.deploy(agents_dir=AGENTS_DIR)
-            emit(agent.name, "deployed")
-        except Exception as exc:
+        except Exception:
             log.exception("failed to deploy %s", agent.name)
-            emit(agent.name, f"failed: {exc}")
+            if agent.kind == "roster_templated":
+                teams_failed.append(agent.name)
+            else:
+                failed.append(agent.name)
+            emit(agent.name, "failed: see log")
+            continue
+        if agent.kind == "roster_templated":
+            teams_deployed.append(agent.name)
+        else:
+            experts_deployed.append(agent.name)
+        emit(agent.name, "deployed")
 
     # Sweep stale agent files from the agents/ dir
     if AGENTS_DIR.exists():
         enabled_names = {a.name for a in registry.enabled()}
-        # Both user_supplied and system_templated agents deploy as
-        # ``<name>.md`` (no prefix), so the unprefixed-sweep needs to
-        # know both kinds' enabled names to avoid deleting them.
         unprefixed_enabled = {a.name for a in registry.enabled() if a.kind in ("user_supplied", "system_templated")}
         for f in AGENTS_DIR.glob("expert-*.md"):
             agent_name = f.name.removeprefix("expert-").removesuffix(".md")
@@ -328,9 +255,6 @@ def bootstrap_workspace(  # noqa: C901 — orchestrates distinct init phases; sp
             if team_name not in enabled_names:
                 f.unlink()
                 emit(f.name, "removed (stale)")
-        # Unprefixed agents (user_supplied + system_templated) land as
-        # ``<name>.md``. Sweep any not in ``unprefixed_enabled`` (and not
-        # the librarian).
         for f in AGENTS_DIR.glob("*.md"):
             if f.name.startswith(("expert-", "team-lead-")) or f.name == "librarian.md":
                 continue
@@ -357,7 +281,13 @@ def bootstrap_workspace(  # noqa: C901 — orchestrates distinct init phases; sp
     emit("librarian", "regenerated")
 
     fire_post_mutation()
-    return events
+
+    return RedeployResult(
+        failed=failed,
+        teams_failed=teams_failed,
+        experts_deployed=experts_deployed,
+        teams_deployed=teams_deployed,
+    )
 
 
 def _seed_system_templated(
@@ -410,8 +340,8 @@ def _seed_all_system_templated(emit: Callable[[str, str], None]) -> None:
 
     The name is derived from the filename: ``hivemind-crawler.md.j2`` →
     ``hivemind-crawler``. Drop a new ``.md.j2`` file in the directory and
-    the next ``hivemind init`` or ``hivemind redeploy`` auto-registers it
-    — no source-code edits needed.
+    the next ``hivemind sync`` auto-registers it — no source-code edits
+    needed.
     """
     from hivemind.templates import list_templates
 

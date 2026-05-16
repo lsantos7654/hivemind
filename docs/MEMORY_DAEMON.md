@@ -153,8 +153,7 @@ session record goes away.
 
 - `src/hivemind/agents/memory.py` — drop `MEMORY.md` scaffolding
 - `src/hivemind/agents/roster_templated.py` — drop notes-stub helpers
-- `src/hivemind/lifecycle.py` — seed daemon in `bootstrap_workspace` +
-  `redeploy_all_agents`
+- `src/hivemind/lifecycle.py` — seed daemon in `sync_workspace`
 - `src/hivemind/models.py` — add `MemoryConfig`
 - `src/hivemind/templates.py` — drop `expert_notes_template` /
   `team_lead_notes_template`
