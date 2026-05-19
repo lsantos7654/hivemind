@@ -5,6 +5,10 @@ description: Patterns for messaging or inspecting other live opencode sessions o
 
 # Cross-session messaging
 
+If you receive an inbox message that starts with `[From: ses_`, load this
+skill before deciding how to respond. That prefix means another live
+session is contacting you through the cross-session inbox flow.
+
 Four MCP verbs cover every cross-session interaction that isn't a `Task`
 spawn:
 

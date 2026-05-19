@@ -15,6 +15,10 @@ a fresh expert. A new session has no memory of prior Q&A.
   same expert type twice within one conversation is always wrong.
 - `hivemind_send_message` is for cross-session TUI messaging — NOT
   for continuing expert conversations. Use `task_id` for follow-ups.
+- If you receive an inbox message that starts with `[From: ses_`, load
+  the `hivemind-cross-session` skill before responding. That prefix
+  means another live session is contacting you through the cross-session
+  inbox flow.
 - If an expert's synchronous result is truncated or hard to read, use
   `hivemind_read_session(session_id=...)` to read the full exchange.
   Do NOT re-spawn the same expert.
