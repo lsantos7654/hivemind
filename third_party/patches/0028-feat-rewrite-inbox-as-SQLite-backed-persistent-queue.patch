@@ -1,4 +1,4 @@
-From 60c5fcc0cf41696a1d9aeafd946d151dff66a672 Mon Sep 17 00:00:00 2001
+From ef7b7f9ed3e71c3660cc3200bb18d929be3cbf79 Mon Sep 17 00:00:00 2001
 From: Lucas Santos <lsantos7654@gmail.com>
 Date: Mon, 18 May 2026 20:18:37 -0400
 Subject: [PATCH 28/32] feat: rewrite inbox as SQLite-backed persistent queue

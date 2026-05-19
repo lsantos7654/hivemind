@@ -45,6 +45,7 @@ import asyncio
 import contextlib
 import json
 import logging
+from contextvars import ContextVar
 from typing import TYPE_CHECKING, Any
 
 from mcp.types import TextContent, Tool
@@ -64,6 +65,7 @@ _background_tasks: set[asyncio.Task[None]] = set()
 _pending_reload: asyncio.Task[None] | None = None
 _PENDING_RELOAD_TIMEOUT = 2.0
 _DEBOUNCE_INTERVAL = 0.1
+_CALLER_SESSION: ContextVar[str | None] = ContextVar("_CALLER_SESSION", default=None)
 
 
 def _text(msg: str) -> list[TextContent]:
@@ -432,17 +434,15 @@ TOOLS: list[Tool] = [
             "only — not for continuing expert conversations (use Task(task_id=...) to resume "
             "a subagent). Delivered immediately if that session is idle, queued and delivered "
             "on next idle if it's busy. Never throws BusyError — safe to ping a session "
-            "that's mid-turn. Use list_sessions first to find the target session ID."
+            "that's mid-turn. The recipient automatically sees [From: ses_xxx]\\n\\n "
+            "prepended with the caller session ID. Use list_sessions first to find the "
+            "target session ID."
         ),
         inputSchema={
             "type": "object",
             "properties": {
                 "session_id": {"type": "string", "description": "Target session ID (ses_...)"},
                 "message": {"type": "string", "description": "Message text to append"},
-                "reply_to": {
-                    "type": "string",
-                    "description": "Your own session ID so the recipient knows where to reply.",
-                },
             },
             "required": ["session_id", "message"],
         },
@@ -998,12 +998,18 @@ async def _handle_list_sessions(
 async def _handle_send_message(
     session_id: str,
     message: str,
-    reply_to: str | None = None,
 ) -> list[TextContent]:
     from hivemind import opencode
 
+    caller = _CALLER_SESSION.get()
+    if not caller:
+        return _text(
+            "Error: send_message requires opencode-side session attribution; "
+            "this MCP server is being called from an unpatched host."
+        )
+
     try:
-        result = opencode.session_inbox(session_id, message, sender_id=reply_to)
+        result = opencode.session_inbox(session_id, message, sender_id=caller)
     except RuntimeError as exc:
         return _text(f"Error: {exc}")
     state = "queued" if result.get("queued") else "delivered"
@@ -1190,13 +1196,15 @@ _ARG_EXTRACTORS: dict[str, Callable[[dict[str, Any]], tuple[Any, ...]]] = {
         bool(a.get("roots", False)),
         int(a.get("limit", 50)),
     ),
-    "send_message": lambda a: (a["session_id"], a["message"], a.get("reply_to")),
+    "send_message": lambda a: (a["session_id"], a["message"]),
     "read_session": lambda a: (a["session_id"], a.get("index", -1)),
     "delete_session": lambda a: (a["session_id"],),
 }
 
 
 def _extract_args(name: str, args: dict[str, Any]) -> tuple[Any, ...]:
+    caller = args.pop("_opencode_session", None)
+    _CALLER_SESSION.set(caller if isinstance(caller, str) else None)
     extractor = _ARG_EXTRACTORS.get(name)
     return extractor(args) if extractor else ()
 

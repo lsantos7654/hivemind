@@ -154,18 +154,58 @@ def test_background_tasks_active_returns_empty_when_idle(fake_http):
 
 def test_send_message_delivers_to_inbox(fake_http):
     fake_http.next_response = {"sessionID": "ses_a", "queued": False, "depth": 0}
-    out = run(mcp_tools._handle_send_message("ses_a", "hello"))
+    token = mcp_tools._CALLER_SESSION.set("ses_sender")
+    try:
+        out = run(mcp_tools._handle_send_message("ses_a", "hello"))
+    finally:
+        mcp_tools._CALLER_SESSION.reset(token)
     url, body = fake_http.posts[0]
     assert url.endswith("/session/ses_a/inbox")
-    assert body == {"parts": [{"type": "text", "text": "hello"}]}
+    assert body == {"parts": [{"type": "text", "text": "hello"}], "sender_id": "ses_sender"}
     assert "delivered" in out[0].text
 
 
 def test_send_message_reports_queued_when_busy(fake_http):
     fake_http.next_response = {"sessionID": "ses_a", "queued": True, "depth": 3}
-    out = run(mcp_tools._handle_send_message("ses_a", "hello"))
+    token = mcp_tools._CALLER_SESSION.set("ses_sender")
+    try:
+        out = run(mcp_tools._handle_send_message("ses_a", "hello"))
+    finally:
+        mcp_tools._CALLER_SESSION.reset(token)
     assert "queued" in out[0].text
     assert "depth: 3" in out[0].text
+
+
+def test_send_message_requires_caller_session(fake_http):
+    token = mcp_tools._CALLER_SESSION.set(None)
+    try:
+        out = run(mcp_tools._handle_send_message("ses_a", "hello"))
+    finally:
+        mcp_tools._CALLER_SESSION.reset(token)
+    assert out[0].text == (
+        "Error: send_message requires opencode-side session attribution; "
+        "this MCP server is being called from an unpatched host."
+    )
+    assert fake_http.posts == []
+
+
+def test_send_message_forwards_sender_id_from_contextvar(monkeypatch):
+    captured: dict[str, str] = {}
+
+    def fake_inbox(session_id: str, text: str, sender_id: str | None = None):
+        captured["session_id"] = session_id
+        captured["text"] = text
+        captured["sender_id"] = sender_id or ""
+        return {"queued": False, "depth": 0}
+
+    monkeypatch.setattr(opencode, "session_inbox", fake_inbox)
+    token = mcp_tools._CALLER_SESSION.set("ses_sender")
+    try:
+        run(mcp_tools._handle_send_message("ses_a", "hello"))
+    finally:
+        mcp_tools._CALLER_SESSION.reset(token)
+
+    assert captured == {"session_id": "ses_a", "text": "hello", "sender_id": "ses_sender"}
 
 
 # ---------------------------------------------------------------------------
@@ -258,14 +298,20 @@ def test_extract_args_for_cross_session_tools():
         "list_sessions",
         {"live_only": False, "tree": True, "limit": 100},
     ) == (False, True, False, 100)
-    assert mcp_tools._extract_args("send_message", {"session_id": "s", "message": "m"}) == ("s", "m", None)
-    assert mcp_tools._extract_args("send_message", {"session_id": "s", "message": "m", "reply_to": "ses_caller"}) == (
-        "s",
-        "m",
-        "ses_caller",
-    )
+    assert mcp_tools._extract_args("send_message", {"session_id": "s", "message": "m"}) == ("s", "m")
     assert mcp_tools._extract_args("read_session", {"session_id": "s"}) == ("s", -1)
     assert mcp_tools._extract_args("read_session", {"session_id": "s", "index": 0}) == ("s", 0)
+
+
+def test_extract_args_strips_opencode_session_and_sets_contextvar():
+    args = {"session_id": "s", "message": "m", "_opencode_session": "ses_test"}
+    token = mcp_tools._CALLER_SESSION.set(None)
+    try:
+        assert mcp_tools._extract_args("send_message", args) == ("s", "m")
+        assert mcp_tools._CALLER_SESSION.get() == "ses_test"
+    finally:
+        mcp_tools._CALLER_SESSION.reset(token)
+    assert "_opencode_session" not in args
 
 
 def test_extract_args_for_renamed_update_agent():

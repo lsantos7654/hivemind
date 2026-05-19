@@ -1,4 +1,4 @@
-From 07bcded8327b86d3b2c411e3d62b037540bfb998 Mon Sep 17 00:00:00 2001
+From 99c32ec43b107ff37fefb91632e2676f93e16daf Mon Sep 17 00:00:00 2001
 From: Lucas Santos <lsantos7654@gmail.com>
 Date: Mon, 18 May 2026 21:05:54 -0400
 Subject: [PATCH 30/32] harden provider auth and remote fetches

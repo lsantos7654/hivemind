@@ -1,7 +1,7 @@
-From 5b0a9acc4b07d537aea44da88f3d970602e9ab96 Mon Sep 17 00:00:00 2001
+From 757c2389e2043d53be1d0e2d650809ad28932d3b Mon Sep 17 00:00:00 2001
 From: Lucas Santos <lsantos7654@gmail.com>
 Date: Mon, 11 May 2026 13:55:35 -0400
-Subject: [PATCH 21/32] Capture git branch and remote URL in session metadata
+Subject: [PATCH 22/32] Capture git branch and remote URL in session metadata
  at creation
 
 Read .git/HEAD and .git/config (origin remote) via synchronous

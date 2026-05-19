@@ -1,0 +1,129 @@
+From b69748c19c58badf76d550dc2fecb568f145b9d8 Mon Sep 17 00:00:00 2001
+From: Lucas Santos <lsantos7654@gmail.com>
+Date: Tue, 19 May 2026 12:16:56 -0400
+Subject: [PATCH 32/32] feat: auto-attribute MCP inbox sends to caller session
+
+Inject _opencode_session into args when invoking hivemind MCP tools so
+the receiving subprocess always knows the calling session ID, and
+prepend [From: ses_xxx] to inbox-delivered text when sender_id is
+populated. Restricted to MCP tool keys starting with 'hivemind_' to
+avoid leaking opencode internals into third-party MCP servers.
+
+Closes the regression introduced by 0028 where sender_id was persisted
+but never surfaced in the delivered prompt.
+---
+ packages/opencode/src/session/inbox.ts        |  3 +-
+ packages/opencode/src/session/prompt.ts       |  5 +-
+ .../test/server/session-actions.test.ts       | 52 +++++++++++++++++++
+ 3 files changed, 58 insertions(+), 2 deletions(-)
+
+diff --git a/packages/opencode/src/session/inbox.ts b/packages/opencode/src/session/inbox.ts
+index 84f74bb..b852cc1 100644
+--- a/packages/opencode/src/session/inbox.ts
++++ b/packages/opencode/src/session/inbox.ts
+@@ -134,9 +134,10 @@ export namespace SessionInbox {
+         directory: info.directory,
+         init: InstanceBootstrap,
+         async fn() {
++          const text = row.sender_id ? `[From: ${row.sender_id}]\n\n${row.text}` : row.text
+           await SessionPrompt.prompt({
+             sessionID,
+-            parts: [{ type: "text", text: row.text }],
++            parts: [{ type: "text", text }],
+           })
+         },
+       })
+diff --git a/packages/opencode/src/session/prompt.ts b/packages/opencode/src/session/prompt.ts
+index 5165ebd..5675b90 100644
+--- a/packages/opencode/src/session/prompt.ts
++++ b/packages/opencode/src/session/prompt.ts
+@@ -453,6 +453,9 @@ NOTE: At any point in time through this workflow you should feel free to ask the
+             Effect.runPromise(
+               Effect.gen(function* () {
+                 const ctx = context(args, opts)
++                const next = key.startsWith("hivemind_")
++                  ? { ...(args as Record<string, unknown>), _opencode_session: ctx.sessionID }
++                  : args
+                 yield* plugin.trigger(
+                   "tool.execute.before",
+                   { tool: key, sessionID: ctx.sessionID, callID: opts.toolCallId },
+@@ -460,7 +463,7 @@ NOTE: At any point in time through this workflow you should feel free to ask the
+                 )
+                 yield* Effect.promise(() => ctx.ask({ permission: key, metadata: {}, patterns: ["*"], always: ["*"] }))
+                 const result: Awaited<ReturnType<NonNullable<typeof execute>>> = yield* Effect.promise(() =>
+-                  execute(args, opts),
++                  execute(next, opts),
+                 )
+                 yield* plugin.trigger(
+                   "tool.execute.after",
+diff --git a/packages/opencode/test/server/session-actions.test.ts b/packages/opencode/test/server/session-actions.test.ts
+index c17fee7..9780dfa 100644
+--- a/packages/opencode/test/server/session-actions.test.ts
++++ b/packages/opencode/test/server/session-actions.test.ts
+@@ -2,6 +2,7 @@ import { afterEach, describe, expect, mock, spyOn, test } from "bun:test"
+ import { Instance } from "../../src/project/instance"
+ import { Server } from "../../src/server/server"
+ import { Session } from "../../src/session"
++import { SessionInbox } from "../../src/session/inbox"
+ import { ModelID, ProviderID } from "../../src/provider/schema"
+ import { MessageID, PartID, type SessionID } from "../../src/session/schema"
+ import { SessionPrompt } from "../../src/session/prompt"
+@@ -123,4 +124,55 @@ describe("session action routes", () => {
+       },
+     })
+   })
++
++  test("inbox delivery prepends sender attribution when present", async () => {
++    await using tmp = await tmpdir({ git: true })
++    await Instance.provide({
++      directory: tmp.path,
++      fn: async () => {
++        const session = await Session.create({})
++        const prompt = spyOn(SessionPrompt, "prompt").mockResolvedValue()
++
++        await SessionInbox.enqueue({
++          sessionID: session.id,
++          senderID: "ses_sender",
++          text: "hi",
++        })
++
++        await SessionInbox.drain(session.id)
++
++        expect(prompt).toHaveBeenCalledWith({
++          sessionID: session.id,
++          parts: [{ type: "text", text: "[From: ses_sender]\n\nhi" }],
++        })
++
++        await Session.remove(session.id)
++      },
++    })
++  })
++
++  test("inbox delivery omits sender attribution when absent", async () => {
++    await using tmp = await tmpdir({ git: true })
++    await Instance.provide({
++      directory: tmp.path,
++      fn: async () => {
++        const session = await Session.create({})
++        const prompt = spyOn(SessionPrompt, "prompt").mockResolvedValue()
++
++        await SessionInbox.enqueue({
++          sessionID: session.id,
++          text: "hi",
++        })
++
++        await SessionInbox.drain(session.id)
++
++        expect(prompt).toHaveBeenCalledWith({
++          sessionID: session.id,
++          parts: [{ type: "text", text: "hi" }],
++        })
++
++        await Session.remove(session.id)
++      },
++    })
++  })
+ })
+-- 
+2.50.1
+

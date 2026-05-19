@@ -1,4 +1,4 @@
-From c281afc7aafed051c1afb224ad45b14c77f69a19 Mon Sep 17 00:00:00 2001
+From 8cf5994c2ea385ef57b5c81ea3afdcaca594aa84 Mon Sep 17 00:00:00 2001
 From: Lucas Santos <lsantos7654@gmail.com>
 Date: Mon, 18 May 2026 21:35:04 -0400
 Subject: [PATCH 31/32] fix: inline session footer pills into prompt status row

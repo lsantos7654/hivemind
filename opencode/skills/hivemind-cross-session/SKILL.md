@@ -17,12 +17,13 @@ spawn:
   history without waking it. Returns one user+assistant pair as plain
   text — grep/awk/rg friendly. Index 0 = first exchange, -1 = last.
   Read-only: no messages land in the target session, no side effects.
-- `send_message(session_id, message, reply_to=your_session_id)` —
-  append to another session's inbox. Delivered immediately if the
-  target is idle, queued and delivered on next idle if busy. Never
-  throws BusyError, so it's safe to ping a session that's mid-turn.
-  **Always pass `reply_to`** — the recipient's LLM sees
-  `[From: ses_xxx]` prepended and knows exactly where to respond.
+- `send_message(session_id, message)` — append to another session's
+  inbox. Delivered immediately if the target is idle, queued and
+  delivered on next idle if busy. Never throws BusyError, so it's
+  safe to ping a session that's mid-turn. The recipient automatically
+  sees `[From: ses_xxx]\n\n` prepended where `ses_xxx` is your
+  session ID — attribution is handled by the engine, no caller action
+  required.
 - `delete_session(session_id)` — hard-delete a session and its
   descendants.
 
@@ -42,10 +43,9 @@ quick look at its output.
 
 1. `list_sessions(live_only=true, tree=true)` to find the target
 2. `read_session(target_id, -1)` to peek at its current state
-3. `send_message(target_id, "<task or question>", reply_to=your_session_id)`
-   to dispatch
-4. The recipient sees `[From: ses_xxx]` and calls `send_message` back
-   with `reply_to=its_own_session_id` when its turn finishes
+3. `send_message(target_id, "<task or question>")` to dispatch
+4. The recipient sees `[From: ses_xxx]` (auto-attached) and calls
+   `send_message` back when its turn finishes
 
 ## When to prefer Task over send_message
 
