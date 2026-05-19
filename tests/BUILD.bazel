@@ -85,6 +85,17 @@ py_test(
     deps = list(_PYTEST_DEPS),
 )
 
+py_test(
+    name = "test_opencode_lockdown",
+    srcs = [
+        "test_opencode_lockdown.py",
+    ],
+    imports = [".."],
+    pytest_main = True,
+    tags = _PYTEST_TAGS,
+    deps = list(_PYTEST_DEPS),
+)
+
 # ---------------------------------------------------------------------------
 # Quality gates (Stage 0)
 #

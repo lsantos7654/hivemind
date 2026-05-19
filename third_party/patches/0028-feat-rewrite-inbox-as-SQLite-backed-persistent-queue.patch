@@ -1,7 +1,7 @@
 From 60c5fcc0cf41696a1d9aeafd946d151dff66a672 Mon Sep 17 00:00:00 2001
 From: Lucas Santos <lsantos7654@gmail.com>
 Date: Mon, 18 May 2026 20:18:37 -0400
-Subject: [PATCH 28/29] feat: rewrite inbox as SQLite-backed persistent queue
+Subject: [PATCH 28/30] feat: rewrite inbox as SQLite-backed persistent queue
  with explicit ALS context
 
 ---

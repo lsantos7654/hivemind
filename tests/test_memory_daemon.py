@@ -143,7 +143,6 @@ class TestMemoryConfig:
         cfg = HivemindConfig.model_validate(
             {
                 "home_dir": "~/.config/opencode",
-                "model": "anthropic/claude-sonnet-4-6",
                 "memory": {"compaction_threshold_bytes": 16384},
             }
         )

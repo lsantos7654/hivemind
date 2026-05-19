@@ -141,6 +141,7 @@ _OPENCODE_CODE_PATCHES = [
     "0026-fix-use-git-CLI-instead-of-raw-.git-filesystem-reads.patch",
     "0028-feat-rewrite-inbox-as-SQLite-backed-persistent-queue.patch",
     "0029-docs-strengthen-Task-ephemeral-guidance-for-one-off-.patch",
+    "0030-harden-provider-auth-and-remote-fetches.patch",
 ]
 external_engines = module_extension(
     implementation = _ext_impl,

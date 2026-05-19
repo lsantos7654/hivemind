@@ -1,0 +1,392 @@
+From 07bcded8327b86d3b2c411e3d62b037540bfb998 Mon Sep 17 00:00:00 2001
+From: Lucas Santos <lsantos7654@gmail.com>
+Date: Mon, 18 May 2026 21:05:54 -0400
+Subject: [PATCH 30/30] harden provider auth and remote fetches
+
+---
+ packages/opencode/src/cli/cmd/models.ts       |  2 +-
+ packages/opencode/src/cli/cmd/providers.ts    | 26 +--------
+ packages/opencode/src/config/config.ts        | 18 +-----
+ packages/opencode/src/provider/models.ts      | 57 ++-----------------
+ packages/opencode/src/provider/provider.ts    | 48 +++-------------
+ packages/opencode/src/session/index.ts        | 10 +---
+ packages/opencode/test/config/config.test.ts  |  4 +-
+ .../test/provider/hivemind-lockdown.test.ts   | 50 ++++++++++++++++
+ 8 files changed, 68 insertions(+), 147 deletions(-)
+ create mode 100644 packages/opencode/test/provider/hivemind-lockdown.test.ts
+
+diff --git a/packages/opencode/src/cli/cmd/models.ts b/packages/opencode/src/cli/cmd/models.ts
+index 4670aa5..60449a7 100644
+--- a/packages/opencode/src/cli/cmd/models.ts
++++ b/packages/opencode/src/cli/cmd/models.ts
+@@ -29,7 +29,7 @@ export const ModelsCommand = cmd({
+   handler: async (args) => {
+     if (args.refresh) {
+       await ModelsDev.refresh(true)
+-      UI.println(UI.Style.TEXT_SUCCESS_BOLD + "Models cache refreshed" + UI.Style.TEXT_NORMAL)
++      UI.println(UI.Style.TEXT_WARNING + "Remote model refresh is disabled by hivemind." + UI.Style.TEXT_NORMAL)
+     }
+ 
+     await Instance.provide({
+diff --git a/packages/opencode/src/cli/cmd/providers.ts b/packages/opencode/src/cli/cmd/providers.ts
+index 1ab0ecc..a363669 100644
+--- a/packages/opencode/src/cli/cmd/providers.ts
++++ b/packages/opencode/src/cli/cmd/providers.ts
+@@ -11,8 +11,6 @@ import { Global } from "../../global"
+ import { Plugin } from "../../plugin"
+ import { Instance } from "../../project/instance"
+ import type { Hooks } from "@opencode-ai/plugin"
+-import { Process } from "../../util/process"
+-import { text } from "node:stream/consumers"
+ 
+ type PluginAuth = NonNullable<Hooks["auth"]>
+ 
+@@ -277,29 +275,7 @@ export const ProvidersLoginCommand = cmd({
+         UI.empty()
+         prompts.intro("Add credential")
+         if (args.url) {
+-          const url = args.url.replace(/\/+$/, "")
+-          const wellknown = await fetch(`${url}/.well-known/opencode`).then((x) => x.json() as any)
+-          prompts.log.info(`Running \`${wellknown.auth.command.join(" ")}\``)
+-          const proc = Process.spawn(wellknown.auth.command, {
+-            stdout: "pipe",
+-          })
+-          if (!proc.stdout) {
+-            prompts.log.error("Failed")
+-            prompts.outro("Done")
+-            return
+-          }
+-          const [exit, token] = await Promise.all([proc.exited, text(proc.stdout)])
+-          if (exit !== 0) {
+-            prompts.log.error("Failed")
+-            prompts.outro("Done")
+-            return
+-          }
+-          await Auth.set(url, {
+-            type: "wellknown",
+-            key: wellknown.auth.env,
+-            token: token.trim(),
+-          })
+-          prompts.log.success("Logged into " + url)
++          prompts.log.error("Remote well-known auth is disabled by hivemind hardening")
+           prompts.outro("Done")
+           return
+         }
+diff --git a/packages/opencode/src/config/config.ts b/packages/opencode/src/config/config.ts
+index 8d03cf0..06d9e54 100644
+--- a/packages/opencode/src/config/config.ts
++++ b/packages/opencode/src/config/config.ts
+@@ -1360,23 +1360,7 @@ export namespace Config {
+ 
+           for (const [key, value] of Object.entries(auth)) {
+             if (value.type === "wellknown") {
+-              const url = key.replace(/\/+$/, "")
+-              process.env[value.key] = value.token
+-              log.debug("fetching remote config", { url: `${url}/.well-known/opencode` })
+-              const response = yield* Effect.promise(() => fetch(`${url}/.well-known/opencode`))
+-              if (!response.ok) {
+-                throw new Error(`failed to fetch remote config from ${url}: ${response.status}`)
+-              }
+-              const wellknown = (yield* Effect.promise(() => response.json())) as any
+-              const remoteConfig = wellknown.config ?? {}
+-              if (!remoteConfig.$schema) remoteConfig.$schema = "https://opencode.ai/config.json"
+-              const source = `${url}/.well-known/opencode`
+-              const next = yield* loadConfig(JSON.stringify(remoteConfig), {
+-                dir: path.dirname(source),
+-                source,
+-              })
+-              merge(source, next, "global")
+-              log.debug("loaded remote config from well-known", { url })
++              log.warn("ignoring well-known auth entry; remote config is disabled by hivemind", { key })
+             }
+           }
+ 
+diff --git a/packages/opencode/src/provider/models.ts b/packages/opencode/src/provider/models.ts
+index 2d78758..22b1892 100644
+--- a/packages/opencode/src/provider/models.ts
++++ b/packages/opencode/src/provider/models.ts
+@@ -2,11 +2,9 @@ import { Global } from "../global"
+ import { Log } from "../util/log"
+ import path from "path"
+ import z from "zod"
+-import { Installation } from "../installation"
+ import { Flag } from "../flag/flag"
+ import { lazy } from "@/util/lazy"
+ import { Filesystem } from "../util/filesystem"
+-import { Flock } from "@/util/flock"
+ import { Hash } from "@/util/hash"
+ 
+ // Try to import bundled snapshot (generated at build time)
+@@ -20,8 +18,6 @@ export namespace ModelsDev {
+     Global.Path.cache,
+     source === "https://models.dev" ? "models.json" : `models-${Hash.fast(source)}.json`,
+   )
+-  const ttl = 5 * 60 * 1000
+-
+   type JsonValue = string | number | boolean | null | { [key: string]: JsonValue } | JsonValue[]
+ 
+   const JsonValue: z.ZodType<JsonValue> = z.lazy(() =>
+@@ -112,22 +108,6 @@ export namespace ModelsDev {
+     return Flag.OPENCODE_MODELS_URL || "https://models.dev"
+   }
+ 
+-  function fresh() {
+-    return Date.now() - Number(Filesystem.stat(filepath)?.mtimeMs ?? 0) < ttl
+-  }
+-
+-  function skip(force: boolean) {
+-    return !force && fresh()
+-  }
+-
+-  const fetchApi = async () => {
+-    const result = await fetch(`${url()}/api.json`, {
+-      headers: { "User-Agent": Installation.USER_AGENT },
+-      signal: AbortSignal.timeout(10000),
+-    })
+-    return { ok: result.ok, text: await result.text() }
+-  }
+-
+   export const Data = lazy(async () => {
+     const result = await Filesystem.readJson(Flag.OPENCODE_MODELS_PATH ?? filepath).catch(() => {})
+     if (result) return result
+@@ -136,18 +116,7 @@ export namespace ModelsDev {
+       .then((m) => m.snapshot as Record<string, unknown>)
+       .catch(() => undefined)
+     if (snapshot) return snapshot
+-    if (Flag.OPENCODE_DISABLE_MODELS_FETCH) return {}
+-    return Flock.withLock(`models-dev:${filepath}`, async () => {
+-      const result = await Filesystem.readJson(Flag.OPENCODE_MODELS_PATH ?? filepath).catch(() => {})
+-      if (result) return result
+-      const result2 = await fetchApi()
+-      if (result2.ok) {
+-        await Filesystem.write(filepath, result2.text).catch((e) => {
+-          log.error("Failed to write models cache", { error: e })
+-        })
+-      }
+-      return JSON.parse(result2.text)
+-    })
++    return {}
+   })
+ 
+   export async function get() {
+@@ -156,27 +125,9 @@ export namespace ModelsDev {
+   }
+ 
+   export async function refresh(force = false) {
+-    if (skip(force)) return ModelsDev.Data.reset()
+-    await Flock.withLock(`models-dev:${filepath}`, async () => {
+-      if (skip(force)) return ModelsDev.Data.reset()
+-      const result = await fetchApi()
+-      if (!result.ok) return
+-      await Filesystem.write(filepath, result.text)
+-      ModelsDev.Data.reset()
+-    }).catch((e) => {
+-      log.error("Failed to fetch models.dev", {
+-        error: e,
+-      })
+-    })
++    if (force) log.info("models.dev refresh disabled by hivemind hardening")
++    ModelsDev.Data.reset()
+   }
+ }
+ 
+-if (!Flag.OPENCODE_DISABLE_MODELS_FETCH && !process.argv.includes("--get-yargs-completions")) {
+-  ModelsDev.refresh()
+-  setInterval(
+-    async () => {
+-      await ModelsDev.refresh()
+-    },
+-    60 * 1000 * 60,
+-  ).unref()
+-}
++if (!process.argv.includes("--get-yargs-completions")) ModelsDev.Data()
+diff --git a/packages/opencode/src/provider/provider.ts b/packages/opencode/src/provider/provider.ts
+index 004fb77..bcc65d4 100644
+--- a/packages/opencode/src/provider/provider.ts
++++ b/packages/opencode/src/provider/provider.ts
+@@ -18,7 +18,6 @@ import { Flag } from "../flag/flag"
+ import { iife } from "@/util/iife"
+ import { Global } from "../global"
+ import path from "path"
+-import { Filesystem } from "../util/filesystem"
+ import { Effect, Layer, ServiceMap } from "effect"
+ import { InstanceState } from "@/effect/instance-state"
+ import { makeRuntime } from "@/effect/run-service"
+@@ -1038,6 +1037,8 @@ export namespace Provider {
+         Effect.gen(function* () {
+           using _ = log.time("state")
+           const cfg = yield* config.get()
++          const auths = yield* auth.all().pipe(Effect.orDie)
++          const authed = new Set(Object.keys(auths).map((id) => ProviderID.make(id)))
+           const modelsDev = yield* Effect.promise(() => ModelsDev.get())
+           const database = mapValues(modelsDev, fromModelsDevProvider)
+ 
+@@ -1177,21 +1178,7 @@ export namespace Provider {
+             database[providerID] = parsed
+           }
+ 
+-          // load env
+-          const env = Env.all()
+-          for (const [id, provider] of Object.entries(database)) {
+-            const providerID = ProviderID.make(id)
+-            if (disabled.has(providerID)) continue
+-            const apiKey = provider.env.map((item) => env[item]).find(Boolean)
+-            if (!apiKey) continue
+-            mergeProvider(providerID, {
+-              source: "env",
+-              key: provider.env.length === 1 ? apiKey : undefined,
+-            })
+-          }
+-
+           // load apikeys
+-          const auths = yield* auth.all().pipe(Effect.orDie)
+           for (const [id, provider] of Object.entries(auths)) {
+             const providerID = ProviderID.make(id)
+             if (disabled.has(providerID)) continue
+@@ -1304,6 +1291,10 @@ export namespace Provider {
+               delete providers[providerID]
+               continue
+             }
++            if (!authed.has(providerID)) {
++              delete providers[providerID]
++              continue
++            }
+ 
+             const configProvider = cfg.provider?.[providerID]
+ 
+@@ -1627,32 +1618,7 @@ export namespace Provider {
+       const defaultModel = Effect.fn("Provider.defaultModel")(function* () {
+         const cfg = yield* config.get()
+         if (cfg.model) return parseModel(cfg.model)
+-
+-        const s = yield* InstanceState.get(state)
+-        const recent = yield* Effect.promise(() =>
+-          Filesystem.readJson<{
+-            recent?: { providerID: ProviderID; modelID: ModelID }[]
+-          }>(path.join(Global.Path.state, "model.json"))
+-            .then((x): { providerID: ProviderID; modelID: ModelID }[] => (Array.isArray(x.recent) ? x.recent : []))
+-            .catch((): { providerID: ProviderID; modelID: ModelID }[] => []),
+-        )
+-        for (const entry of recent) {
+-          const provider = s.providers[entry.providerID]
+-          if (!provider) continue
+-          if (!provider.models[entry.modelID]) continue
+-          return { providerID: entry.providerID, modelID: entry.modelID }
+-        }
+-
+-        const provider = Object.values(s.providers).find(
+-          (p) => !cfg.provider || Object.keys(cfg.provider).includes(p.id),
+-        )
+-        if (!provider) throw new Error("no providers found")
+-        const [model] = sort(Object.values(provider.models))
+-        if (!model) throw new Error("no models found")
+-        return {
+-          providerID: provider.id,
+-          modelID: model.id,
+-        }
++        throw new Error("No model configured. Run `hivemind -- auth login` and then `hivemind sync`.")
+       })
+ 
+       return Service.of({ list, getProvider, getModel, getLanguage, closest, getSmallModel, defaultModel })
+diff --git a/packages/opencode/src/session/index.ts b/packages/opencode/src/session/index.ts
+index fa6537e..74fb196 100644
+--- a/packages/opencode/src/session/index.ts
++++ b/packages/opencode/src/session/index.ts
+@@ -486,14 +486,8 @@ export namespace Session {
+       })
+ 
+       const share = Effect.fn("Session.share")(function* (id: SessionID) {
+-        const cfg = yield* config.get()
+-        if (cfg.share === "disabled") throw new Error("Sharing is disabled in configuration")
+-        const result = yield* Effect.promise(async () => {
+-          const { ShareNext } = await import("@/share/share-next")
+-          return ShareNext.create(id)
+-        })
+-        yield* Effect.sync(() => SyncEvent.run(Event.Updated, { sessionID: id, info: { share: { url: result.url } } }))
+-        return result
++        void id
++        throw new Error("Sharing is disabled by hivemind hardening")
+       })
+ 
+       const unshare = Effect.fn("Session.unshare")(function* (id: SessionID) {
+diff --git a/packages/opencode/test/config/config.test.ts b/packages/opencode/test/config/config.test.ts
+index 0ac61ae..e410bc4 100644
+--- a/packages/opencode/test/config/config.test.ts
++++ b/packages/opencode/test/config/config.test.ts
+@@ -1806,7 +1806,7 @@ test("project config overrides remote well-known config", async () => {
+         Config.Service.use((svc) =>
+           Effect.gen(function* () {
+             const config = yield* svc.get()
+-            expect(fetchedUrl).toBe("https://example.com/.well-known/opencode")
++            expect(fetchedUrl).toBeUndefined()
+             expect(config.mcp?.jira?.enabled).toBe(true)
+           }),
+         ),
+@@ -1861,7 +1861,7 @@ test("wellknown URL with trailing slash is normalized", async () => {
+         Config.Service.use((svc) =>
+           Effect.gen(function* () {
+             yield* svc.get()
+-            expect(fetchedUrl).toBe("https://example.com/.well-known/opencode")
++            expect(fetchedUrl).toBeUndefined()
+           }),
+         ),
+       { git: true },
+diff --git a/packages/opencode/test/provider/hivemind-lockdown.test.ts b/packages/opencode/test/provider/hivemind-lockdown.test.ts
+new file mode 100644
+index 0000000..01eca21
+--- /dev/null
++++ b/packages/opencode/test/provider/hivemind-lockdown.test.ts
+@@ -0,0 +1,50 @@
++import { expect, test } from "bun:test"
++
++import { Auth } from "../../src/auth"
++import { Env } from "../../src/env"
++import { Instance } from "../../src/project/instance"
++import { Provider } from "../../src/provider/provider"
++import { ProviderID } from "../../src/provider/schema"
++import { tmpdir } from "../fixture/fixture"
++
++test("defaultModel requires an explicit configured model", async () => {
++  await using tmp = await tmpdir({ config: { $schema: "https://opencode.ai/config.json" } })
++  await Instance.provide({
++    directory: tmp.path,
++    fn: async () => {
++      expect(Provider.defaultModel()).rejects.toThrow("No model configured")
++    },
++  })
++})
++
++test("env credentials alone do not activate a provider", async () => {
++  await using tmp = await tmpdir({ config: { $schema: "https://opencode.ai/config.json" } })
++  await Instance.provide({
++    directory: tmp.path,
++    init: async () => {
++      Env.set("ANTHROPIC_API_KEY", "test-api-key")
++    },
++    fn: async () => {
++      const providers = await Provider.list()
++      expect(providers[ProviderID.anthropic]).toBeUndefined()
++    },
++  })
++})
++
++test("auth-backed providers remain available", async () => {
++  await using tmp = await tmpdir({ config: { $schema: "https://opencode.ai/config.json" } })
++  await Instance.provide({
++    directory: tmp.path,
++    fn: async () => {
++      await Auth.set(
++        "anthropic",
++        new Auth.Api({
++          type: "api",
++          key: "test-api-key",
++        }),
++      )
++      const providers = await Provider.list()
++      expect(providers[ProviderID.anthropic]).toBeDefined()
++    },
++  })
++})
+-- 
+2.50.1
+

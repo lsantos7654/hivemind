@@ -190,6 +190,13 @@ def main(ctx: typer.Context) -> None:
 def _launch_opencode(extra_args: list[str]) -> None:
     from hivemind.server import is_server_running, load_server_state
 
+    validation = opencode.validate_model_config(require_configured=True)
+    if not validation.success:
+        console.print(f"[error]{validation.error}[/error]")
+        raise typer.Exit(1)
+
+    opencode.sync_runtime_config()
+
     if is_server_running():
         state = load_server_state()
         if state:
@@ -339,7 +346,12 @@ def sync() -> None:
     import sys
 
     from hivemind.config import load_config, save_config
-    from hivemind.opencode import list_engine_models
+    from hivemind.opencode import list_engine_models, validate_model_config
+
+    validation = validate_model_config(require_configured=False)
+    if not validation.success:
+        console.print(f"[error]{validation.error}[/error]")
+        raise typer.Exit(1)
 
     app_cfg = load_config()
 
@@ -349,8 +361,9 @@ def sync() -> None:
 
         if not sys.stdin.isatty():
             console.print(
-                "[error]No model configured and stdin is not interactive.\n"
-                "Edit config.json to set 'model' and 'small_model', then re-run 'hivemind sync'.[/error]"
+                "[error]No models configured and stdin is not interactive.\n"
+                "Run [bold]hivemind -- auth login[/bold] if needed, then re-run "
+                "[bold]hivemind sync[/bold] in a terminal to choose models.[/error]"
             )
             raise typer.Exit(1)
 
@@ -363,15 +376,6 @@ def sync() -> None:
         if not models:
             console.print(
                 "[error]No models available. Run [bold]hivemind -- auth login[/bold] to authenticate.[/error]"
-            )
-            raise typer.Exit(1)
-
-        all_free = all(m.startswith("opencode/") for m in models)
-        if all_free:
-            console.print(
-                "[warning]Only OpenCode free models found. "
-                "Run [bold]hivemind -- auth login[/bold] to authenticate, "
-                "then re-run [bold]hivemind sync[/bold].[/warning]"
             )
             raise typer.Exit(1)
 

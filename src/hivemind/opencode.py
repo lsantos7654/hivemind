@@ -16,7 +16,7 @@ import os
 import shutil
 import subprocess
 from pathlib import Path
-from typing import Any, Literal, assert_never
+from typing import TYPE_CHECKING, Any, Literal, assert_never
 
 import httpx
 
@@ -31,6 +31,9 @@ from hivemind.constants import (
 )
 from hivemind.models import AppConfig, HivemindConfig, InitResult, OperationResult, ServerConfig
 from hivemind.templates import LIBRARIAN_DESCRIPTION
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable
 
 log = logging.getLogger(__name__)
 
@@ -47,6 +50,52 @@ RULES_FILE_NAME = "AGENTS.md"
 _config_cache: HivemindConfig | None = None
 _app_config_cache: AppConfig | None = None
 _engine_validated: bool = False
+
+
+def _clear_model_config() -> None:
+    from hivemind.config import save_config
+
+    cfg = _app_cfg().model_copy(deep=True)
+    cfg.model = ""
+    cfg.small_model = ""
+    save_config(cfg)
+
+
+def _missing_models(configured: Iterable[str], available: set[str]) -> list[str]:
+    return [name for name in configured if name not in available]
+
+
+def validate_model_config(*, require_configured: bool) -> OperationResult:
+    """Validate configured model choices against the engine's allowed list."""
+    app = _app_cfg()
+    configured = [name for name in (app.model, app.small_model) if name]
+    if len(configured) < 2:
+        if require_configured:
+            return OperationResult(
+                success=False,
+                error="No models configured. Run 'hivemind -- auth login' and then 'hivemind sync'.",
+            )
+        return OperationResult(success=True)
+
+    try:
+        available = set(list_engine_models())
+    except RuntimeError as e:
+        return OperationResult(success=False, error=str(e))
+
+    missing = _missing_models((app.model, app.small_model), available)
+    if not missing:
+        return OperationResult(success=True)
+
+    _clear_model_config()
+    names = ", ".join(sorted(missing))
+    return OperationResult(
+        success=False,
+        error=(
+            f"Configured models no longer available: {names}. "
+            "Cleared 'model' and 'small_model' in config.json. "
+            "Run 'hivemind sync' to choose models again."
+        ),
+    )
 
 
 def _cfg() -> HivemindConfig:
@@ -405,28 +454,9 @@ def validate_engine() -> OperationResult:
     if _engine_validated:
         return OperationResult(success=True)
 
-    model = _app_cfg().model
-
-    if not model:
-        return OperationResult(
-            success=False,
-            error="No model configured. Set 'model' in config.json.",
-        )
-
-    try:
-        available = list_engine_models()
-    except RuntimeError as e:
-        return OperationResult(success=False, error=str(e))
-
-    if model not in set(available):
-        return OperationResult(
-            success=False,
-            error=(
-                f"Model '{model}' not available. "
-                "Run 'hivemind-engine providers' to configure it.\n"
-                "Available models can be listed with 'hivemind-engine models'."
-            ),
-        )
+    result = validate_model_config(require_configured=True)
+    if not result.success:
+        return result
 
     _engine_validated = True
     return OperationResult(success=True)
@@ -528,6 +558,11 @@ def notify_instance_reload() -> bool:
         # Tests don't run a real server; mock at the httpx layer if needed.
         return False
     assert_never(ctx.mode)
+
+
+def sync_runtime_config() -> list[InitResult]:
+    """Refresh runtime opencode.json fields derived from hivemind config."""
+    return _post_init_dirs()
 
 
 # ---------------------------------------------------------------------------
@@ -787,13 +822,20 @@ def _post_init_dirs() -> list[InitResult]:
     }
     existing["mcp"] = mcp_section
 
-    # Sync small_model from config.json to opencode.json so title
-    # generation has a reliable cross-provider small model regardless
-    # of which provider the current session uses.
-    small = _app_cfg().small_model
-    if small:
-        existing["small_model"] = small
+    # Sync model choices from hivemind's local config into opencode.json so
+    # normal interactive sessions use the same auth-backed selections as the
+    # analysis subprocesses.
+    app = _app_cfg()
+    if app.model:
+        existing["model"] = app.model
+        results.append(InitResult(label="opencode.json", status="model synced"))
+    else:
+        existing.pop("model", None)
+    if app.small_model:
+        existing["small_model"] = app.small_model
         results.append(InitResult(label="opencode.json", status="small_model synced"))
+    else:
+        existing.pop("small_model", None)
 
     config_path.write_text(json.dumps(existing, indent=2) + "\n")
     results.append(InitResult(label="opencode.json", status="path-token permissions merged"))
