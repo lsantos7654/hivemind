@@ -73,10 +73,20 @@ Load the relevant skill when a task matches:
 
 ## Ephemeral spawns
 
-Pass `ephemeral=true` to Task for one-shot sessions that auto-delete on
-completion — the summary stays in the parent's history but the spawned
-session's intermediate work is discarded.  Use for exploration,
-fire-and-forget analysis, and scratch work.
+Use `Task(..., ephemeral=true)` for one-shot helper sessions that should
+auto-delete on completion. The summary stays in the parent's history;
+only the spawned session's intermediate work is discarded.
+
+Rule of thumb:
+
+- Persistent expert consultation: keep the session and resume it with
+  `Task(task_id="ses_...", ...)`.
+- One-off helper spawn: pass `ephemeral=true`. This includes most
+  `explore` / `general` research helpers, source-session forks used as
+  probes, fire-and-forget analysis, and scratch work.
+- If you expect to resume that exact child later, leave `ephemeral`
+  unset/false.
+- `ephemeral=true` and `task_id` are mutually exclusive.
 
 Two agents are always-ephemeral regardless of the flag:
 `hivemind-expert-curator` (one-shot catalog mutations) and

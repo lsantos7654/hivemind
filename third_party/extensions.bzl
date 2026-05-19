@@ -140,6 +140,7 @@ _OPENCODE_CODE_PATCHES = [
     "0025-fix-resolve-agent-from-session-history-on-inbox-prom.patch",
     "0026-fix-use-git-CLI-instead-of-raw-.git-filesystem-reads.patch",
     "0028-feat-rewrite-inbox-as-SQLite-backed-persistent-queue.patch",
+    "0029-docs-strengthen-Task-ephemeral-guidance-for-one-off-.patch",
 ]
 external_engines = module_extension(
     implementation = _ext_impl,

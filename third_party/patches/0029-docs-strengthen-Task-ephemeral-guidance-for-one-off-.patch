@@ -1,0 +1,52 @@
+From dc1a98383a1d9ce600bb9953a8b6ff00fbb3fc21 Mon Sep 17 00:00:00 2001
+From: Lucas Santos <lsantos7654@gmail.com>
+Date: Mon, 18 May 2026 20:42:53 -0400
+Subject: [PATCH 29/29] docs: strengthen Task ephemeral guidance for one-off
+ helpers
+
+---
+ packages/opencode/src/tool/task.ts                 |  2 +-
+ packages/opencode/test/tool/task-ephemeral.test.ts | 14 ++++++++++++++
+ 2 files changed, 15 insertions(+), 1 deletion(-)
+
+diff --git a/packages/opencode/src/tool/task.ts b/packages/opencode/src/tool/task.ts
+index a3fc55c..576720e 100644
+--- a/packages/opencode/src/tool/task.ts
++++ b/packages/opencode/src/tool/task.ts
+@@ -39,7 +39,7 @@ const parameters = z.object({
+   ephemeral: z
+     .boolean()
+     .describe(
+-      "Optional. If true, the spawned subagent's session is auto-deleted when the subagent reaches a terminal state (completed, failed, or cancelled). Useful for one-off tasks where you will never resume the session — exploration spawns, fire-and-forget analysis, scratch work — to keep the subagent tree clean. The summary returned by the Task tool stays in the parent's message history; only the spawned session's intermediate work goes away. Mutually exclusive with task_id (resume defeats ephemeral). For background mode, deletion is deferred until read_task_result consumes the buffered result. Some agents declare `ephemeral: true` in their frontmatter and are always ephemeral regardless of this flag. Default false.",
++      "Optional. If true, the spawned subagent's session is auto-deleted when the subagent reaches a terminal state (completed, failed, or cancelled). Default to true for one-off `explore` or `general` spawns, source-session probes, fire-and-forget analysis, and scratch work unless you expect to resume that exact child later. Keep it false for persistent expert consultations you plan to continue with `task_id`. The summary returned by the Task tool stays in the parent's message history; only the spawned session's intermediate work goes away. Mutually exclusive with task_id (resume defeats ephemeral). For background mode, deletion is deferred until read_task_result consumes the buffered result. Some agents declare `ephemeral: true` in their frontmatter and are always ephemeral regardless of this flag. Default false.",
+     )
+     .optional(),
+   command: z.string().describe("The command that triggered this task").optional(),
+diff --git a/packages/opencode/test/tool/task-ephemeral.test.ts b/packages/opencode/test/tool/task-ephemeral.test.ts
+index 4195a7f..cdbe0c1 100644
+--- a/packages/opencode/test/tool/task-ephemeral.test.ts
++++ b/packages/opencode/test/tool/task-ephemeral.test.ts
+@@ -94,6 +94,20 @@ function reply(input: Parameters<typeof SessionPrompt.prompt>[0], text: string):
+ }
+ 
+ describe("tool.task ephemeral", () => {
++  it.live("Task() schema nudges one-off explore/general helpers to ephemeral=true", () =>
++    provideTmpdirInstance(() =>
++      Effect.gen(function* () {
++        const tool = yield* TaskTool
++        const def = yield* Effect.promise(() => tool.init())
++        const desc = def.parameters.shape.ephemeral.unwrap().description ?? ""
++
++        expect(desc).toContain("`explore` or `general`")
++        expect(desc).toContain("resume that exact child later")
++        expect(desc).toContain("task_id")
++      }),
++    ),
++  )
++
+   it.live("Task(ephemeral=true) creates an ephemeral session", () =>
+     provideTmpdirInstance(() =>
+       Effect.gen(function* () {
+-- 
+2.50.1
+

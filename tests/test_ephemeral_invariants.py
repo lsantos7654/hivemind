@@ -64,6 +64,18 @@ def test_hivemind_md_template_documents_ephemeral_spawns() -> None:
     body = hivemind_md_base(teams_path="/tmp/teams-fixture")
     assert "Ephemeral spawns" in body, "HIVEMIND.md needs an Ephemeral spawns section"
     assert "ephemeral=true" in body, "HIVEMIND.md must show the Task(ephemeral=true) form"
+    assert "explore" in body, (
+        "HIVEMIND.md should call out one-off explore/general helpers explicitly "
+        "so the main agent treats them as the default ephemeral cases."
+    )
+    assert "general" in body, (
+        "HIVEMIND.md should call out one-off explore/general helpers explicitly "
+        "so the main agent treats them as the default ephemeral cases."
+    )
+    assert "resume that exact child later" in body, (
+        "HIVEMIND.md should distinguish throwaway helper spawns from resumable sessions."
+    )
+    assert "task_id" in body, "HIVEMIND.md should mention the task_id exception for persistent sessions"
     # Cross-reference the always-ephemeral agents so the model knows when
     # passing the flag is redundant.
     assert "hivemind-memory-daemon" in body

@@ -1,7 +1,7 @@
 From fb982f5f14b8339ce392a32ab8262d4deedb3e35 Mon Sep 17 00:00:00 2001
 From: Lucas Santos <lsantos7654@gmail.com>
 Date: Mon, 18 May 2026 20:16:46 -0400
-Subject: [PATCH 27/28] sdk: gen inbox list and queue metadata
+Subject: [PATCH 27/29] sdk: gen inbox list and queue metadata
 
 ---
  packages/sdk/js/src/v2/gen/sdk.gen.ts   | 64 +++++++++++++++---------

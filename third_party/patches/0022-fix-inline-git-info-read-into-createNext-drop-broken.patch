@@ -1,7 +1,7 @@
 From eda4f3c540a812b4ed29c9668240fb1e7dea0472 Mon Sep 17 00:00:00 2001
 From: Lucas Santos <lsantos7654@gmail.com>
 Date: Mon, 11 May 2026 17:30:46 -0400
-Subject: [PATCH 22/28] fix: inline git info read into createNext, drop broken
+Subject: [PATCH 22/29] fix: inline git info read into createNext, drop broken
  Effect.fnUntraced
 
 The readGitInfo Effect.fnUntraced wrapper compiled to an object

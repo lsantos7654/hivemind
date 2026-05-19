@@ -1,7 +1,7 @@
 From 658773761e950aa2d4222e0eafaa3a556249f5be Mon Sep 17 00:00:00 2001
 From: Lucas Santos <lsantos7654@gmail.com>
 Date: Fri, 8 May 2026 01:54:49 -0400
-Subject: [PATCH 04/28] Strip placeholder package.json scripts
+Subject: [PATCH 04/29] Strip placeholder package.json scripts
 
 ---
  packages/opencode/package.json | 7 -------
