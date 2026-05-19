@@ -1,0 +1,200 @@
+From fb982f5f14b8339ce392a32ab8262d4deedb3e35 Mon Sep 17 00:00:00 2001
+From: Lucas Santos <lsantos7654@gmail.com>
+Date: Mon, 18 May 2026 20:16:46 -0400
+Subject: [PATCH 27/28] sdk: gen inbox list and queue metadata
+
+---
+ packages/sdk/js/src/v2/gen/sdk.gen.ts   | 64 +++++++++++++++---------
+ packages/sdk/js/src/v2/gen/types.gen.ts | 66 ++++++++++++++++++-------
+ 2 files changed, 89 insertions(+), 41 deletions(-)
+
+diff --git a/packages/sdk/js/src/v2/gen/sdk.gen.ts b/packages/sdk/js/src/v2/gen/sdk.gen.ts
+index bf4c1f1..bff96e1 100644
+--- a/packages/sdk/js/src/v2/gen/sdk.gen.ts
++++ b/packages/sdk/js/src/v2/gen/sdk.gen.ts
+@@ -130,6 +130,8 @@ import type {
+   SessionGetErrors,
+   SessionGetResponses,
+   SessionInboxErrors,
++  SessionInboxListErrors,
++  SessionInboxListResponses,
+   SessionInboxResponses,
+   SessionInitErrors,
+   SessionInitResponses,
+@@ -2326,30 +2328,53 @@ export class Session2 extends HeyApiClient {
+     })
+   }
+ 
++  /**
++   * List pending inbox messages
++   *
++   * Retrieve pending queued inbox messages for a session.
++   */
++  public inboxList<ThrowOnError extends boolean = false>(
++    parameters: {
++      sessionID: string
++      directory?: string
++      workspace?: string
++    },
++    options?: Options<never, ThrowOnError>,
++  ) {
++    const params = buildClientParams(
++      [parameters],
++      [
++        {
++          args: [
++            { in: "path", key: "sessionID" },
++            { in: "query", key: "directory" },
++            { in: "query", key: "workspace" },
++          ],
++        },
++      ],
++    )
++    return (options?.client ?? this.client).get<SessionInboxListResponses, SessionInboxListErrors, ThrowOnError>({
++      url: "/session/{sessionID}/inbox",
++      ...options,
++      ...params,
++    })
++  }
++
+   /**
+    * Send message via inbox
+    *
+-   * Hivemind: deliver a message to the session now if idle, or queue it and deliver on next idle if busy. Unlike /message and /prompt_async, never throws BusyError. Returns { queued, depth, sessionID } once the decision is made; the prompt itself runs asynchronously.
++   * Hivemind: persist a message in the session inbox and deliver it when the session is idle. Returns queue metadata immediately.
+    */
+   public inbox<ThrowOnError extends boolean = false>(
+     parameters: {
+       sessionID: string
+       directory?: string
+       workspace?: string
+-      messageID?: string
+-      model?: {
+-        providerID: string
+-        modelID: string
+-      }
+-      agent?: string
+-      noReply?: boolean
+-      tools?: {
+-        [key: string]: boolean
+-      }
+-      format?: OutputFormat
+-      system?: string
+-      variant?: string
+-      parts?: Array<TextPartInput | FilePartInput | AgentPartInput | SubtaskPartInput>
++      parts?: Array<{
++        type: string
++        text: string
++      }>
++      sender_id?: string
+     },
+     options?: Options<never, ThrowOnError>,
+   ) {
+@@ -2361,15 +2386,8 @@ export class Session2 extends HeyApiClient {
+             { in: "path", key: "sessionID" },
+             { in: "query", key: "directory" },
+             { in: "query", key: "workspace" },
+-            { in: "body", key: "messageID" },
+-            { in: "body", key: "model" },
+-            { in: "body", key: "agent" },
+-            { in: "body", key: "noReply" },
+-            { in: "body", key: "tools" },
+-            { in: "body", key: "format" },
+-            { in: "body", key: "system" },
+-            { in: "body", key: "variant" },
+             { in: "body", key: "parts" },
++            { in: "body", key: "sender_id" },
+           ],
+         },
+       ],
+diff --git a/packages/sdk/js/src/v2/gen/types.gen.ts b/packages/sdk/js/src/v2/gen/types.gen.ts
+index a33d709..681f359 100644
+--- a/packages/sdk/js/src/v2/gen/types.gen.ts
++++ b/packages/sdk/js/src/v2/gen/types.gen.ts
+@@ -3984,25 +3984,54 @@ export type SessionPromptAsyncResponses = {
+ 
+ export type SessionPromptAsyncResponse = SessionPromptAsyncResponses[keyof SessionPromptAsyncResponses]
+ 
++export type SessionInboxListData = {
++  body?: never
++  path: {
++    sessionID: string
++  }
++  query?: {
++    directory?: string
++    workspace?: string
++  }
++  url: "/session/{sessionID}/inbox"
++}
++
++export type SessionInboxListErrors = {
++  /**
++   * Bad request
++   */
++  400: BadRequestError
++  /**
++   * Not found
++   */
++  404: NotFoundError
++}
++
++export type SessionInboxListError = SessionInboxListErrors[keyof SessionInboxListErrors]
++
++export type SessionInboxListResponses = {
++  /**
++   * Pending inbox messages
++   */
++  200: {
++    messages: Array<{
++      id: string
++      sender_id: string | null
++      text: string
++      created_at: number
++    }>
++  }
++}
++
++export type SessionInboxListResponse = SessionInboxListResponses[keyof SessionInboxListResponses]
++
+ export type SessionInboxData = {
+   body?: {
+-    messageID?: string
+-    model?: {
+-      providerID: string
+-      modelID: string
+-    }
+-    agent?: string
+-    noReply?: boolean
+-    /**
+-     * @deprecated tools and permissions have been merged, you can set permissions on the session itself now
+-     */
+-    tools?: {
+-      [key: string]: boolean
+-    }
+-    format?: OutputFormat
+-    system?: string
+-    variant?: string
+-    parts: Array<TextPartInput | FilePartInput | AgentPartInput | SubtaskPartInput>
++    parts: Array<{
++      type: string
++      text: string
++    }>
++    sender_id?: string
+   }
+   path: {
+     sessionID: string
+@@ -4029,9 +4058,10 @@ export type SessionInboxError = SessionInboxErrors[keyof SessionInboxErrors]
+ 
+ export type SessionInboxResponses = {
+   /**
+-   * Message delivered or queued
++   * Message queued
+    */
+   200: {
++    id: string
+     sessionID: string
+     queued: boolean
+     depth: number
+-- 
+2.50.1
+

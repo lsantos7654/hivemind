@@ -1,7 +1,7 @@
 From 231096384c31ec56afed67503c13b78abdc27f2b Mon Sep 17 00:00:00 2001
 From: Lucas Santos <lsantos7654@gmail.com>
 Date: Fri, 15 May 2026 23:27:05 -0400
-Subject: [PATCH 26/26] fix: use git CLI instead of raw .git filesystem reads
+Subject: [PATCH 26/28] fix: use git CLI instead of raw .git filesystem reads
  for branch/remote metadata
 
 ---

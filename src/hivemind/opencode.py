@@ -602,15 +602,15 @@ def session_delete(session_id: str) -> None:
     resp.raise_for_status()
 
 
-def session_inbox(session_id: str, text: str) -> dict[str, Any]:
+def session_inbox(session_id: str, text: str, sender_id: str | None = None) -> dict[str, Any]:
     """POST /session/:id/inbox — queue-on-busy message delivery.
 
-    Provided by ``//third_party/patches/0007-...inbox...patch``. Returns
-    ``{sessionID, queued, depth}`` once the engine has decided whether
-    to deliver immediately or queue for the next idle. The prompt's
-    full turn runs asynchronously regardless.
+    Returns ``{id, sessionID, queued, depth}`` after the engine persists
+    the inbox row. Delivery runs asynchronously.
     """
-    body = {"parts": [{"type": "text", "text": text}]}
+    body: dict[str, Any] = {"parts": [{"type": "text", "text": text}]}
+    if sender_id:
+        body["sender_id"] = sender_id
     resp = httpx.post(
         f"{_server_url()}/session/{session_id}/inbox",
         json=body,

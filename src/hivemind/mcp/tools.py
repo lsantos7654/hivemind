@@ -1002,11 +1002,8 @@ async def _handle_send_message(
 ) -> list[TextContent]:
     from hivemind import opencode
 
-    if reply_to:
-        message = f"[From: {reply_to}]\n\n{message}"
-
     try:
-        result = opencode.session_inbox(session_id, message)
+        result = opencode.session_inbox(session_id, message, sender_id=reply_to)
     except RuntimeError as exc:
         return _text(f"Error: {exc}")
     state = "queued" if result.get("queued") else "delivered"

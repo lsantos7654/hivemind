@@ -110,6 +110,7 @@ _OPENCODE_DEP_PATCHES = [
     "0003-SDK-gen-ephemeral-on-Session-create-fork-inputs.patch",
     "0004-Strip-placeholder-package.json-scripts.patch",
     "0005-fix-add-types-field-to-plugin-package.json-for-tsgo-.patch",
+    "0027-sdk-gen-inbox-list-and-queue-metadata.patch",
 ]
 
 # Patches that modify only source files (no dep manifest changes). Applied
@@ -138,6 +139,7 @@ _OPENCODE_CODE_PATCHES = [
     "0024-test-add-scenario-test-stubs-Stage-10-Stage-11-TODO.patch",
     "0025-fix-resolve-agent-from-session-history-on-inbox-prom.patch",
     "0026-fix-use-git-CLI-instead-of-raw-.git-filesystem-reads.patch",
+    "0028-feat-rewrite-inbox-as-SQLite-backed-persistent-queue.patch",
 ]
 external_engines = module_extension(
     implementation = _ext_impl,

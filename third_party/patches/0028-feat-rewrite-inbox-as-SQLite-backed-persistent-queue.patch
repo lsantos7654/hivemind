@@ -1,0 +1,782 @@
+From 60c5fcc0cf41696a1d9aeafd946d151dff66a672 Mon Sep 17 00:00:00 2001
+From: Lucas Santos <lsantos7654@gmail.com>
+Date: Mon, 18 May 2026 20:18:37 -0400
+Subject: [PATCH 28/28] feat: rewrite inbox as SQLite-backed persistent queue
+ with explicit ALS context
+
+---
+ .../20260518120000_inbox/migration.sql        |  12 +
+ .../cli/cmd/tui/context/presence-client.ts    |  19 +-
+ .../opencode/src/cli/cmd/tui/context/sdk.tsx  |   6 +
+ .../opencode/src/cli/cmd/tui/context/sync.tsx |  30 ++-
+ .../src/cli/cmd/tui/routes/session/index.tsx  |   8 +
+ .../opencode/src/server/routes/presence.ts    |  11 +
+ .../opencode/src/server/routes/session.ts     |  76 +++++-
+ packages/opencode/src/server/server.ts        |   6 +
+ packages/opencode/src/session/inbox.sql.ts    |  21 ++
+ packages/opencode/src/session/inbox.ts        | 237 +++++++++++++-----
+ packages/opencode/src/session/run-state.ts    |   6 +-
+ .../test/server/presence-client.test.ts       |  36 +++
+ .../test/server/session-actions.test.ts       |  42 ++++
+ 13 files changed, 424 insertions(+), 86 deletions(-)
+ create mode 100644 packages/opencode/migration/20260518120000_inbox/migration.sql
+ create mode 100644 packages/opencode/src/session/inbox.sql.ts
+
+diff --git a/packages/opencode/migration/20260518120000_inbox/migration.sql b/packages/opencode/migration/20260518120000_inbox/migration.sql
+new file mode 100644
+index 0000000..c5c480b
+--- /dev/null
++++ b/packages/opencode/migration/20260518120000_inbox/migration.sql
+@@ -0,0 +1,12 @@
++CREATE TABLE `inbox` (
++	`id` text PRIMARY KEY NOT NULL,
++	`session_id` text NOT NULL REFERENCES `session`(`id`) ON DELETE cascade,
++	`sender_id` text,
++	`text` text NOT NULL,
++	`status` text NOT NULL DEFAULT 'pending',
++	`attempts` integer NOT NULL DEFAULT 0,
++	`created_at` integer NOT NULL,
++	`delivered_at` integer
++);
++--> statement-breakpoint
++CREATE INDEX `inbox_session_status_idx` ON `inbox` (`session_id`,`status`);
+diff --git a/packages/opencode/src/cli/cmd/tui/context/presence-client.ts b/packages/opencode/src/cli/cmd/tui/context/presence-client.ts
+index 83299a0..babea9c 100644
+--- a/packages/opencode/src/cli/cmd/tui/context/presence-client.ts
++++ b/packages/opencode/src/cli/cmd/tui/context/presence-client.ts
+@@ -25,6 +25,7 @@ export interface PresenceClientOptions {
+   dir?: string
+   onLiveSessions: (sessions: string[]) => void
+   onReloadAgents?: () => void
++  onInboxUpdated?: (sessionID: string, pending: number) => void
+   WebSocketCtor?: typeof WebSocket
+   reconnectMs?: number
+ }
+@@ -47,6 +48,12 @@ function isReloadMessage(value: unknown): value is { type: "reload-agents" } {
+   return (value as Record<string, unknown>).type === "reload-agents"
+ }
+ 
++function isInboxUpdated(value: unknown): value is { type: "inbox-updated"; sessionID: string; pending: number } {
++  if (!value || typeof value !== "object") return false
++  const obj = value as Record<string, unknown>
++  return obj.type === "inbox-updated" && typeof obj.sessionID === "string" && typeof obj.pending === "number"
++}
++
+ export function createPresenceClient(opts: PresenceClientOptions): PresenceClient {
+   const Ctor = opts.WebSocketCtor ?? WebSocket
+   const reconnectMs = opts.reconnectMs ?? 500
+@@ -59,11 +66,11 @@ export function createPresenceClient(opts: PresenceClientOptions): PresenceClien
+     if (closed) return
+     const next = new Ctor(opts.url)
+     ws = next
+-      next.onopen = () => {
+-        try {
+-          next.send(JSON.stringify({ type: "focus", sessionID: currentFocus, dir: opts.dir }))
+-        } catch {
+-        }
++    next.onopen = () => {
++      try {
++        next.send(JSON.stringify({ type: "focus", sessionID: currentFocus, dir: opts.dir }))
++      } catch {
++      }
+     }
+     next.onmessage = (ev: MessageEvent) => {
+       try {
+@@ -74,6 +81,8 @@ export function createPresenceClient(opts: PresenceClientOptions): PresenceClien
+           opts.onLiveSessions(parsed.sessions)
+         } else if (isReloadMessage(parsed)) {
+           opts.onReloadAgents?.()
++        } else if (isInboxUpdated(parsed)) {
++          opts.onInboxUpdated?.(parsed.sessionID, parsed.pending)
+         }
+       } catch {
+         // ignore malformed payload
+diff --git a/packages/opencode/src/cli/cmd/tui/context/sdk.tsx b/packages/opencode/src/cli/cmd/tui/context/sdk.tsx
+index bcb7f4d..3c43910 100644
+--- a/packages/opencode/src/cli/cmd/tui/context/sdk.tsx
++++ b/packages/opencode/src/cli/cmd/tui/context/sdk.tsx
+@@ -155,6 +155,12 @@ export const { use: useSDK, provider: SDKProvider } = createSimpleContext({
+               properties: { instances: 0, agents: 0, skills: 0, commands: 0 },
+             } as Event)
+           },
++          onInboxUpdated: (sessionID, pending) => {
++            handleEvent({
++              type: "inbox.updated" as any,
++              properties: { sessionID, pending },
++            } as Event)
++          },
+         })
+         // Mirror the active route into the server's presence map.
+         // SolidJS reruns this effect whenever `route.data` changes,
+diff --git a/packages/opencode/src/cli/cmd/tui/context/sync.tsx b/packages/opencode/src/cli/cmd/tui/context/sync.tsx
+index 747c0e2..463d80f 100644
+--- a/packages/opencode/src/cli/cmd/tui/context/sync.tsx
++++ b/packages/opencode/src/cli/cmd/tui/context/sync.tsx
+@@ -54,6 +54,9 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
+       session_status: {
+         [sessionID: string]: SessionStatus
+       }
++      inbox_pending: {
++        [sessionID: string]: number
++      }
+       session_diff: {
+         [sessionID: string]: Snapshot.FileDiff[]
+       }
+@@ -95,6 +98,7 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
+       provider_default: {},
+       session: [],
+       session_status: {},
++      inbox_pending: {},
+       session_diff: {},
+       todo: {},
+       message: {},
+@@ -360,6 +364,28 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
+             .catch(() => {})
+           break
+         }
++        default: {
++          const evt = event as { type: string; properties?: { sessionID?: string; pending?: number } }
++          if (evt.type === "inbox.updated" && evt.properties) {
++            const sid = evt.properties.sessionID!
++            const pending = evt.properties.pending!
++            const prev = store.inbox_pending[sid] ?? 0
++            setStore("inbox_pending", sid, pending)
++            if (prev > 0 && pending < prev) {
++              sdk.client.session
++                .messages({ sessionID: sid, limit: 100 })
++                .then((x) => {
++                  if (!x.data) return
++                  setStore("message", sid, x.data.map((m) => m.info))
++                  for (const m of x.data) {
++                    setStore("part", m.info.id, m.parts)
++                  }
++                })
++                .catch(() => {})
++            }
++          }
++          break
++        }
+       }
+     })
+ 
+@@ -489,11 +515,12 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
+         },
+         async sync(sessionID: string) {
+           if (fullSyncedSessions.has(sessionID)) return
+-          const [session, messages, todo, diff] = await Promise.all([
++          const [session, messages, todo, diff, inbox] = await Promise.all([
+             sdk.client.session.get({ sessionID }, { throwOnError: true }),
+             sdk.client.session.messages({ sessionID, limit: 100 }),
+             sdk.client.session.todo({ sessionID }),
+             sdk.client.session.diff({ sessionID }),
++            sdk.client.session.inboxList({ sessionID }),
+           ])
+           setStore(
+             produce((draft) => {
+@@ -501,6 +528,7 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
+               if (match.found) draft.session[match.index] = session.data!
+               if (!match.found) draft.session.splice(match.index, 0, session.data!)
+               draft.todo[sessionID] = todo.data ?? []
++              draft.inbox_pending[sessionID] = inbox.data?.messages?.length ?? 0
+               draft.message[sessionID] = messages.data!.map((x) => x.info)
+               for (const message of messages.data!) {
+                 draft.part[message.info.id] = message.parts
+diff --git a/packages/opencode/src/cli/cmd/tui/routes/session/index.tsx b/packages/opencode/src/cli/cmd/tui/routes/session/index.tsx
+index 7bc2607..5f11cd8 100644
+--- a/packages/opencode/src/cli/cmd/tui/routes/session/index.tsx
++++ b/packages/opencode/src/cli/cmd/tui/routes/session/index.tsx
+@@ -1070,6 +1070,14 @@ export function Session() {
+               scrollAcceleration={scrollAcceleration()}
+             >
+               <box height={1} />
++              <Show when={(sync.data.inbox_pending[route.sessionID] ?? 0) > 0}>
++                <box height={1} justifyContent="center">
++                  <text
++                    content={`✉ ${sync.data.inbox_pending[route.sessionID]} pending message${sync.data.inbox_pending[route.sessionID] === 1 ? "" : "s"}`}
++                    fg={theme.primary}
++                  />
++                </box>
++              </Show>
+               <For each={messages()}>
+                 {(message, index) => (
+                   <Switch>
+diff --git a/packages/opencode/src/server/routes/presence.ts b/packages/opencode/src/server/routes/presence.ts
+index e610578..8afe514 100644
+--- a/packages/opencode/src/server/routes/presence.ts
++++ b/packages/opencode/src/server/routes/presence.ts
+@@ -155,6 +155,17 @@ export function broadcastReload(): void {
+   }
+ }
+ 
++export function broadcastInboxUpdated(sessionID: string, pending: number): void {
++  const msg = JSON.stringify({ type: "inbox-updated", sessionID, pending })
++  for (const key of _clients.keys()) {
++    try {
++      ;(key as { send: (data: string) => void }).send(msg)
++    } catch (err) {
++      log.error("presence: inbox broadcast send failed", { err })
++    }
++  }
++}
++
+ const FocusMessage = z.object({
+   type: z.literal("focus"),
+   sessionID: z.string().nullable(),
+diff --git a/packages/opencode/src/server/routes/session.ts b/packages/opencode/src/server/routes/session.ts
+index 624ea7e..90104b8 100644
+--- a/packages/opencode/src/server/routes/session.ts
++++ b/packages/opencode/src/server/routes/session.ts
+@@ -872,20 +872,69 @@ export const SessionRoutes = lazy(() =>
+         return c.body(null, 204)
+       },
+     )
++    .get(
++      "/:sessionID/inbox",
++      describeRoute({
++        summary: "List pending inbox messages",
++        description: "Retrieve pending queued inbox messages for a session.",
++        operationId: "session.inboxList",
++        responses: {
++          200: {
++            description: "Pending inbox messages",
++            content: {
++              "application/json": {
++                schema: resolver(
++                  z.object({
++                    messages: z.array(
++                      z.object({
++                        id: z.string(),
++                        sender_id: z.string().nullable(),
++                        text: z.string(),
++                        created_at: z.number(),
++                      }),
++                    ),
++                  }),
++                ),
++              },
++            },
++          },
++          ...errors(400, 404),
++        },
++      }),
++      validator(
++        "param",
++        z.object({
++          sessionID: SessionID.zod,
++        }),
++      ),
++      async (c) => {
++        const sessionID = c.req.valid("param").sessionID
++        await Session.get(sessionID)
++        return c.json({
++          messages: SessionInbox.pending(sessionID).map((row) => ({
++            id: row.id,
++            sender_id: row.sender_id,
++            text: row.text,
++            created_at: row.created_at,
++          })),
++        })
++      },
++    )
+     .post(
+       "/:sessionID/inbox",
+       describeRoute({
+         summary: "Send message via inbox",
+         description:
+-          "Hivemind: deliver a message to the session now if idle, or queue it and deliver on next idle if busy. Unlike /message and /prompt_async, never throws BusyError. Returns { queued, depth, sessionID } once the decision is made; the prompt itself runs asynchronously.",
++          "Hivemind: persist a message in the session inbox and deliver it when the session is idle. Returns queue metadata immediately.",
+         operationId: "session.inbox",
+         responses: {
+           200: {
+-            description: "Message delivered or queued",
++            description: "Message queued",
+             content: {
+               "application/json": {
+                 schema: resolver(
+                   z.object({
++                    id: z.string(),
+                     sessionID: SessionID.zod,
+                     queued: z.boolean(),
+                     depth: z.number(),
+@@ -903,15 +952,28 @@ export const SessionRoutes = lazy(() =>
+           sessionID: SessionID.zod,
+         }),
+       ),
+-      validator("json", SessionPrompt.PromptInput.omit({ sessionID: true })),
++      validator(
++        "json",
++        z.object({
++          parts: z.array(
++            z.object({
++              type: z.string(),
++              text: z.string(),
++            }),
++          ),
++          sender_id: z.string().optional(),
++        }),
++      ),
+       async (c) => {
+         const sessionID = c.req.valid("param").sessionID
+         const body = c.req.valid("json")
+-        // Confirm the session exists before queueing so unknown IDs 404
+-        // instead of silently disappearing into the inbox.
+         await Session.get(sessionID)
+-        const result = await SessionInbox.enqueueOrSend({ ...body, sessionID })
+-        return c.json({ sessionID, ...result })
++        const result = await SessionInbox.enqueue({
++          sessionID,
++          senderID: body.sender_id,
++          text: body.parts.map((part) => part.text).join("\n\n"),
++        })
++        return c.json({ id: result.id, sessionID, queued: true, depth: result.depth })
+       },
+     )
+     .post(
+diff --git a/packages/opencode/src/server/server.ts b/packages/opencode/src/server/server.ts
+index 762a66e..c4cd787 100644
+--- a/packages/opencode/src/server/server.ts
++++ b/packages/opencode/src/server/server.ts
+@@ -22,6 +22,7 @@ import { lazy } from "@/util/lazy"
+ import { errorHandler } from "./middleware"
+ import { InstanceRoutes } from "./instance"
+ import { initProjectors } from "./projectors"
++import { SessionInbox } from "@/session/inbox"
+ 
+ // @ts-ignore This global is needed to prevent ai-sdk from logging warnings to stdout https://github.com/vercel/ai/blob/2dc67e0ef538307f21368db32d5a12345d98831b/packages/ai/src/logger/log-warnings.ts#L85
+ globalThis.AI_SDK_LOG_WARNINGS = false
+@@ -38,6 +39,7 @@ export namespace Server {
+ 
+   const log = Log.create({ service: "server" })
+   const zipped = compress()
++  let resumed = false
+ 
+   const skipCompress = (path: string, method: string) => {
+     if (path === "/event" || path === "/global/event" || path === "/global/sync-event") return true
+@@ -250,6 +252,10 @@ export namespace Server {
+   }
+ 
+   function create(opts: { cors?: string[] }) {
++    if (!resumed) {
++      resumed = true
++      void SessionInbox.resume()
++    }
+     const app = new Hono()
+     // Hivemind: native Bun WebSocket helper. Replaces @hono/node-ws.
+     // Bun.serve fires `req.signal.abort` synchronously on TCP close
+diff --git a/packages/opencode/src/session/inbox.sql.ts b/packages/opencode/src/session/inbox.sql.ts
+new file mode 100644
+index 0000000..fab7497
+--- /dev/null
++++ b/packages/opencode/src/session/inbox.sql.ts
+@@ -0,0 +1,21 @@
++import { index, integer, sqliteTable, text } from "drizzle-orm/sqlite-core"
++import { SessionTable } from "./session.sql"
++import type { SessionID } from "./schema"
++
++export const InboxTable = sqliteTable(
++  "inbox",
++  {
++    id: text().primaryKey(),
++    session_id: text()
++      .$type<SessionID>()
++      .notNull()
++      .references(() => SessionTable.id, { onDelete: "cascade" }),
++    sender_id: text(),
++    text: text().notNull(),
++    status: text().notNull().default("pending"),
++    attempts: integer().notNull().default(0),
++    created_at: integer().notNull(),
++    delivered_at: integer(),
++  },
++  (table) => [index("inbox_session_status_idx").on(table.session_id, table.status)],
++)
+diff --git a/packages/opencode/src/session/inbox.ts b/packages/opencode/src/session/inbox.ts
+index 3f662a3..84f74bb 100644
+--- a/packages/opencode/src/session/inbox.ts
++++ b/packages/opencode/src/session/inbox.ts
+@@ -1,92 +1,191 @@
+-// Hivemind: per-session message inbox with deferred delivery.
+-//
+-// `POST /session/:id/inbox` accepts a SessionPrompt.PromptInput and delivers
+-// it now if the session is idle, or queues it (FIFO) if the session is busy.
+-// The queued tail is drained from `SessionRunState.onIdle` via
+-// `SessionInbox.drainNext` so a message landing mid-turn is delivered as
+-// soon as the current turn finishes.
+-//
+-// In-memory only (Map keyed by SessionID). On engine restart, queued
+-// messages are lost — acceptable for this UX.
+-import z from "zod"
+-import { Bus } from "@/bus"
+-import { BusEvent } from "@/bus/bus-event"
+-import { Log } from "../util/log"
++import { randomBytes } from "crypto"
++import { InstanceBootstrap } from "@/project/bootstrap"
++import { Instance } from "@/project/instance"
++import { and, Database, eq } from "@/storage/db"
++import { broadcastInboxUpdated } from "@/server/routes/presence"
+ import { Session } from "."
+-import { SessionID } from "./schema"
+ import { SessionPrompt } from "./prompt"
++import { SessionID } from "./schema"
++import { InboxTable } from "./inbox.sql"
+ import { SessionRunState } from "./run-state"
++import { SessionTable } from "./session.sql"
++import { Log } from "../util/log"
+ 
+ export namespace SessionInbox {
+   const log = Log.create({ service: "session.inbox" })
+-  const queues = new Map<SessionID, SessionPrompt.PromptInput[]>()
+-
+-  export const Queued = BusEvent.define(
+-    "session.message.queued",
+-    z.object({
+-      sessionID: SessionID.zod,
+-      depth: z.number(),
+-    }),
+-  )
+-
+-  function enqueue(input: SessionPrompt.PromptInput): number {
+-    const sessionID = input.sessionID
+-    const q = queues.get(sessionID) ?? []
+-    q.push(input)
+-    queues.set(sessionID, q)
+-    Bus.publish(Queued, { sessionID, depth: q.length }).catch((err) =>
+-      log.error("inbox publish failed", { sessionID, error: err }),
++  const timers = new Map<SessionID, ReturnType<typeof setTimeout>>()
++
++  export type Row = typeof InboxTable.$inferSelect
++
++  export interface EnqueueInput {
++    sessionID: SessionID
++    senderID?: string | null
++    text: string
++  }
++
++  function id() {
++    return "inb_" + randomBytes(12).toString("hex")
++  }
++
++  function session(sessionID: SessionID) {
++    return Database.use((db) => db.select({ directory: SessionTable.directory }).from(SessionTable).where(eq(SessionTable.id, sessionID)).get())
++  }
++
++  function claim(sessionID: SessionID) {
++    const row = Database.use((db) =>
++      db
++        .select()
++        .from(InboxTable)
++        .where(and(eq(InboxTable.session_id, sessionID), eq(InboxTable.status, "pending")))
++        .orderBy(InboxTable.created_at, InboxTable.id)
++        .limit(1)
++        .get(),
+     )
+-    return q.length
++    if (!row) return
++    const res = Database.use((db) =>
++      db
++        .update(InboxTable)
++        .set({ status: "delivering" })
++        .where(and(eq(InboxTable.id, row.id), eq(InboxTable.status, "pending")))
++        .returning({ id: InboxTable.id })
++        .get(),
++    )
++    if (!res) return
++    return row
+   }
+ 
+-  function fireAndForget(input: SessionPrompt.PromptInput) {
+-    const sessionID = input.sessionID
+-    SessionPrompt.prompt(input).catch((err) => {
+-      if (err instanceof Session.BusyError) {
+-        // Lost a race against another runner — re-queue and let onIdle drain.
+-        enqueue(input)
+-        return
+-      }
+-      log.error("inbox prompt failed", { sessionID, error: err })
+-    })
++  function markDelivered(id: string) {
++    Database.use((db) =>
++      db.update(InboxTable).set({ status: "delivered", delivered_at: Date.now() }).where(eq(InboxTable.id, id)).run(),
++    )
++  }
++
++  function markPending(id: string) {
++    Database.use((db) =>
++      db.update(InboxTable).set({ status: "pending", delivered_at: null }).where(eq(InboxTable.id, id)).run(),
++    )
++  }
++
++  function markFailed(id: string, attempts: number) {
++    Database.use((db) =>
++      db
++        .update(InboxTable)
++        .set({ status: attempts < 3 ? "pending" : "failed", attempts, delivered_at: null })
++        .where(eq(InboxTable.id, id))
++        .run(),
++    )
+   }
+ 
+-  /**
+-   * Hivemind: queue if busy, send if idle. Returns once the decision is
+-   * made (does not wait for the prompt's full turn to complete).
+-   */
+-  export async function enqueueOrSend(
+-    input: SessionPrompt.PromptInput,
+-  ): Promise<{ queued: boolean; depth: number }> {
+-    let busy = false
++  function scheduleDrain(sessionID: SessionID, attempt: number) {
++    const prev = timers.get(sessionID)
++    if (prev) clearTimeout(prev)
++    const delay = Math.min(250 * 2 ** attempt, 2_000)
++    const timer = setTimeout(() => {
++      timers.delete(sessionID)
++      void drain(sessionID)
++    }, delay)
++    timers.set(sessionID, timer)
++  }
++
++  function publish(sessionID: SessionID) {
++    broadcastInboxUpdated(sessionID, depth(sessionID))
++  }
++
++  export async function enqueue(input: EnqueueInput): Promise<{ id: string; depth: number }> {
++    const row = {
++      id: id(),
++      session_id: input.sessionID,
++      sender_id: input.senderID ?? null,
++      text: input.text,
++      status: "pending",
++      attempts: 0,
++      created_at: Date.now(),
++      delivered_at: null,
++    } as const
++    Database.use((db) => db.insert(InboxTable).values(row).run())
++    const count = depth(input.sessionID)
++    publish(input.sessionID)
+     try {
+       await SessionRunState.assertNotBusy(input.sessionID)
++      void drain(input.sessionID)
+     } catch (err) {
+-      if (err instanceof Session.BusyError) busy = true
+-      else throw err
++      if (!(err instanceof Session.BusyError)) throw err
++    }
++    return { id: row.id, depth: count }
++  }
++
++  export async function drain(sessionID: SessionID): Promise<void> {
++    const row = claim(sessionID)
++    if (!row) {
++      publish(sessionID)
++      return
+     }
+-    if (busy) {
+-      const depth = enqueue(input)
+-      return { queued: true, depth }
++
++    const info = session(sessionID)
++    if (!info) {
++      log.error("inbox session missing", { sessionID, rowID: row.id })
++      markFailed(row.id, row.attempts + 1)
++      publish(sessionID)
++      return
+     }
+-    fireAndForget(input)
+-    return { queued: false, depth: queues.get(input.sessionID)?.length ?? 0 }
++
++    try {
++      await Instance.provide({
++        directory: info.directory,
++        init: InstanceBootstrap,
++        async fn() {
++          await SessionPrompt.prompt({
++            sessionID,
++            parts: [{ type: "text", text: row.text }],
++          })
++        },
++      })
++      markDelivered(row.id)
++      if (timers.has(sessionID)) {
++        clearTimeout(timers.get(sessionID)!)
++        timers.delete(sessionID)
++      }
++      if (depth(sessionID) > 0) void drain(sessionID)
++    } catch (err) {
++      if (err instanceof Session.BusyError) {
++        markPending(row.id)
++        publish(sessionID)
++        return
++      }
++      const attempts = row.attempts + 1
++      log.error("inbox prompt failed", { sessionID, rowID: row.id, err, attempts })
++      markFailed(row.id, attempts)
++      if (attempts < 3) scheduleDrain(sessionID, attempts)
++    }
++
++    publish(sessionID)
+   }
+ 
+-  /**
+-   * Hivemind: pop the next queued message for `sessionID` and dispatch it
+-   * via SessionPrompt.prompt. Called from SessionRunState.onIdle.
+-   */
+-  export function drainNext(sessionID: SessionID): void {
+-    const q = queues.get(sessionID)
+-    if (!q || q.length === 0) return
+-    const next = q.shift()!
+-    if (q.length === 0) queues.delete(sessionID)
+-    fireAndForget(next)
++  export function pending(sessionID: SessionID): Row[] {
++    return Database.use((db) =>
++      db
++        .select()
++        .from(InboxTable)
++        .where(and(eq(InboxTable.session_id, sessionID), eq(InboxTable.status, "pending")))
++        .orderBy(InboxTable.created_at, InboxTable.id)
++        .all(),
++    )
+   }
+ 
+   export function depth(sessionID: SessionID): number {
+-    return queues.get(sessionID)?.length ?? 0
++    return pending(sessionID).length
++  }
++
++  export async function resume(): Promise<void> {
++    Database.use((db) =>
++      db.update(InboxTable).set({ status: "pending" }).where(eq(InboxTable.status, "delivering")).run(),
++    )
++    const rows = Database.use((db) =>
++      db.select({ session_id: InboxTable.session_id }).from(InboxTable).where(eq(InboxTable.status, "pending")).all(),
++    )
++    for (const row of rows) {
++      publish(row.session_id)
++      void drain(row.session_id)
++    }
+   }
+ }
+diff --git a/packages/opencode/src/session/run-state.ts b/packages/opencode/src/session/run-state.ts
+index 279341c..52253ee 100644
+--- a/packages/opencode/src/session/run-state.ts
++++ b/packages/opencode/src/session/run-state.ts
+@@ -85,10 +85,8 @@ export namespace SessionRunState {
+           onIdle: Effect.gen(function* () {
+             data.runners.delete(sessionID)
+             yield* status.set(sessionID, { type: "idle" })
+-            // Hivemind: drain the next queued inbox message (fire-and-forget).
+-            // The follow-up prompt re-enters ensureRunning and creates a new
+-            // runner for this session.
+-            yield* Effect.sync(() => SessionInbox.drainNext(sessionID))
++            // Hivemind: drain queued inbox work after the current turn settles.
++            yield* Effect.sync(() => void SessionInbox.drain(sessionID))
+             // Hivemind: ephemeral cleanup. Foreground ephemeral sessions are
+             // removed here on terminal-state idle. Background ephemeral sessions
+             // defer cleanup to consume() so the parent can read the buffered
+diff --git a/packages/opencode/test/server/presence-client.test.ts b/packages/opencode/test/server/presence-client.test.ts
+index af523c0..be9599e 100644
+--- a/packages/opencode/test/server/presence-client.test.ts
++++ b/packages/opencode/test/server/presence-client.test.ts
+@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test"
+ import { createBunWebSocket } from "hono/bun"
+ import { Instance } from "../../src/project/instance"
+ import { Server } from "../../src/server/server"
++import { broadcastInboxUpdated } from "../../src/server/routes/presence"
+ import { Log } from "../../src/util/log"
+ import { tmpdir } from "../fixture/fixture"
+ import { createPresenceClient } from "../../src/cli/cmd/tui/context/presence-client"
+@@ -188,6 +189,41 @@ describe("presence-client", () => {
+     })
+   })
+ 
++  test("incoming inbox-updated broadcast invokes onInboxUpdated", async () => {
++    await using tmp = await tmpdir({ git: true })
++    await Instance.provide({
++      directory: tmp.path,
++      fn: async () => {
++        const { url, wsURL, stop } = await startServer()
++        try {
++          let seen: { sessionID: string; pending: number } | undefined
++          const client = createPresenceClient({
++            url: wsURL + "/presence",
++            onLiveSessions: () => {},
++            onInboxUpdated: (sessionID, pending) => {
++              seen = { sessionID, pending }
++            },
++          })
++          client.setFocus("ses_self")
++          await waitForLiveSessions(url, ["ses_self"])
++
++          broadcastInboxUpdated("ses_peer", 2)
++
++          const deadline = Date.now() + 1000
++          while (Date.now() < deadline) {
++            if (seen?.sessionID === "ses_peer" && seen.pending === 2) break
++            await Bun.sleep(20)
++          }
++          expect(seen).toEqual({ sessionID: "ses_peer", pending: 2 })
++
++          client.close()
++        } finally {
++          await stop()
++        }
++      },
++    })
++  })
++
+   test("close() prevents reconnect", async () => {
+     await using tmp = await tmpdir({ git: true })
+     await Instance.provide({
+diff --git a/packages/opencode/test/server/session-actions.test.ts b/packages/opencode/test/server/session-actions.test.ts
+index 4ab4859..c17fee7 100644
+--- a/packages/opencode/test/server/session-actions.test.ts
++++ b/packages/opencode/test/server/session-actions.test.ts
+@@ -81,4 +81,46 @@ describe("session action routes", () => {
+       },
+     })
+   })
++
++  test("inbox route queues pending messages and exposes them via GET", async () => {
++    await using tmp = await tmpdir({ git: true })
++    await Instance.provide({
++      directory: tmp.path,
++      fn: async () => {
++        const session = await Session.create({})
++        const busy = spyOn(SessionRunState, "assertNotBusy").mockRejectedValue(new Session.BusyError(session.id))
++        const app = Server.Default().app
++
++        const post = await app.request(`/session/${session.id}/inbox`, {
++          method: "POST",
++          headers: { "content-type": "application/json" },
++          body: JSON.stringify({
++            parts: [{ type: "text", text: "hello from peer" }],
++            sender_id: "ses_sender",
++          }),
++        })
++
++        expect(post.status).toBe(200)
++        expect(busy).toHaveBeenCalledWith(session.id)
++        const queued = (await post.json()) as { id: string; sessionID: string; queued: boolean; depth: number }
++        expect(queued.id.startsWith("inb_")).toBe(true)
++        expect(queued.sessionID).toBe(session.id)
++        expect(queued.queued).toBe(true)
++        expect(queued.depth).toBe(1)
++
++        const get = await app.request(`/session/${session.id}/inbox`)
++        expect(get.status).toBe(200)
++        const list = (await get.json()) as {
++          messages: Array<{ id: string; sender_id: string | null; text: string; created_at: number }>
++        }
++        expect(list.messages).toHaveLength(1)
++        expect(list.messages[0]?.id).toBe(queued.id)
++        expect(list.messages[0]?.sender_id).toBe("ses_sender")
++        expect(list.messages[0]?.text).toBe("hello from peer")
++        expect(typeof list.messages[0]?.created_at).toBe("number")
++
++        await Session.remove(session.id)
++      },
++    })
++  })
+ })
+-- 
+2.50.1
+
