@@ -1,0 +1,243 @@
+From c281afc7aafed051c1afb224ad45b14c77f69a19 Mon Sep 17 00:00:00 2001
+From: Lucas Santos <lsantos7654@gmail.com>
+Date: Mon, 18 May 2026 21:35:04 -0400
+Subject: [PATCH 31/32] fix: inline session footer pills into prompt status row
+
+---
+ .../cli/cmd/tui/component/prompt/index.tsx    | 78 ++++++++++---------
+ .../cmd/tui/feature-plugins/home/footer.tsx   | 22 +++---
+ .../opencode/src/cli/cmd/tui/plugin/api.tsx   |  1 +
+ .../src/cli/cmd/tui/routes/session/index.tsx  | 13 +---
+ packages/plugin/src/tui.ts                    |  7 +-
+ 5 files changed, 59 insertions(+), 62 deletions(-)
+
+diff --git a/packages/opencode/src/cli/cmd/tui/component/prompt/index.tsx b/packages/opencode/src/cli/cmd/tui/component/prompt/index.tsx
+index 747c61f..ec03233 100644
+--- a/packages/opencode/src/cli/cmd/tui/component/prompt/index.tsx
++++ b/packages/opencode/src/cli/cmd/tui/component/prompt/index.tsx
+@@ -45,6 +45,7 @@ export type PromptProps = {
+   onSubmit?: () => void
+   ref?: (ref: PromptRef | undefined) => void
+   hint?: JSX.Element
++  statusLeft?: JSX.Element
+   right?: JSX.Element
+   showPlaceholder?: boolean
+   placeholders?: {
+@@ -96,6 +97,7 @@ export function Prompt(props: PromptProps) {
+   const shell = createMemo(() => props.placeholders?.shell ?? [])
+   const [auto, setAuto] = createSignal<AutocompleteRef>()
+   const currentProviderLabel = createMemo(() => local.model.parsed().provider)
++  const hasStatusLeft = createMemo(() => Boolean(props.statusLeft))
+   const hasRightContent = createMemo(() => Boolean(props.right))
+ 
+   function promptModelWarning() {
+@@ -1143,14 +1145,44 @@ export function Prompt(props: PromptProps) {
+             }
+           />
+         </box>
+-        <box width="100%" flexDirection="row" justifyContent="space-between">
+-          <Show when={status().type !== "idle"} fallback={props.hint ?? <text />}>
+-            <box
+-              flexDirection="row"
+-              gap={1}
+-              flexGrow={1}
+-              justifyContent={status().type === "retry" ? "space-between" : "flex-start"}
+-            >
++        <box width="100%" flexDirection="column" gap={1}>
++          <box width="100%" flexDirection="row" justifyContent="space-between">
++            <Show when={hasStatusLeft()} fallback={status().type === "idle" ? props.hint ?? <text /> : <text />}>
++              <box gap={2} flexDirection="row" alignItems="center">
++                {props.statusLeft}
++              </box>
++            </Show>
++            <box gap={2} flexDirection="row">
++              <Switch>
++                <Match when={store.mode === "normal"}>
++                  <Switch>
++                    <Match when={usage()}>
++                      {(item) => (
++                        <text fg={theme.textMuted} wrapMode="none">
++                          {[item().context, item().cost].filter(Boolean).join(" · ")}
++                        </text>
++                      )}
++                    </Match>
++                    <Match when={true}>
++                      <text fg={theme.text}>
++                        {keybind.print("agent_cycle")} <span style={{ fg: theme.textMuted }}>agents</span>
++                      </text>
++                    </Match>
++                  </Switch>
++                  <text fg={theme.text}>
++                    {keybind.print("command_list")} <span style={{ fg: theme.textMuted }}>commands</span>
++                  </text>
++                </Match>
++                <Match when={store.mode === "shell"}>
++                  <text fg={theme.text}>
++                    esc <span style={{ fg: theme.textMuted }}>exit shell mode</span>
++                  </text>
++                </Match>
++              </Switch>
++            </box>
++          </box>
++          <Show when={status().type !== "idle"}>
++            <box width="100%" flexDirection="row" justifyContent="space-between">
+               <box flexShrink={0} flexDirection="row" gap={1}>
+                 <box marginLeft={1}>
+                   <Show when={kv.get("animations_enabled", true)} fallback={<text fg={theme.textMuted}>[⋯]</text>}>
+@@ -1224,36 +1256,6 @@ export function Prompt(props: PromptProps) {
+               </text>
+             </box>
+           </Show>
+-          <Show when={status().type !== "retry"}>
+-            <box gap={2} flexDirection="row">
+-              <Switch>
+-                <Match when={store.mode === "normal"}>
+-                  <Switch>
+-                    <Match when={usage()}>
+-                      {(item) => (
+-                        <text fg={theme.textMuted} wrapMode="none">
+-                          {[item().context, item().cost].filter(Boolean).join(" · ")}
+-                        </text>
+-                      )}
+-                    </Match>
+-                    <Match when={true}>
+-                      <text fg={theme.text}>
+-                        {keybind.print("agent_cycle")} <span style={{ fg: theme.textMuted }}>agents</span>
+-                      </text>
+-                    </Match>
+-                  </Switch>
+-                  <text fg={theme.text}>
+-                    {keybind.print("command_list")} <span style={{ fg: theme.textMuted }}>commands</span>
+-                  </text>
+-                </Match>
+-                <Match when={store.mode === "shell"}>
+-                  <text fg={theme.text}>
+-                    esc <span style={{ fg: theme.textMuted }}>exit shell mode</span>
+-                  </text>
+-                </Match>
+-              </Switch>
+-            </box>
+-          </Show>
+         </box>
+       </box>
+     </>
+diff --git a/packages/opencode/src/cli/cmd/tui/feature-plugins/home/footer.tsx b/packages/opencode/src/cli/cmd/tui/feature-plugins/home/footer.tsx
+index c527f8b..892c3c4 100644
+--- a/packages/opencode/src/cli/cmd/tui/feature-plugins/home/footer.tsx
++++ b/packages/opencode/src/cli/cmd/tui/feature-plugins/home/footer.tsx
+@@ -147,6 +147,16 @@ function Subagents(props: { api: TuiPluginApi; sessionID?: string }) {
+   )
+ }
+ 
++function Pills(props: { api: TuiPluginApi; sessionID?: string }) {
++  return (
++    <>
++      <Sessions api={props.api} />
++      <Subagents api={props.api} sessionID={props.sessionID} />
++      <HivemindStatus api={props.api} />
++    </>
++  )
++}
++
+ function View(props: { api: TuiPluginApi; sessionID?: string }) {
+   return (
+     <box
+@@ -159,9 +169,7 @@ function View(props: { api: TuiPluginApi; sessionID?: string }) {
+       flexShrink={0}
+       gap={2}
+     >
+-      <Sessions api={props.api} />
+-      <Subagents api={props.api} sessionID={props.sessionID} />
+-      <HivemindStatus api={props.api} />
++      <Pills api={props.api} sessionID={props.sessionID} />
+       <box flexGrow={1} />
+     </box>
+   )
+@@ -175,12 +183,8 @@ const tui: TuiPlugin = async (api) => {
+         // No focused session on home — Subagents renders 0.
+         return <View api={api} />
+       },
+-      // Hivemind: rendered while inside a session. The slot props
+-      // include `session_id` (set by `routes/session/index.tsx`
+-      // when invoking the slot), which feeds the per-TUI Subagents
+-      // pill.
+-      session_footer(_ctx, props) {
+-        return <View api={api} sessionID={props.session_id} />
++      session_prompt_status_left(_ctx, props) {
++        return <Pills api={api} sessionID={props.session_id} />
+       },
+     },
+   })
+diff --git a/packages/opencode/src/cli/cmd/tui/plugin/api.tsx b/packages/opencode/src/cli/cmd/tui/plugin/api.tsx
+index 3609f6c..0b678bb 100644
+--- a/packages/opencode/src/cli/cmd/tui/plugin/api.tsx
++++ b/packages/opencode/src/cli/cmd/tui/plugin/api.tsx
+@@ -278,6 +278,7 @@ export function createTuiApi(input: Input): TuiPluginApi {
+             onSubmit={props.onSubmit}
+             ref={props.ref}
+             hint={props.hint}
++            statusLeft={props.statusLeft}
+             right={props.right}
+             showPlaceholder={props.showPlaceholder}
+             placeholders={props.placeholders}
+diff --git a/packages/opencode/src/cli/cmd/tui/routes/session/index.tsx b/packages/opencode/src/cli/cmd/tui/routes/session/index.tsx
+index 5f11cd8..8b9d034 100644
+--- a/packages/opencode/src/cli/cmd/tui/routes/session/index.tsx
++++ b/packages/opencode/src/cli/cmd/tui/routes/session/index.tsx
+@@ -1202,6 +1202,7 @@ export function Session() {
+                       toBottom()
+                     }}
+                     sessionID={route.sessionID}
++                    statusLeft={<TuiPluginRuntime.Slot name="session_prompt_status_left" session_id={route.sessionID} />}
+                     right={<TuiPluginRuntime.Slot name="session_prompt_right" session_id={route.sessionID} />}
+                   />
+                 </TuiPluginRuntime.Slot>
+@@ -1209,18 +1210,6 @@ export function Session() {
+             </box>
+           </Show>
+           <Toast />
+-          {/* Hivemind: full-width session footer slot. The home-footer */}
+-          {/* plugin (feature-plugins/home/footer.tsx) registers into both */}
+-          {/* `home_footer` and `session_footer` so the live/bg/MCP/version */}
+-          {/* indicators are visible on the home view AND while inside a */}
+-          {/* session. Mirrors home_footer at routes/home.tsx:80. */}
+-          <box width="100%" flexShrink={0}>
+-            <TuiPluginRuntime.Slot
+-              name="session_footer"
+-              mode="single_winner"
+-              session_id={route.sessionID}
+-            />
+-          </box>
+         </box>
+         <Show when={sidebarVisible()}>
+           <Switch>
+diff --git a/packages/plugin/src/tui.ts b/packages/plugin/src/tui.ts
+index 93d6f40..8253597 100644
+--- a/packages/plugin/src/tui.ts
++++ b/packages/plugin/src/tui.ts
+@@ -174,6 +174,7 @@ export type TuiPromptProps = {
+   onSubmit?: () => void
+   ref?: (ref: TuiPromptRef | undefined) => void
+   hint?: JSX.Element
++  statusLeft?: JSX.Element
+   right?: JSX.Element
+   showPlaceholder?: boolean
+   placeholders?: {
+@@ -343,11 +344,11 @@ export type TuiHostSlotMap = {
+   session_prompt_right: {
+     session_id: string
+   }
+-  home_bottom: {}
+-  home_footer: {}
+-  session_footer: {
++  session_prompt_status_left: {
+     session_id: string
+   }
++  home_bottom: {}
++  home_footer: {}
+   sidebar_title: {
+     session_id: string
+     title: string
+-- 
+2.50.1
+
