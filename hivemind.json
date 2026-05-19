@@ -228,7 +228,7 @@
       "kind": "git_analyzed",
       "body": {
         "remote": "https://github.com/anomalyco/opencode.git",
-        "commit": "8ffadde85c89230bdca6b26a6e5b957cbfae7281",
+        "commit": "d9d43d8519b20a866909767a5d99a1d36440e2b2",
         "ref_name": "dev"
       }
     },
