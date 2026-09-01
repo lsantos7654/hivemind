@@ -242,7 +242,7 @@ The main build artifact is the collection of `.bzl` files providing:
 ### Documentation
 
 Generated API documentation published to:
-- Bazel Central Registry: https://registry.bazel.build/docs/aspect_rules_py
+- Bazel Central Registry: https://registry.bazel.build/modules/aspect_rules_py/latest/docs
 - GitHub Pages: https://docs.aspect.build/rulesets/rules_py/
 
 ## Testing Strategy
